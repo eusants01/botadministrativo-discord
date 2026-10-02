@@ -11,13 +11,13 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Lista de status rotativos
+
 status_list = [
-    "Protegendo a Família Sant's",
-    "Roblox no ALPHA",
-    "Desenvolvido por Sant's",
-    "Bot Administrativo da Família Sant's",
-    "Monitorizar o Servidor"
+    "Protegendo a Família Sant's 🛡️",
+    "Primeira Família do E.B 🎖️",
+    "Desenvolvido por Sant's 🛠️",
+    "Bot Administrativo da Família Sant's 🤖",
+    "Monitorizar o Servidor 🕒"
 ]
 
 @tasks.loop(seconds=5)
@@ -30,7 +30,7 @@ async def on_ready():
     mudar_status.start()
     print(f'✅ O bot {bot.user} está online!')
 
-# Função para carregar os ficheiros da pasta 'cogs'
+
 async def setup_hook():
     if not os.path.exists('./cogs'):
         os.makedirs('./cogs')
