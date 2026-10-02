@@ -12,9 +12,18 @@ from zoneinfo import ZoneInfo
 import discord
 from discord.ext import commands, tasks
 
+# ╔══════════════════════════════════════════════════════════════╗
+# ║            CONFIGURAÇÃO — FAMÍLIA SANT'S                     ║
+# ║   Tudo que você precisa mudar está nesta seção.              ║
+# ╚══════════════════════════════════════════════════════════════╝
+
 NOME_SERVIDOR = "Família Sant's"
 FUSO = ZoneInfo("America/Sao_Paulo")
 
+# ── 1) IDs (é só colar o número) ────────────────────────────────
+
+# Cargos EXTRAS que também são staff. Quem tem a permissão "Administrador"
+# já é staff automaticamente, sem precisar colocar o ID aqui.
 CARGOS_STAFF = [
     1553944794957615175,
     1553923854877990945,
@@ -23,20 +32,27 @@ CARGOS_STAFF = [
     1553832098404499516,
 ]
 
-CARGOS_NOTIFICAR = [1554367619463913582]
+# Cargos que serão marcados (@) em TODO ticket novo. Pode deixar vazio: [].
+CARGOS_NOTIFICAR = []
 
-CATEGORIA_TICKETS_ID = 1555449984453972009
+# ID da CATEGORIA do Discord onde TODOS os tickets serão criados.
+# (Se deixar 0, o ticket é criado na mesma categoria do canal do painel.)
+CATEGORIA_TICKETS_ID = 0
 
+# Canal onde ficam os logs (abertura, fechamento, ações da staff)
 CANAL_LOGS_ID = 1555446279033589770
 
-CANAL_AVALIACOES_ID = 1555453132387913728
+# Canal das avaliações (None = usa o canal de logs)
+CANAL_AVALIACOES_ID = None
+
+# ── 2) Comportamento ────────────────────────────────────────────
 
 MAX_TICKETS_POR_USUARIO = 1          # tickets abertos ao mesmo tempo
 TEMPO_PARA_APAGAR = 5                # segundos até apagar o canal ao fechar
-COOLDOWN_CHAMAR_EQUIPE = 30         # segundos entre cada "Chamar Equipe"
+COOLDOWN_CHAMAR_EQUIPE = 300         # segundos entre cada "Chamar Equipe"
 
 # Alerta se ninguém assumir o ticket após X minutos (0 = desligado)
-ALERTA_SEM_ATENDENTE_MINUTOS = 5
+ALERTA_SEM_ATENDENTE_MINUTOS = 15
 
 # Inatividade: avisa após X horas sem mensagens e fecha Y horas depois do
 # aviso se continuar parado (0 = desligado)
@@ -45,7 +61,27 @@ INATIVIDADE_FECHAR_APOS_AVISO_HORAS = 12
 
 # ── 3) Visual ───────────────────────────────────────────────────
 
-BANNER_PRINCIPAL = "https://cdn.discordapp.com/attachments/961677475191078992/1555452137499271249/content.png?backend=b2&ex=6ac09330&is=6abf41b0&hm=69fd6e5a44be95e298fc5f9c2cad885291bec77f1a1919a0343f275f2820c8cd&"
+BANNER_PRINCIPAL = "https://i.imgur.com/link_do_banner_principal.jpg"
+
+# Texto do painel principal (!painelticket). Pode editar à vontade —
+# aceita a formatação do Discord (negrito, `código`, > citação).
+PAINEL_DESCRICAO = """\
+**Central de Atendimento**
+Escolha no menu abaixo uma categoria que deseja receber o suporte necessário.
+
+**Escolha a sua Categoria**
+> `🛠️` **Suporte** — Dúvidas e ajuda em geral.
+> `☎️` **Denúncia** — Reportar jogadores ou comportamentos.
+> `💼` **Parcerias** — Assuntos sobre parcerias.
+> `🎖️` **Solicitar Cargos** — Solicite um cargo.
+
+**Horário de Funcionamento.**
+> `⏳` Segunda a Sexta: das **09:00 até 23:59h**
+> `⏳` Sábado e Domingo: das **12:00 até 19:00h**
+
+**Aviso**
+> `⚠️` O uso abusivo desnecessário acarretará em punição.
+"""
 
 # Prioridades que a staff pode definir no painel do ticket
 PRIORIDADES = {
@@ -70,8 +106,7 @@ CATEGORIAS = {
         "cor": 0x3498DB,
         "banner": "https://i.imgur.com/link_do_banner_suporte.jpg",
         "mensagem": (
-            "Olá, {usuario}! 👋\n\n"
-            "Seja bem-vindo ao **Suporte da Família Sant's**.\n"
+            "Olá, {usuario}! 👋\n"
             "Nossa equipe já foi avisada e vai te atender em breve."
         ),
         "perguntas": [
@@ -87,13 +122,13 @@ CATEGORIAS = {
     },
     "denuncia": {
         "nome": "Denúncia",
-        "emoji": "🚨",
+        "emoji": "☎️",
         "descricao": "Reportar jogadores ou comportamentos",
         "cor": 0xE74C3C,
         "banner": "https://i.imgur.com/link_do_banner_denuncia.jpg",
         "mensagem": (
-            "Olá, {usuario}.\n\n"
-            "Sua denúncia será tratada com **sigilo e seriedade**.\n"
+            "Olá, {usuario}.\n"
+            "Sua denúncia será tratada com **sigilo e seriedade**. "
             "Envie as provas (prints, vídeos, links) aqui no ticket."
         ),
         "perguntas": [
@@ -119,44 +154,15 @@ CATEGORIAS = {
         "cargos_ping": [],
         "categoria_discord_id": None,
     },
-    "cargos": {
-        "nome": "Solicitar Cargos",
-        "emoji": "🎖️",
-        "descricao": "Peça um cargo dentro da Família",
-        "cor": 0xF1C40F,
-        "banner": "https://i.imgur.com/link_do_banner_cargos.jpg",
-        "mensagem": (
-            "Olá, {usuario}! 🎖️\n\n"
-            "Recebemos o seu pedido de cargo. A equipe vai analisar "
-            "e te responder aqui mesmo."
-        ),
-        "perguntas": [
-            {
-                "label": "Qual cargo você deseja?",
-                "placeholder": "Ex: Membro Oficial",
-                "longo": False,
-                "obrigatorio": True,
-            },
-            {
-                "label": "Por que você merece esse cargo?",
-                "placeholder": "Fale do seu tempo e atividade na Família...",
-                "longo": True,
-                "obrigatorio": True,
-            },
-        ],
-        "cargos_ping": [],
-        "categoria_discord_id": None,
-    },
     "parceria": {
         "nome": "Parcerias",
-        "emoji": "🤝",
-        "descricao": "Assuntos sobre parcerias e alianças",
+        "emoji": "💼",
+        "descricao": "Assuntos sobre parcerias",
         "cor": 0x2ECC71,
         "banner": "https://i.imgur.com/link_do_banner_parceria.jpg",
         "mensagem": (
-            "Olá, {usuario}! 🤝\n\n"
-            "Que bom ter interesse em uma parceria com a **Família Sant's**.\n"
-            "Um responsável vai analisar a sua proposta."
+            "Olá, {usuario}! 🤝\n"
+            "Um responsável vai analisar a sua proposta e te responder aqui mesmo."
         ),
         "perguntas": [
             {
@@ -180,6 +186,33 @@ CATEGORIAS = {
             {
                 "label": "Qual é a sua proposta?",
                 "placeholder": "Como seria a parceria?",
+                "longo": True,
+                "obrigatorio": True,
+            },
+        ],
+        "cargos_ping": [],
+        "categoria_discord_id": None,
+    },
+    "cargos": {
+        "nome": "Solicitar Cargos",
+        "emoji": "🎖️",
+        "descricao": "Solicite um cargo",
+        "cor": 0xF1C40F,
+        "banner": "https://i.imgur.com/link_do_banner_cargos.jpg",
+        "mensagem": (
+            "Olá, {usuario}! 🎖️\n"
+            "A equipe vai analisar o seu pedido e te responder aqui mesmo."
+        ),
+        "perguntas": [
+            {
+                "label": "Qual cargo você deseja?",
+                "placeholder": "Ex: Membro Oficial",
+                "longo": False,
+                "obrigatorio": True,
+            },
+            {
+                "label": "Por que você merece esse cargo?",
+                "placeholder": "Fale do seu tempo e atividade na Família...",
                 "longo": True,
                 "obrigatorio": True,
             },
@@ -438,39 +471,40 @@ def checar_pode_abrir(guild: discord.Guild, user: discord.abc.User) -> str | Non
 def montar_card(guild: discord.Guild, canal, t: dict) -> discord.Embed:
     cat = CATEGORIAS.get(t["cat"], {})
     p_emoji, p_nome = PRIORIDADES.get(t.get("prio", "normal"), PRIORIDADES["normal"])
+
+    mensagem = cat.get("mensagem", "").replace("{usuario}", f"<@{t['owner']}>")
+
+    # Linha de status compacta: só mostra o que é relevante
+    status = [
+        f"🙋 Atendimento com <@{t['claim']}>"
+        if t.get("claim")
+        else "⏳ Aguardando um atendente"
+    ]
+    if t.get("prio", "normal") != "normal":
+        status.append(f"{p_emoji} Prioridade **{p_nome}**")
+    if t.get("locked"):
+        status.append("🔒 Trancado")
+
+    partes = [mensagem, "> " + "  •  ".join(status)]
+
+    respostas = t.get("respostas", [])
+    if respostas:
+        blocos = []
+        for label, valor in respostas:
+            linhas = [f"> **{label}**"]
+            linhas += [f"> {l}" if l.strip() else ">" for l in valor.splitlines()]
+            blocos.append("\n".join(linhas))
+        partes.append("\n>\n".join(blocos))
+
     embed = discord.Embed(
-        title=f"{cat.get('emoji', '🎫')} {cat.get('nome', 'Ticket')} • "
-        f"Ticket #{t['num']:04d}",
-        description=cat.get("mensagem", "").replace("{usuario}", f"<@{t['owner']}>"),
+        title=f"{cat.get('emoji', '🎫')} {cat.get('nome', 'Ticket')}",
+        description="\n\n".join(partes)[:4096],
         color=cat.get("cor", 0x5865F2),
+        timestamp=canal.created_at,
     )
     if banner_valido(cat.get("banner")):
         embed.set_image(url=cat["banner"])
-    dono = guild.get_member(t["owner"])
-    if dono:
-        embed.set_thumbnail(url=dono.display_avatar.url)
-
-    embed.add_field(name="👤 Aberto por", value=f"<@{t['owner']}>", inline=True)
-    embed.add_field(name="📂 Categoria", value=cat.get("nome", "—"), inline=True)
-    embed.add_field(name="🚦 Prioridade", value=f"{p_emoji} {p_nome}", inline=True)
-    embed.add_field(
-        name="🙋 Atendente",
-        value=f"<@{t['claim']}>" if t.get("claim") else "⏳ Aguardando equipe",
-        inline=True,
-    )
-    embed.add_field(
-        name="🔐 Status",
-        value="🔒 Trancado" if t.get("locked") else "🟢 Aberto",
-        inline=True,
-    )
-    embed.add_field(
-        name="🕒 Aberto",
-        value=f"<t:{int(canal.created_at.timestamp())}:R>",
-        inline=True,
-    )
-    for label, valor in t.get("respostas", []):
-        embed.add_field(name=f"📝 {label}"[:256], value=valor[:1024], inline=False)
-    embed.set_footer(text=f"{NOME_SERVIDOR} • Atendimento")
+    embed.set_footer(text=f"Ticket #{t['num']:04d} • {NOME_SERVIDOR}")
     return embed
 
 
@@ -1877,23 +1911,9 @@ class TicketsCog(commands.Cog):
     @apenas_staff()
     async def painelticket(self, ctx: commands.Context):
         """Cria o painel público de tickets no canal atual."""
-        descricao = (
-            f"Bem-vindo à **Central de Atendimento da {NOME_SERVIDOR}**!\n\n"
-            "Escolha no menu abaixo a categoria que melhor combina com o "
-            "seu assunto:\n\n"
-        )
-        for c in CATEGORIAS.values():
-            descricao += f"{c['emoji']} **{c['nome']}** — {c['descricao']}\n"
-        descricao += "\n⚠️ Abuso do sistema de tickets pode gerar punição."
-
-        embed = discord.Embed(
-            title=f"🏠 Central de Atendimento — {NOME_SERVIDOR}",
-            description=descricao,
-            color=0x2B2D31,
-        )
+        embed = discord.Embed(description=PAINEL_DESCRICAO, color=0x2B2D31)
         if banner_valido(BANNER_PRINCIPAL):
             embed.set_image(url=BANNER_PRINCIPAL)
-        embed.set_footer(text=f"{NOME_SERVIDOR} • Atendimento")
 
         try:
             await ctx.message.delete()
