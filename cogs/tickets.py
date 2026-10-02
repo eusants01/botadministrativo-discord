@@ -18,13 +18,15 @@ FUSO = ZoneInfo("America/Sao_Paulo")
 
 # IDs dos cargos que podem usar os comandos administrativos e atender tickets
 CARGOS_STAFF = [
-    000000000000000000,  # Ex: Dono
-    000000000000000000,  # Ex: Administrador
-    000000000000000000,  # Ex: Moderador
+    1553944794957615175, 
+    1553923854877990945, 
+    1553832097255260260, 
+    1553832097905377422,
+    1553832098404499516
 ]
 
 # Canal onde os logs (transcripts) de todos os tickets serão enviados
-CANAL_LOGS_ID = 000000000000000000
+CANAL_LOGS_ID = 1555446279033589770
 
 # Máximo de tickets abertos ao mesmo tempo por usuário
 MAX_TICKETS_POR_USUARIO = 1
@@ -38,11 +40,6 @@ ARQUIVO_CONTADOR = "tickets_contador.json"
 # Banner do painel principal (onde o usuário escolhe a categoria)
 BANNER_PRINCIPAL = "https://i.imgur.com/link_do_banner_principal.jpg"
 
-# ── Categorias ──────────────────────────────────────────────────
-# Para cada categoria você define: banner, mensagem de boas-vindas, cor,
-# emoji, cargos que serão marcados e (opcional) a categoria do Discord
-# onde o canal será criado.
-# Na "mensagem" você pode usar {usuario} para mencionar quem abriu.
 CATEGORIAS = {
     "suporte": {
         "nome": "Suporte",
