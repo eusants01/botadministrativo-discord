@@ -15,36 +15,29 @@ from discord.ext import commands, tasks
 NOME_SERVIDOR = "Família Sant's"
 FUSO = ZoneInfo("America/Sao_Paulo")
 
+COR_AZUL = 0x1A3C8C  
+
 CARGOS_STAFF = [
-    1553944794957615175,
-    1553923854877990945,
-    1553832097255260260,
-    1553832097905377422,
     1553832098404499516,
+    1553832097905377422,
+
 ]
 
-# Cargos que serão marcados (@) em TODO ticket novo. Pode deixar vazio: [].
-CARGOS_NOTIFICAR = [1554367619463913582]
+CARGOS_NOTIFICAR = [1553832098404499516]
 
-# ID da CATEGORIA do Discord onde TODOS os tickets serão criados.
-# (Se deixar 0, o ticket é criado na mesma categoria do canal do painel.)
+
 CATEGORIA_TICKETS_ID = 1555449984453972009
 
-# Canal onde ficam os logs (abertura, fechamento, ações da staff)
 CANAL_LOGS_ID = 1555446279033589770
 
-# Canal das avaliações (None = usa o canal de logs)
 CANAL_AVALIACOES_ID = 1555453132387913728
 
-# ── 2) Comportamento ────────────────────────────────────────────
-
-MAX_TICKETS_POR_USUARIO = 1          
-TEMPO_PARA_APAGAR = 3              
-COOLDOWN_CHAMAR_EQUIPE = 100        
+MAX_TICKETS_POR_USUARIO = 1
+TEMPO_PARA_APAGAR = 3
+COOLDOWN_CHAMAR_EQUIPE = 100
 ALERTA_SEM_ATENDENTE_MINUTOS = 5
 
-# Inatividade: avisa após X horas sem mensagens e fecha Y horas depois do
-# aviso se continuar parado (0 = desligado)
+
 INATIVIDADE_AVISO_HORAS = 24
 INATIVIDADE_FECHAR_APOS_AVISO_HORAS = 12
 
@@ -55,7 +48,7 @@ BANNER_PRINCIPAL = "https://cdn.discordapp.com/attachments/961677475191078992/15
 # Texto do painel principal (!painelticket). Pode editar à vontade —
 # aceita a formatação do Discord (negrito, `código`, > citação).
 PAINEL_DESCRICAO = """\
-**Central de Atendimento**
+# <a:sino:1555469607341654047> **Central de Atendimento**
 Escolha no menu abaixo uma categoria que deseja receber o suporte necessário.
 
 **Escolha a sua Categoria**
@@ -94,7 +87,7 @@ CATEGORIAS = {
         "nome": "Suporte",
         "emoji": "🛠️",
         "descricao": "Dúvidas e ajuda em geral",
-        "cor": 0x3498DB,
+        "cor": COR_AZUL,
         "banner": "https://i.imgur.com/link_do_banner_suporte.jpg",
         "mensagem": """Olá, {usuario}! 👋
 Seja bem-vindo ao **Suporte da Família Sant's**.
@@ -119,7 +112,7 @@ Seja bem-vindo ao **Suporte da Família Sant's**.
         "nome": "Denúncia",
         "emoji": "☎️",
         "descricao": "Reportar jogadores ou comportamentos",
-        "cor": 0xE74C3C,
+        "cor": COR_AZUL,
         "banner": "https://i.imgur.com/link_do_banner_denuncia.jpg",
         "mensagem": """Olá, {usuario}.
 Sua denúncia será tratada com **sigilo e seriedade**.
@@ -159,7 +152,7 @@ Sua denúncia será tratada com **sigilo e seriedade**.
         "nome": "Parcerias",
         "emoji": "💼",
         "descricao": "Assuntos sobre parcerias",
-        "cor": 0x2ECC71,
+        "cor": COR_AZUL,
         "banner": "https://i.imgur.com/link_do_banner_parceria.jpg",
         "mensagem": """Olá, {usuario}! 🤝
 Que bom ter interesse em uma parceria com a **Família Sant's**.
@@ -202,7 +195,7 @@ Que bom ter interesse em uma parceria com a **Família Sant's**.
         "nome": "Solicitar Cargos",
         "emoji": "🎖️",
         "descricao": "Solicite um cargo",
-        "cor": 0xF1C40F,
+        "cor": COR_AZUL,
         "banner": "https://i.imgur.com/link_do_banner_cargos.jpg",
         "mensagem": """Olá, {usuario}! 🎖️
 Recebemos o seu pedido de cargo.
@@ -436,7 +429,7 @@ async def buscar_membro(bot, guild: discord.Guild, user_id: int):
         return None
 
 
-async def registrar(guild: discord.Guild, titulo: str, descricao: str, cor=0x5865F2):
+async def registrar(guild: discord.Guild, titulo: str, descricao: str, cor=COR_AZUL):
     """Envia um log para o canal de logs."""
     canal = guild.get_channel(CANAL_LOGS_ID) if CANAL_LOGS_ID else None
     if not canal:
@@ -454,7 +447,7 @@ async def registrar(guild: discord.Guild, titulo: str, descricao: str, cor=0x586
         pass
 
 
-async def aviso_no_ticket(canal: discord.TextChannel, texto: str, cor=0x5865F2):
+async def aviso_no_ticket(canal: discord.TextChannel, texto: str, cor=COR_AZUL):
     try:
         await canal.send(embed=discord.Embed(description=texto, color=cor))
     except discord.HTTPException:
@@ -509,7 +502,7 @@ def montar_card(guild: discord.Guild, canal, t: dict) -> discord.Embed:
 
     embed = discord.Embed(
         description="\n\n".join(partes)[:4096],
-        color=cat.get("cor", 0x5865F2),
+        color=cat.get("cor", COR_AZUL),
         timestamp=canal.created_at,
     )
     if banner_valido(cat.get("banner")):
@@ -629,7 +622,7 @@ async def fechar_ticket(
         def base_embed() -> discord.Embed:
             e = discord.Embed(
                 title=f"📑 Ticket #{numero:04d} Fechado",
-                color=cat.get("cor", 0x95A5A6),
+                color=cat.get("cor", COR_AZUL),
                 timestamp=datetime.now(FUSO),
             )
             e.add_field(name="Ticket", value=f"`{canal.name}`", inline=True)
@@ -650,41 +643,10 @@ async def fechar_ticket(
             e.set_footer(text=NOME_SERVIDOR)
             return e
 
-        # Log completo para a staff (com prioridade e notas internas)
-        embed_staff = base_embed()
-        embed_staff.insert_field_at(
-            5, name="Prioridade", value=f"{p_emoji} {p_nome}", inline=True
-        )
-        embed_staff.add_field(name="Mensagens", value=str(total_msgs), inline=True)
-        notas = t.get("notas", [])
-        if notas:
-            texto_notas = "\n".join(f"• **{n['autor']}**: {n['texto']}" for n in notas)
-            embed_staff.add_field(
-                name="📝 Notas internas", value=texto_notas[:1024], inline=False
-            )
-
-        canal_logs = guild.get_channel(CANAL_LOGS_ID) if CANAL_LOGS_ID else None
-        if canal_logs:
-            try:
-                await canal_logs.send(
-                    embed=embed_staff,
-                    file=discord.File(io.BytesIO(dados), filename=nome_arquivo),
-                )
-            except discord.HTTPException:
-                pass
-
-        # DM para quem abriu: logs (sem notas internas) + avaliação
+        # DM para quem abriu: UMA mensagem (resumo + logs + avaliação)
         dm_ok = False
         if dono:
             try:
-                await dono.send(
-                    content=f"📑 Aqui estão os logs do seu ticket em "
-                    f"**{NOME_SERVIDOR}**:",
-                    embed=base_embed(),
-                    file=discord.File(io.BytesIO(dados), filename=nome_arquivo),
-                )
-                dm_ok = True
-
                 staff_membro = guild.get_member(staff_id) if staff_id else None
                 atendente = (
                     f" com **{staff_membro.display_name}**"
@@ -708,15 +670,42 @@ async def fechar_ticket(
                     view.add_item(
                         BotaoNota(n, guild.id, numero, staff_id, cat_key or "x")
                     )
-                await dono.send(embed=embed_av, view=view)
+                await dono.send(
+                    content=f"📑 Aqui estão os logs do seu ticket em "
+                    f"**{NOME_SERVIDOR}**:",
+                    embeds=[base_embed(), embed_av],
+                    file=discord.File(io.BytesIO(dados), filename=nome_arquivo),
+                    view=view,
+                )
+                dm_ok = True
             except (discord.Forbidden, discord.HTTPException):
                 pass
 
-        if canal_logs and dono and not dm_ok:
+        # Log completo para a staff: UMA mensagem (embed + arquivo)
+        embed_staff = base_embed()
+        embed_staff.insert_field_at(
+            5, name="Prioridade", value=f"{p_emoji} {p_nome}", inline=True
+        )
+        embed_staff.add_field(name="Mensagens", value=str(total_msgs), inline=True)
+        notas = t.get("notas", [])
+        if notas:
+            texto_notas = "\n".join(f"• **{n['autor']}**: {n['texto']}" for n in notas)
+            embed_staff.add_field(
+                name="📝 Notas internas", value=texto_notas[:1024], inline=False
+            )
+        if dono and not dm_ok:
+            embed_staff.add_field(
+                name="⚠️ DM",
+                value="Não foi possível enviar logs/avaliação (DMs fechadas).",
+                inline=False,
+            )
+
+        canal_logs = guild.get_channel(CANAL_LOGS_ID) if CANAL_LOGS_ID else None
+        if canal_logs:
             try:
                 await canal_logs.send(
-                    f"⚠️ Não foi possível enviar a DM (logs/avaliação) para "
-                    f"{dono.mention} — DMs fechadas."
+                    embed=embed_staff,
+                    file=discord.File(io.BytesIO(dados), filename=nome_arquivo),
                 )
             except discord.HTTPException:
                 pass
@@ -965,13 +954,7 @@ async def criar_ticket(
         allowed_mentions=discord.AllowedMentions(users=True, roles=True),
     )
     salvar_estado(canal.id, card_id=card.id)
-
-    await registrar(
-        guild,
-        "📩 Ticket Aberto",
-        f"{user.mention} abriu {canal.mention}\n**Categoria:** {cat['nome']}",
-        cat["cor"],
-    )
+    # (Sem log de abertura no canal de logs: só uma mensagem, ao fechar.)
 
 
 class PerguntasModal(discord.ui.Modal):
@@ -1215,7 +1198,7 @@ def embed_info_painel(canal, t: dict) -> discord.Embed:
             f"**Status:** {'🔒 Trancado' if t.get('locked') else '🟢 Aberto'}\n"
             f"**Notas internas:** {len(t.get('notas', []))}"
         ),
-        color=0x5865F2,
+        color=COR_AZUL,
     )
     e.set_footer(text="Use as opções abaixo para gerenciar este ticket.")
     return e
@@ -1275,7 +1258,7 @@ class AvisoDMModal(discord.ui.Modal, title="Avisar usuário por DM"):
         embed = discord.Embed(
             title=f"📨 Aviso da equipe — {NOME_SERVIDOR}",
             description=f"{self.mensagem}\n\n➡️ Acesse seu ticket: {self.canal.mention}",
-            color=0x5865F2,
+            color=COR_AZUL,
             timestamp=datetime.now(FUSO),
         )
         embed.set_footer(text=f"Enviado por {interaction.user.display_name}")
@@ -1615,7 +1598,7 @@ def embed_estatisticas(guild: discord.Guild) -> discord.Embed:
         for k, c in CATEGORIAS.items()
     )
 
-    embed = discord.Embed(title=f"📊 Estatísticas — {NOME_SERVIDOR}", color=0x5865F2)
+    embed = discord.Embed(title=f"📊 Estatísticas — {NOME_SERVIDOR}", color=COR_AZUL)
     embed.add_field(name="🎫 Criados (total)", value=str(contador), inline=True)
     embed.add_field(name="🟢 Abertos agora", value=str(len(abertos)), inline=True)
     embed.add_field(name="✅ Fechados (total)", value=str(len(historico)), inline=True)
@@ -1640,7 +1623,7 @@ def embed_lista_tickets(guild: discord.Guild) -> discord.Embed:
     abertos = listar_tickets(guild)
     ordem = {k: i for i, k in enumerate(reversed(list(PRIORIDADES)))}
     abertos.sort(key=lambda x: (ordem.get(x[1].get("prio", "normal"), 9), x[0].created_at))
-    embed = discord.Embed(title="📋 Tickets Abertos", color=0x5865F2)
+    embed = discord.Embed(title="📋 Tickets Abertos", color=COR_AZUL)
     if not abertos:
         embed.description = "✨ Nenhum ticket aberto no momento."
         return embed
@@ -1660,7 +1643,7 @@ def embed_lista_tickets(guild: discord.Guild) -> discord.Embed:
 
 
 def embed_config(guild: discord.Guild, bot: commands.Bot) -> discord.Embed:
-    embed = discord.Embed(title="⚙️ Verificação da Configuração", color=0x5865F2)
+    embed = discord.Embed(title="⚙️ Verificação da Configuração", color=COR_AZUL)
 
     # Categoria dos tickets
     if not CATEGORIA_TICKETS_ID:
@@ -1921,7 +1904,7 @@ class TicketsCog(commands.Cog):
     @apenas_staff()
     async def painelticket(self, ctx: commands.Context):
         """Cria o painel público de tickets no canal atual."""
-        embed = discord.Embed(description=PAINEL_DESCRICAO, color=0x2B2D31)
+        embed = discord.Embed(description=PAINEL_DESCRICAO, color=COR_AZUL)
         if banner_valido(BANNER_PRINCIPAL):
             embed.set_image(url=BANNER_PRINCIPAL)
 
@@ -1946,7 +1929,7 @@ class TicketsCog(commands.Cog):
                 "*Dentro de cada ticket, use o botão* **🛠️ Painel Staff** *para "
                 "prioridade, transferir, trancar, adicionar membros e mais.*"
             ),
-            color=0x5865F2,
+            color=COR_AZUL,
         )
         try:
             await ctx.message.delete()
@@ -1978,7 +1961,7 @@ class TicketsCog(commands.Cog):
                 f"`{p}fechar [motivo]` • `{p}adicionar @membro` • "
                 f"`{p}remover @membro` • `{p}renomear nome`"
             ),
-            color=0x5865F2,
+            color=COR_AZUL,
         )
         await ctx.send(embed=embed)
 
