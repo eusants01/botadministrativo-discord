@@ -1,6 +1,7 @@
 import discord
 import os
-from discord.ext import commands
+import asyncio
+from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -10,17 +11,37 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
+# Lista de status rotativos
+status_list = [
+    "Protegendo a Família Sant's",
+    "Roblox no ALPHA",
+    "Desenvolvido por Sant's",
+    "Bot Administrativo da Família Sant's",
+    "Monitorizar o Servidor"
+]
+
+@tasks.loop(seconds=5)
+async def mudar_status():
+    
+    await bot.change_presence(activity=discord.Game(name=status_list[mudar_status.current_loop % len(status_list)]))
+
 @bot.event
 async def on_ready():
-    print(f'✅ O bot {bot.user} está online com a nova estrutura!')
+    mudar_status.start()
+    print(f'✅ O bot {bot.user} está online!')
 
-@bot.command()
-async def ping(ctx):
-    await ctx.send('Pong! 🏓 A nova estrutura está a funcionar perfeitamente!')
+# Função para carregar os ficheiros da pasta 'cogs'
+async def setup_hook():
+    if not os.path.exists('./cogs'):
+        os.makedirs('./cogs')
+    for filename in os.listdir('./cogs'):
+        if filename.endswith('.py'):
+            await bot.load_extension(f'cogs.{filename[:-3]}')
 
-# Executa o bot usando a token escondida
+bot.setup_hook = setup_hook
+
 TOKEN = os.getenv('DISCORD_TOKEN')
 if TOKEN:
     bot.run(TOKEN)
 else:
-    print("ERRO: Token não encontrada. Verifique o ficheiro .env")
+    print("ERRO: Token não encontrada.")
