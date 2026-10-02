@@ -61,7 +61,7 @@ INATIVIDADE_FECHAR_APOS_AVISO_HORAS = 12
 
 # ── 3) Visual ───────────────────────────────────────────────────
 
-BANNER_PRINCIPAL = "https://i.imgur.com/link_do_banner_principal.jpg"
+BANNER_PRINCIPAL = "https://cdn.discordapp.com/attachments/961677475191078992/1555452137499271249/content.png?backend=b2&ex=6ac09330&is=6abf41b0&hm=69fd6e5a44be95e298fc5f9c2cad885291bec77f1a1919a0343f275f2820c8cd&"
 
 # Texto do painel principal (!painelticket). Pode editar à vontade —
 # aceita a formatação do Discord (negrito, `código`, > citação).
