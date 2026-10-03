@@ -18,32 +18,31 @@ from discord.ext import commands, tasks
 
 NOME_SERVIDOR = "Família Sant's"
 FUSO = ZoneInfo("America/Sao_Paulo")
-COR_AZUL = 0x1A3C8C  # azul escuro (mesmo do sistema de tickets)
+COR_AZUL = 0x1A3C8C  
 
-# Quem pode usar o painel/comandos: Administrador OU algum destes cargos.
 CARGOS_STAFF = [
     1553832098404499516,
     1553832097905377422,
 ]
 
-# Canal onde os sorteios registram logs (criado, encerrado, cancelado, reroll).
-# 0 = não envia logs.
-CANAL_LOGS_SORTEIOS_ID = 0
+CANAL_LOGS_SORTEIOS_ID = 1555798364837257236
 
-# Banner do painel de sorteios (opcional). Deixe "" para não usar.
-BANNER_PAINEL = ""
+CANAL_SORTEIOS_ID = 1553829712621740103
 
-# Texto que aparece no anúncio dos vencedores.
-TEXTO_RESGATE = "Abra um ticket na categoria **Suporte** para resgatar o seu prêmio."
+CARGO_PING_SORTEIOS_ID = 1555798698410377246
 
-# Avisar os vencedores por DM?
+BANNER_SORTEIO = "https://i.imgur.com/hFyX7CT.png"
+
+BANNER_PAINEL = "https://i.imgur.com/ZRZNu33.png"
+
+TEXTO_RESGATE = "Abra um ticket em <#1553843978229522633> para resgatar o seu prêmio."
+
 AVISAR_GANHADORES_DM = True
 
-MAX_VENCEDORES = 20
-DURACAO_MIN = 60              # 1 minuto
-DURACAO_MAX = 60 * 86400      # 60 dias
+MAX_VENCEDORES = 10
+DURACAO_MIN = 60              
+DURACAO_MAX = 60 * 86400     
 
-# Temas visuais (cor da barra lateral + emoji do título)
 TEMAS = {
     "azul": {"nome": "Azul Real", "emoji": "💎", "cor": COR_AZUL},
     "ouro": {"nome": "Ouro", "emoji": "👑", "cor": 0xF1C40F},
@@ -53,7 +52,6 @@ TEMAS = {
     "galaxia": {"nome": "Galáxia", "emoji": "🌌", "cor": 0x6C3FC5},
 }
 
-PINGS = ["Sem ping", "@here", "@everyone"]
 BONUS_OPCOES = [2, 3, 5]
 DIAS_OPCOES = [
     (0, "Sem exigência"),
@@ -184,21 +182,43 @@ def banner_valido(url) -> bool:
     return bool(url) and str(url).startswith("http")
 
 
+def destino_sorteios(guild: discord.Guild, fallback_id: int | None = None):
+    """Canal onde o sorteio será publicado (canal fixo; senão, o canal atual)."""
+    for cid in (CANAL_SORTEIOS_ID, fallback_id):
+        if cid:
+            c = guild.get_channel(cid)
+            if isinstance(c, discord.TextChannel):
+                return c
+    return None
+
+
+def opcoes_ping(guild: discord.Guild) -> list[tuple[str, str | None]]:
+    """[(rótulo do botão, texto enviado junto da mensagem)]"""
+    opcoes: list[tuple[str, str | None]] = [("Sem ping", None)]
+    if CARGO_PING_SORTEIOS_ID:
+        cargo = guild.get_role(CARGO_PING_SORTEIOS_ID)
+        if cargo:
+            opcoes.append((f"@{cargo.name}"[:30], cargo.mention))
+    opcoes += [("@here", "@here"), ("@everyone", "@everyone")]
+    return opcoes
+
+
 def link_sorteio(g: dict) -> str:
     return f"https://discord.com/channels/{g['guild']}/{g['canal']}/{g['mensagem']}"
 
 
 def texto_requisitos(g: dict) -> list[str]:
+    """Só lista o que realmente existe (sem requisitos = lista vazia)."""
     linhas = []
     if g.get("cargo_exigido"):
-        linhas.append(f"> `🎖️` Ter o cargo <@&{g['cargo_exigido']}>")
+        linhas.append(f"🎖️ Cargo <@&{g['cargo_exigido']}>")
     if g.get("dias_min"):
-        linhas.append(f"> `📅` Estar há **{g['dias_min']}+ dias** no servidor")
+        linhas.append(f"📅 {g['dias_min']}+ dias no servidor")
     if g.get("cargo_bonus"):
         linhas.append(
-            f"> `✨` <@&{g['cargo_bonus']}> vale **x{g.get('bonus_mult', 2)}** entradas"
+            f"✨ <@&{g['cargo_bonus']}> vale **x{g.get('bonus_mult', 2)}** entradas"
         )
-    return linhas or ["> `✅` Nenhum — é só clicar em **Participar**!"]
+    return linhas
 
 
 def checar_requisitos(membro: discord.Member, g: dict) -> str | None:
@@ -244,50 +264,52 @@ def montar_embed(g: dict, *, preview: bool = False) -> discord.Embed:
     tema = TEMAS.get(g.get("tema", "azul"), TEMAS["azul"])
     status = g.get("status", "ativo")
     n_part = len(g.get("participantes", {}))
-
-    cabecalho = f"**{tema['emoji']} SORTEIO • {g['premio']}**"
     desc = (g.get("descricao") or "").strip()
-    partes = [cabecalho + (f"\n{desc}" if desc else "")]
 
-    if status == "ativo":
-        fim = int(g["fim_ts"])
-        partes.append(
-            "**Informações**\n"
-            f"> `⏳` Termina <t:{fim}:R> (<t:{fim}:f>)\n"
-            f"> `🏆` Vencedores: **{g['vencedores']}**\n"
-            f"> `👥` Participantes: **{n_part}**\n"
-            f"> `🙋` Patrocinado por <@{g['host']}>"
+    if status == "cancelado":
+        embed = discord.Embed(
+            description=f"## 🚫 {g['premio']}\nEste sorteio foi cancelado pela equipe.",
+            color=0x95A5A6,
         )
-        partes.append("**Requisitos**\n" + "\n".join(texto_requisitos(g)))
-        partes.append(
-            "*Pré-visualização — assim o sorteio vai aparecer.*"
-            if preview
-            else "*Clique em* **🎉 Participar** *para entrar!*"
-        )
-        cor = tema["cor"]
-    elif status == "encerrado":
-        ganh = g.get("ganhadores", [])
-        txt = ", ".join(f"<@{u}>" for u in ganh) if ganh else "Ninguém participou 😕"
-        partes.append(
-            "**Resultado**\n"
-            f"> `🏆` Vencedor(es): {txt}\n"
-            f"> `👥` Participantes: **{n_part}**\n"
-            f"> `⏱️` Encerrado <t:{int(g.get('encerrado_ts', g['fim_ts']))}:R>\n"
-            f"> `🙋` Patrocinado por <@{g['host']}>"
-        )
-        cor = tema["cor"]
     else:
-        partes.append(
-            "**Sorteio cancelado** 🚫\n> `ℹ️` Este sorteio foi cancelado pela equipe."
+        topo = f"## {tema['emoji']} {g['premio']}"
+        embed = discord.Embed(
+            description=topo + (f"\n{desc}" if desc else ""),
+            color=tema["cor"],
         )
-        cor = 0x95A5A6
+        if status == "ativo":
+            embed.add_field(
+                name="⏳ Termina", value=f"<t:{int(g['fim_ts'])}:R>", inline=True
+            )
+            embed.add_field(
+                name="🏆 Vencedores", value=f"**{g['vencedores']}**", inline=True
+            )
+            embed.add_field(name="👥 Participantes", value=f"**{n_part}**", inline=True)
+            reqs = texto_requisitos(g)
+            if reqs:
+                embed.add_field(
+                    name="📋 Requisitos", value="\n".join(reqs), inline=False
+                )
+        else:
+            ganh = g.get("ganhadores", [])
+            txt = ", ".join(f"<@{u}>" for u in ganh) if ganh else "Ninguém participou 😕"
+            embed.add_field(name="🏆 Vencedor(es)", value=txt[:1024], inline=False)
+            embed.add_field(name="👥 Participantes", value=f"**{n_part}**", inline=True)
+            embed.add_field(
+                name="⏱️ Encerrado",
+                value=f"<t:{int(g.get('encerrado_ts', g['fim_ts']))}:R>",
+                inline=True,
+            )
 
-    embed = discord.Embed(description="\n\n".join(partes)[:4096], color=cor)
-    if banner_valido(g.get("banner")):
-        embed.set_image(url=g["banner"])
-    rodape = f"{NOME_SERVIDOR} • Tema {tema['nome']}"
-    if g.get("mensagem"):
-        rodape += f" • ID {g['mensagem']}"
+    banner = g.get("banner") or BANNER_SORTEIO
+    if banner_valido(banner):
+        embed.set_image(url=banner)
+
+    rodape = NOME_SERVIDOR
+    if g.get("host_nome"):
+        rodape += f" • Patrocinado por {g['host_nome']}"
+    if preview:
+        rodape = "Pré-visualização • " + rodape
     embed.set_footer(text=rodape)
     return embed
 
@@ -309,7 +331,7 @@ def info_embed(g: dict) -> discord.Embed:
         linhas.append(f"**Termina:** <t:{int(g['fim_ts'])}:R>")
     if ganh:
         linhas.append("**Ganhadores:** " + ", ".join(f"<@{u}>" for u in ganh))
-    linhas.append("\n**Requisitos**\n" + "\n".join(texto_requisitos(g)))
+    linhas.append("\n**Requisitos**\n" + ("\n".join(texto_requisitos(g)) or "Nenhum"))
     e = discord.Embed(
         title="🛠️ Gerenciar Sorteio",
         description="\n".join(linhas)[:4096],
@@ -387,17 +409,14 @@ async def anunciar(
     if canal is None:
         return
     tema = TEMAS.get(g.get("tema", "azul"), TEMAS["azul"])
-    n_part = len(g.get("participantes", {}))
-
     if ganhadores:
         mencoes = ", ".join(f"<@{u}>" for u in ganhadores)
         titulo = "🔁 Novo(s) vencedor(es)!" if reroll else "🎊 Sorteio finalizado!"
         embed = discord.Embed(
             description=(
-                f"**{titulo}**\n"
-                f"> `🎁` Prêmio: **{g['premio']}**\n"
-                f"> `🏆` Vencedor(es): {mencoes}\n"
-                f"> `👥` Participantes: **{n_part}**\n\n"
+                f"## {titulo}\n"
+                f"**Prêmio:** {g['premio']}\n"
+                f"**Vencedor(es):** {mencoes}\n\n"
                 f"{TEXTO_RESGATE}"
             ),
             color=tema["cor"],
@@ -406,9 +425,9 @@ async def anunciar(
     else:
         embed = discord.Embed(
             description=(
-                "**😕 Sorteio finalizado sem vencedores**\n"
-                f"> `🎁` Prêmio: **{g['premio']}**\n"
-                "> `ℹ️` Não havia participantes elegíveis."
+                "## 😕 Sorteio sem vencedores\n"
+                f"**Prêmio:** {g['premio']}\n"
+                "Não havia participantes elegíveis."
             ),
             color=0x95A5A6,
         )
@@ -467,19 +486,21 @@ async def publicar(
         guild=guild.id,
         canal=canal.id,
         host=autor.id,
+        host_nome=autor.display_name,
         status="ativo",
         participantes={},
         ganhadores=[],
         criado_ts=int(time.time()),
         fim_ts=int(time.time()) + int(base["duracao_seg"]),
     )
+    opcoes = opcoes_ping(guild)
     ping = int(base.get("ping", 0))
-    content = {1: "@here", 2: "@everyone"}.get(ping)
+    content = opcoes[ping][1] if 0 <= ping < len(opcoes) else None
     msg = await canal.send(
         content=content,
         embed=montar_embed(g),
         view=SorteioView(),
-        allowed_mentions=discord.AllowedMentions(everyone=True),
+        allowed_mentions=discord.AllowedMentions(everyone=True, roles=True),
     )
     g["mensagem"] = msg.id
     salvar(g)
@@ -708,11 +729,11 @@ class SorteioView(discord.ui.View):
 class CriarView(discord.ui.View):
     """Tela de opções com pré-visualização ao vivo."""
 
-    def __init__(self, bot, autor: discord.Member, canal_id: int | None, dados: dict):
+    def __init__(self, bot, autor: discord.Member, fallback_id: int | None, dados: dict):
         super().__init__(timeout=900)
         self.bot = bot
         self.autor = autor
-        self.canal_id = canal_id
+        self.fallback_id = fallback_id
         self.dados = dados
         self.cargo_exigido: int | None = None
         self.cargo_bonus: int | None = None
@@ -747,14 +768,17 @@ class CriarView(discord.ui.View):
         g.update(
             status="ativo",
             host=self.autor.id,
+            host_nome=self.autor.display_name,
             participantes={},
             fim_ts=int(time.time()) + int(g["duracao_seg"]),
         )
         return montar_embed(g, preview=True)
 
     def _atualizar_botoes(self):
+        opcoes = opcoes_ping(self.autor.guild)
+        self.ping %= len(opcoes)
         self.btn_tema.label = f"Tema: {TEMAS[self.tema]['nome']}"
-        self.btn_ping.label = PINGS[self.ping]
+        self.btn_ping.label = opcoes[self.ping][0]
         self.btn_bonus.label = f"Bônus: x{self.bonus_mult}"
         self.btn_bonus.disabled = self.cargo_bonus is None
 
@@ -765,53 +789,42 @@ class CriarView(discord.ui.View):
         )
 
     def _texto_topo(self) -> str:
-        canal = f"<#{self.canal_id}>" if self.canal_id else "**escolha um canal**"
+        canal = destino_sorteios(self.autor.guild, self.fallback_id)
+        destino = canal.mention if canal else "**canal não configurado**"
         return (
             "🧪 **Pré-visualização** — ajuste as opções e clique em **Publicar**.\n"
-            f"📢 Canal: {canal} • ⏱️ Duração: **{formatar_duracao(self.dados['duracao_seg'])}**"
+            f"📢 Será publicado em {destino} • "
+            f"⏱️ Duração: **{formatar_duracao(self.dados['duracao_seg'])}**"
         )
 
-    # ── Linha 0: canal ──
-    @discord.ui.select(
-        cls=discord.ui.ChannelSelect,
-        channel_types=[discord.ChannelType.text, discord.ChannelType.news],
-        placeholder="📢 Canal do sorteio (padrão: este canal)",
-        min_values=1,
-        max_values=1,
-        row=0,
-    )
-    async def sel_canal(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect):
-        self.canal_id = select.values[0].id
-        await self._refresh(interaction)
-
-    # ── Linha 1: cargo obrigatório ──
+    # ── Linha 0: cargo obrigatório ──
     @discord.ui.select(
         cls=discord.ui.RoleSelect,
         placeholder="🎖️ Cargo obrigatório (opcional)",
         min_values=0,
         max_values=1,
-        row=1,
+        row=0,
     )
     async def sel_cargo(self, interaction: discord.Interaction, select: discord.ui.RoleSelect):
         self.cargo_exigido = select.values[0].id if select.values else None
         await self._refresh(interaction)
 
-    # ── Linha 2: cargo com bônus ──
+    # ── Linha 1: cargo com bônus ──
     @discord.ui.select(
         cls=discord.ui.RoleSelect,
         placeholder="✨ Cargo com bônus de entradas (opcional)",
         min_values=0,
         max_values=1,
-        row=2,
+        row=1,
     )
     async def sel_bonus(self, interaction: discord.Interaction, select: discord.ui.RoleSelect):
         self.cargo_bonus = select.values[0].id if select.values else None
         await self._refresh(interaction)
 
-    # ── Linha 3: tempo mínimo no servidor ──
+    # ── Linha 2: tempo mínimo no servidor ──
     @discord.ui.select(
         placeholder="📅 Tempo mínimo no servidor",
-        row=3,
+        row=2,
         options=[
             discord.SelectOption(label=nome, value=str(dias), emoji="📅")
             for dias, nome in DIAS_OPCOES
@@ -821,30 +834,32 @@ class CriarView(discord.ui.View):
         self.dias_min = int(select.values[0])
         await self._refresh(interaction)
 
-    # ── Linha 4: botões ──
-    @discord.ui.button(label="Tema", emoji="🎨", style=discord.ButtonStyle.secondary, row=4)
+    # ── Linha 3: botões ──
+    @discord.ui.button(label="Tema", emoji="🎨", style=discord.ButtonStyle.secondary, row=3)
     async def btn_tema(self, interaction: discord.Interaction, button: discord.ui.Button):
         chaves = list(TEMAS)
         self.tema = chaves[(chaves.index(self.tema) + 1) % len(chaves)]
         await self._refresh(interaction)
 
-    @discord.ui.button(label="Sem ping", emoji="🔔", style=discord.ButtonStyle.secondary, row=4)
+    @discord.ui.button(label="Sem ping", emoji="🔔", style=discord.ButtonStyle.secondary, row=3)
     async def btn_ping(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.ping = (self.ping + 1) % len(PINGS)
+        self.ping = (self.ping + 1) % len(opcoes_ping(self.autor.guild))
         await self._refresh(interaction)
 
-    @discord.ui.button(label="Bônus: x2", emoji="✨", style=discord.ButtonStyle.secondary, row=4)
+    @discord.ui.button(label="Bônus: x2", emoji="✨", style=discord.ButtonStyle.secondary, row=3)
     async def btn_bonus(self, interaction: discord.Interaction, button: discord.ui.Button):
         i = BONUS_OPCOES.index(self.bonus_mult)
         self.bonus_mult = BONUS_OPCOES[(i + 1) % len(BONUS_OPCOES)]
         await self._refresh(interaction)
 
-    @discord.ui.button(label="Publicar", emoji="🚀", style=discord.ButtonStyle.success, row=4)
+    @discord.ui.button(label="Publicar", emoji="🚀", style=discord.ButtonStyle.success, row=3)
     async def btn_publicar(self, interaction: discord.Interaction, button: discord.ui.Button):
-        canal = interaction.guild.get_channel(self.canal_id) if self.canal_id else None
-        if not isinstance(canal, discord.TextChannel):
+        canal = destino_sorteios(interaction.guild, self.fallback_id)
+        if canal is None:
             return await interaction.response.send_message(
-                "❌ Escolha um canal de texto no menu **📢**.", ephemeral=True
+                "❌ Não encontrei o canal de sorteios. "
+                "Configure `CANAL_SORTEIOS_ID` no topo do arquivo.",
+                ephemeral=True,
             )
         perms = canal.permissions_for(interaction.guild.me)
         if not (perms.view_channel and perms.send_messages and perms.embed_links):
@@ -868,7 +883,7 @@ class CriarView(discord.ui.View):
         )
         self.stop()
 
-    @discord.ui.button(label="Cancelar", emoji="✖️", style=discord.ButtonStyle.danger, row=4)
+    @discord.ui.button(label="Cancelar", emoji="✖️", style=discord.ButtonStyle.danger, row=3)
     async def btn_cancelar(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(
             content="❌ Criação cancelada.", embed=None, view=None
@@ -900,8 +915,8 @@ class CriarModal(discord.ui.Modal, title="🎁 Novo Sorteio"):
         max_length=400,
     )
     banner = discord.ui.TextInput(
-        label="Link da imagem/banner (opcional)",
-        placeholder="https://...",
+        label="Banner próprio (opcional)",
+        placeholder="Vazio = usa o banner padrão dos sorteios",
         required=False,
         max_length=400,
     )
@@ -940,9 +955,9 @@ class CriarModal(discord.ui.Modal, title="🎁 Novo Sorteio"):
             "vencedores": qtd,
             "duracao_seg": seg,
         }
-        canal = interaction.channel
-        canal_id = canal.id if isinstance(canal, discord.TextChannel) else None
-        view = CriarView(self.bot, interaction.user, canal_id, dados)
+        atual = interaction.channel
+        fallback = atual.id if isinstance(atual, discord.TextChannel) else None
+        view = CriarView(self.bot, interaction.user, fallback, dados)
         await interaction.response.send_message(
             content=view._texto_topo(),
             embed=view.embed_preview(),
@@ -970,10 +985,20 @@ class RelampagoModal(discord.ui.Modal, title="⚡ Sorteio Relâmpago"):
         self.bot = bot
 
     async def on_submit(self, interaction: discord.Interaction):
-        canal = interaction.channel
-        if not isinstance(canal, discord.TextChannel):
+        atual = interaction.channel
+        fallback = atual.id if isinstance(atual, discord.TextChannel) else None
+        canal = destino_sorteios(interaction.guild, fallback)
+        if canal is None:
             return await interaction.response.send_message(
-                "❌ Use o relâmpago em um canal de texto.", ephemeral=True
+                "❌ Não encontrei o canal de sorteios. "
+                "Configure `CANAL_SORTEIOS_ID` no topo do arquivo.",
+                ephemeral=True,
+            )
+        perms = canal.permissions_for(interaction.guild.me)
+        if not (perms.view_channel and perms.send_messages and perms.embed_links):
+            return await interaction.response.send_message(
+                f"❌ Não tenho permissão para enviar embeds em {canal.mention}.",
+                ephemeral=True,
             )
         seg = parse_duracao(str(self.duracao))
         if seg is None or not (DURACAO_MIN <= seg <= DURACAO_MAX):
@@ -992,7 +1017,7 @@ class RelampagoModal(discord.ui.Modal, title="⚡ Sorteio Relâmpago"):
         await interaction.response.defer(ephemeral=True)
         base = {
             "premio": str(self.premio).strip(),
-            "descricao": "⚡ **Sorteio relâmpago!** Corre que é rapidinho.",
+            "descricao": "",
             "banner": "",
             "vencedores": qtd,
             "duracao_seg": seg,
@@ -1010,7 +1035,7 @@ class RelampagoModal(discord.ui.Modal, title="⚡ Sorteio Relâmpago"):
                 f"❌ Não consegui publicar ({e.text}).", ephemeral=True
             )
         await interaction.followup.send(
-            f"⚡ Relâmpago no ar: {msg.jump_url}", ephemeral=True
+            f"⚡ Relâmpago no ar em {canal.mention}: {msg.jump_url}", ephemeral=True
         )
 
 
@@ -1138,24 +1163,19 @@ class GerenciarSelectView(discord.ui.View):
 # ════════════════════════════════════════════════════════════════
 
 
-def embed_ativos(guild: discord.Guild) -> discord.Embed:
+def linhas_ativos(guild: discord.Guild, limite: int = 5) -> list[str]:
     ativos = [g for g in sorteios_da_guild(guild.id) if g.get("status") == "ativo"]
     ativos.sort(key=lambda g: g["fim_ts"])
-    embed = discord.Embed(title="📋 Sorteios Ativos", color=COR_AZUL)
-    if not ativos:
-        embed.description = "✨ Nenhum sorteio rolando no momento."
-        return embed
     linhas = []
-    for g in ativos[:15]:
+    for g in ativos[:limite]:
         tema = TEMAS.get(g.get("tema", "azul"), TEMAS["azul"])
         linhas.append(
-            f"{tema['emoji']} **{g['premio']}** • [ir]({link_sorteio(g)}) • "
-            f"termina <t:{int(g['fim_ts'])}:R> • 👥 {len(g.get('participantes', {}))}"
+            f"{tema['emoji']} [{g['premio'][:40]}]({link_sorteio(g)}) • "
+            f"<t:{int(g['fim_ts'])}:R> • 👥 {len(g.get('participantes', {}))}"
         )
-    embed.description = "\n".join(linhas)
-    if len(ativos) > 15:
-        embed.set_footer(text=f"+{len(ativos) - 15} sorteio(s) não exibido(s)")
-    return embed
+    if len(ativos) > limite:
+        linhas.append(f"*+{len(ativos) - limite} outro(s)*")
+    return linhas
 
 
 def embed_estatisticas(guild: discord.Guild) -> discord.Embed:
@@ -1184,6 +1204,12 @@ def embed_estatisticas(guild: discord.Guild) -> discord.Embed:
     embed.add_field(name="🏆 Vencedores", value=str(total_ganhadores), inline=True)
     embed.add_field(name="🙋 Pessoas diferentes", value=str(len(unicos)), inline=True)
     embed.add_field(name="👥 Média por sorteio", value=f"{media:.1f}", inline=True)
+    ativos_txt = linhas_ativos(guild)
+    embed.add_field(
+        name="🟢 Rolando agora",
+        value="\n".join(ativos_txt) if ativos_txt else "Nenhum sorteio ativo.",
+        inline=False,
+    )
     if maior and maior.get("participantes"):
         embed.add_field(
             name="🔥 Mais disputado",
@@ -1214,21 +1240,15 @@ class PainelSorteioView(discord.ui.View):
         )
         return False
 
-    @discord.ui.button(label="Criar Sorteio", emoji="➕", style=discord.ButtonStyle.primary, custom_id="sants_sorteio_criar", row=0)
+    @discord.ui.button(label="Criar", emoji="➕", style=discord.ButtonStyle.primary, custom_id="sants_sorteio_criar")
     async def criar(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(CriarModal(interaction.client))
 
-    @discord.ui.button(label="Relâmpago", emoji="⚡", style=discord.ButtonStyle.primary, custom_id="sants_sorteio_rapido", row=0)
+    @discord.ui.button(label="Relâmpago", emoji="⚡", style=discord.ButtonStyle.primary, custom_id="sants_sorteio_rapido")
     async def rapido(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(RelampagoModal(interaction.client))
 
-    @discord.ui.button(label="Ativos", emoji="📋", style=discord.ButtonStyle.secondary, custom_id="sants_sorteio_ativos", row=1)
-    async def ativos(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message(
-            embed=embed_ativos(interaction.guild), ephemeral=True
-        )
-
-    @discord.ui.button(label="Gerenciar", emoji="🛠️", style=discord.ButtonStyle.secondary, custom_id="sants_sorteio_gerenciar", row=1)
+    @discord.ui.button(label="Gerenciar", emoji="🛠️", style=discord.ButtonStyle.secondary, custom_id="sants_sorteio_gerenciar")
     async def gerenciar(self, interaction: discord.Interaction, button: discord.ui.Button):
         lista = sorteios_da_guild(interaction.guild.id)
         if not lista:
@@ -1249,7 +1269,7 @@ class PainelSorteioView(discord.ui.View):
             ephemeral=True,
         )
 
-    @discord.ui.button(label="Estatísticas", emoji="📊", style=discord.ButtonStyle.secondary, custom_id="sants_sorteio_stats", row=1)
+    @discord.ui.button(label="Estatísticas", emoji="📊", style=discord.ButtonStyle.secondary, custom_id="sants_sorteio_stats")
     async def stats(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message(
             embed=embed_estatisticas(interaction.guild), ephemeral=True
@@ -1309,28 +1329,24 @@ class SorteiosCog(commands.Cog):
     @apenas_staff()
     async def painelsorteio(self, ctx: commands.Context):
         """Cria o painel de sorteios (use num canal privado da equipe)."""
+        destino = (
+            f"<#{CANAL_SORTEIOS_ID}>" if CANAL_SORTEIOS_ID else "o canal onde você criar"
+        )
         embed = discord.Embed(
             description=(
-                "**🎁 Central de Sorteios**\n"
-                "Crie e gerencie sorteios do servidor com poucos cliques.\n\n"
-                "**O que você pode fazer**\n"
-                "> `➕` **Criar Sorteio** — completo, com requisitos, bônus e temas.\n"
-                "> `⚡` **Relâmpago** — sorteio rápido no canal atual.\n"
-                "> `📋` **Ativos** — veja o que está rolando agora.\n"
-                "> `🛠️` **Gerenciar** — encerrar, cancelar ou rerolar.\n"
-                "> `📊` **Estatísticas** — números gerais dos sorteios.\n\n"
-                "**Recursos exclusivos**\n"
-                "> `🎖️` Cargo obrigatório e `📅` tempo mínimo no servidor\n"
-                "> `✨` Bônus de entradas por cargo (x2, x3 ou x5)\n"
-                f"> `🎨` {len(TEMAS)} temas visuais e `🔔` ping @here/@everyone\n"
-                "> `🧪` Pré-visualização ao vivo antes de publicar\n"
-                "> `🔁` Reroll justo — nunca repete vencedor\n"
-                "> `🎲` Sorteio ponderado e imparcial"
+                "## 🎁 Central de Sorteios\n"
+                f"Crie e gerencie os sorteios da **{NOME_SERVIDOR}**.\n"
+                f"Eles são publicados em {destino}.\n\n"
+                "> `➕` **Criar** — requisitos, bônus de entradas e temas\n"
+                "> `⚡` **Relâmpago** — sorteio rápido, sem burocracia\n"
+                "> `🛠️` **Gerenciar** — encerrar, cancelar ou rerolar\n"
+                "> `📊` **Estatísticas** — números e sorteios ativos"
             ),
             color=COR_AZUL,
         )
-        if banner_valido(BANNER_PAINEL):
-            embed.set_image(url=BANNER_PAINEL)
+        banner = BANNER_PAINEL or BANNER_SORTEIO
+        if banner_valido(banner):
+            embed.set_image(url=banner)
         embed.set_footer(text=NOME_SERVIDOR)
         try:
             await ctx.message.delete()
@@ -1348,7 +1364,7 @@ class SorteiosCog(commands.Cog):
             description=(
                 f"`{p}painelsorteio` — cria o painel da equipe\n"
                 f"`{p}sorteioajuda` — mostra esta ajuda\n\n"
-                "**Tudo o resto é feito pelo painel:** criar, relâmpago, ativos, "
+                "**Tudo o resto é feito pelo painel:** criar, relâmpago, "
                 "gerenciar (encerrar, cancelar, rerolar) e estatísticas.\n\n"
                 "**Formatos de duração:** `30m` • `2h` • `1d` • `1d12h` • `90` (minutos)"
             ),
@@ -1375,7 +1391,6 @@ class SorteiosCog(commands.Cog):
                     0xE74C3C,
                 )
 
-    # ── Quem sai do servidor perde a participação ───────────────
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
         for g in sorteios_da_guild(member.guild.id):
