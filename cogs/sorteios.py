@@ -61,10 +61,6 @@ DIAS_OPCOES = [
     (30, "30 dias no servidor"),
 ]
 
-# ╔══════════════════════════════════════════════════════════════╗
-# ║              DAQUI PARA BAIXO NÃO PRECISA MEXER              ║
-# ╚══════════════════════════════════════════════════════════════╝
-
 PASTA_DADOS = "dados_sorteios"
 os.makedirs(PASTA_DADOS, exist_ok=True)
 F_SORTEIOS = os.path.join(PASTA_DADOS, "sorteios.json")
