@@ -4,37 +4,47 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Painel · Família Sant's</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-:root{--ink:#04070f;--deep:#0a1530;--panel:#0c1a3a;--line:#1d3a78;--ice:#cfe9ff;--blue:#2f7bff;--mute:#8fa6c9;--red:#ff4d5e;--ok:#5fe0a8;color-scheme:dark}
+:root{--ink:#050b1f;--deep:#0b1a45;--panel:#12296a;--line:#2a4a9a;--ice:#cfe9ff;--blue:#2f7bff;--mute:#9db3da;--red:#ff4d5e;--ok:#5fe0a8;--gold:#ffd166;color-scheme:dark}
 *{box-sizing:border-box}
-body{margin:0;background:var(--ink);color:#e6ebf2;font:16px/1.6 system-ui,Segoe UI,sans-serif;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
-h1,h2{font-family:Georgia,serif;margin:0;color:#fff}
-.w{max-width:960px;margin:0 auto;padding:16px}
-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:18px}
-header small{color:var(--mute);display:block}
-.btn{background:var(--panel);color:var(--ice);border:1px solid var(--line);border-radius:10px;padding:10px 16px;font:600 .95rem inherit;cursor:pointer;min-height:44px;text-decoration:none;display:inline-flex;align-items:center}
-.btn:hover{background:var(--line)}.btn.p{background:var(--blue);border-color:var(--blue);color:#fff}.btn.d{border-color:var(--red);color:var(--red)}
-.tabs{display:flex;gap:6px;margin-bottom:16px;overflow-x:auto}
-.tabs .btn.on{background:var(--blue);color:#fff}
-input,select,textarea{width:100%;background:var(--deep);border:1px solid var(--line);border-radius:10px;color:#fff;padding:12px;font:inherit}
-.card{background:var(--deep);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+body{margin:0;min-height:100vh;color:#e9eef8;font:16px/1.6 Barlow,system-ui,sans-serif;background:radial-gradient(900px 500px at 10% -10%,rgba(47,123,255,.38),transparent 60%),radial-gradient(700px 400px at 100% 0,rgba(130,90,255,.22),transparent 60%),linear-gradient(180deg,#0a1a45,#050b1f);background-attachment:fixed;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+h1,h2,h3{font-family:Cinzel,Georgia,serif;margin:0;color:#fff;line-height:1.2}
+.w{max-width:1000px;margin:0 auto;padding:16px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:linear-gradient(135deg,rgba(47,123,255,.3),rgba(18,41,106,.6));border:1px solid var(--line);border-radius:18px;padding:14px 18px;margin-bottom:18px}
+.hd{display:flex;align-items:center;gap:14px}.hd img{width:52px;height:52px;object-fit:contain}
+header h1{font-size:1.4rem}header small{color:var(--mute);display:block}
+.btn{background:rgba(18,41,106,.8);color:var(--ice);border:1px solid rgba(100,150,255,.45);border-radius:10px;padding:10px 16px;font:600 .95rem Barlow,sans-serif;cursor:pointer;min-height:44px;text-decoration:none;display:inline-flex;align-items:center;white-space:nowrap}
+.btn:hover{background:var(--line)}.btn.p{background:linear-gradient(135deg,#4a8cff,#2f7bff);border-color:var(--blue);color:#fff;box-shadow:0 0 22px rgba(47,123,255,.45)}.btn.d{border-color:var(--red);color:var(--red)}
+.tabs{display:flex;gap:6px;margin-bottom:18px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}.tabs::-webkit-scrollbar{display:none}
+.tabs .btn.on{background:var(--blue);border-color:var(--blue);color:#fff}
+input,select,textarea{width:100%;background:rgba(5,11,31,.7);border:1px solid var(--line);border-radius:10px;color:#fff;padding:12px;font:inherit}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--blue)}
+.card{background:linear-gradient(160deg,rgba(28,60,140,.55),rgba(11,26,69,.8));border:1px solid rgba(100,150,255,.35);border-radius:14px;padding:14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 .card small{color:var(--mute)}.card b{color:#fff}
-.box{background:var(--panel);border:1px solid var(--blue);border-radius:14px;padding:16px;margin:12px 0;display:grid;gap:10px}
-.log{font-size:.92rem;border-left:3px solid var(--blue);padding:6px 12px;margin-bottom:8px;background:var(--deep);border-radius:0 10px 10px 0}
-.log small{color:var(--mute)}
-.login{text-align:center;padding:60px 16px}
-.login p{color:var(--mute);max-width:42ch;margin:12px auto 24px}
+.box{background:rgba(18,41,106,.6);border:1px solid var(--blue);border-radius:16px;padding:18px;margin:12px 0;display:grid;gap:10px}
+.log{font-size:.92rem;border-left:3px solid var(--blue);padding:8px 14px;margin-bottom:8px;background:rgba(11,26,69,.75);border-radius:0 10px 10px 0}.log small{color:var(--mute)}
+.stat{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0}
+.stat div{background:linear-gradient(160deg,rgba(28,60,140,.6),rgba(11,26,69,.85));border:1px solid rgba(100,150,255,.4);border-radius:16px;padding:16px}
+.stat b{display:block;font:900 2rem Cinzel,serif;color:var(--ice);line-height:1.1}.stat span{color:var(--mute);font-size:.9rem}
+.hello h2{font-size:1.6rem}.hello p{color:var(--mute);margin:4px 0 0}
+.st{font-size:1.05rem;margin:22px 0 10px;color:var(--ice)}.quick{display:flex;gap:10px;flex-wrap:wrap}
+.login{text-align:center;padding:60px 16px}.login h1{font-size:2rem;margin-top:10px}.login p{color:var(--mute);max-width:42ch;margin:12px auto 24px}
 #msg{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);padding:10px 20px;border-radius:999px;font-weight:600;display:none;max-width:90vw;z-index:9}
 .hide{display:none!important}
 </style>
 </head>
 <body><div class="w">
-<div id="out" class="login hide"><h1>Painel da Administração</h1><p>Área restrita à equipe administrativa da Família Sant's. Entre com o seu Discord.</p><a class="btn p" href="/login">Entrar com Discord</a></div>
+<div id="out" class="login hide"><img src="/assets/logo.webp" width="150" alt=""><h1>Painel da Administração</h1><p>Área restrita à equipe administrativa da Família Sant's. Entre com o seu Discord.</p><a class="btn p" href="/login">Entrar com Discord</a></div>
 <div id="app" class="hide">
-<header><div><h1>Painel · Família Sant's</h1><small id="who"></small></div><span><a class="btn" href="/">Ver site</a> <a class="btn" href="/logout">Sair</a></span></header>
-<div class="tabs"><button class="btn on" data-t="m">Membros</button><button class="btn" data-t="a" id="tAviso">Aviso</button><button class="btn" data-t="h">Histórico</button><button class="btn hide" data-t="p" id="tPost">Publicar</button><button class="btn hide" data-t="y" id="tHist">História</button></div>
+<header><div class="hd"><img src="/assets/logo.webp" alt=""><div><h1>Painel · Família Sant's</h1><small id="who"></small></div></div><span><a class="btn" href="/">Ver site</a> <a class="btn" href="/logout">Sair</a></span></header>
+<div class="tabs"><button class="btn on" data-t="v">Visão geral</button><button class="btn" data-t="m">Membros</button><button class="btn" data-t="a" id="tAviso">Aviso</button><button class="btn" data-t="h">Histórico</button><button class="btn hide" data-t="p" id="tPost">Publicar</button><button class="btn hide" data-t="y" id="tHist">História</button><button class="btn" data-t="l">Legislação</button></div>
 
-<div id="m"><input id="q" type="search" placeholder="Buscar membro por nome ou usuário" aria-label="Buscar membro">
+<div id="v"><div class="hello"><h2 id="vh"></h2><p>Resumo da Família e atalhos do dia a dia.</p></div>
+<div class="stat"><div><b id="vm">–</b><span>Membros</span></div><div><b id="vs">–</b><span>Na administração</span></div><div><b id="vp">–</b><span>Publicações no site</span></div><div><b id="vr">–</b><span>Sorteios ativos</span></div></div>
+<h3 class="st">Atalhos</h3><div class="quick"><button class="btn p" data-go="p">Nova publicação</button><button class="btn" data-go="m">Membros</button><button class="btn" data-go="a">Aviso</button><a class="btn" href="/" target="_blank">Ver o site</a></div>
+<h3 class="st">Últimas ações</h3><div id="vl"></div></div>
+<div id="m" class="hide"><input id="q" type="search" placeholder="Buscar membro por nome ou usuário" aria-label="Buscar membro">
 <div class="box hide" id="f"><b id="ft"></b>
 <select id="fa"></select><input id="fmin" type="number" min="1" max="40320" value="10" placeholder="Minutos">
 <select id="fc"></select><input id="fmo" placeholder="Motivo (opcional)" maxlength="300">
@@ -51,6 +61,14 @@ input,select,textarea{width:100%;background:var(--deep);border:1px solid var(--l
 <label><input type="checkbox" id="pdc" style="width:auto"> Avisar também no Discord (só ao criar)</label>
 <div><button class="btn p" id="ps">Publicar</button> <button class="btn" id="pc">Limpar</button></div></div><div id="pl"></div></div>
 <div id="y" class="hide"><div class="box"><b>Nossa história</b><small style="color:var(--mute)">Separe os parágrafos com uma linha em branco.</small><textarea id="yt" rows="12" maxlength="8000"></textarea><div><button class="btn p" id="ys">Salvar história</button></div></div></div>
+<div id="l" class="hide">
+<div class="card" style="display:block"><b>Diretor Geral</b><br><small>Decide, aprova projetos e sistemas, nomeia, promove e remove a equipe. Limite: não usa autoridade para benefício pessoal ou perseguição.</small></div>
+<div class="card" style="display:block"><b>Administrador</b><br><small>Gere a equipe, analisa denúncias e acompanha projetos. Limite: mudanças grandes na estrutura precisam do Diretor Geral.</small></div>
+<div class="card" style="display:block"><b>Moderador</b><br><small>Mantém a ordem, aplica punições e encaminha casos graves. Limite: nunca usa permissões por vingança ou benefício próprio.</small></div>
+<div class="card" style="display:block"><b>Estagiário</b><br><small>Aprende e apoia a equipe. Limite: não toma decisões acima da sua autoridade.</small></div>
+<div class="card" style="display:block"><b>Supervisor de Famílias</b><br><small>Função externa do E.B do Alpha: fiscaliza e reporta, sem autoridade administrativa.</small></div>
+<div class="box" style="border-color:var(--red)"><b style="color:var(--red)">Proibido pedir promoção</b><small style="color:var(--mute)">Promoção não se pede: a direção decide. Pedir, insinuar, cobrar, comparar-se ou pressionar leva a advertência, perda de consideração ou remoção.</small></div>
+<div class="box"><b>Princípios</b><small style="color:var(--mute)">Respeito, imparcialidade, responsabilidade, transparência, hierarquia e bom senso. O desconhecimento da legislação não isenta ninguém de responsabilidade.</small></div></div>
 <div id="h" class="hide"></div>
 </div></div>
 <div id="msg" role="status"></div>
@@ -65,7 +83,7 @@ if(ME.acoes.indexOf('aviso')<0)$('#tAviso').classList.add('hide');if(ME.acoes.in
 var ac=ME.acoes.filter(function(a){return NOMES[a]});$('#fa').replaceChildren.apply($('#fa'),ac.map(function(a){var o=el('option',0,NOMES[a]);o.value=a;return o}));
 $('#fc').replaceChildren.apply($('#fc'),ME.cargos.map(function(c){var o=el('option',0,c);o.value=c;return o}));
 if(!ac.length){$('#q').placeholder='Buscar membro (somente leitura no seu cargo)'}
-sync();list()}
+sync();list();overview();if(ME.acoes.indexOf('post')<0)document.querySelector('[data-go="p"]').classList.add('hide');if(ME.acoes.indexOf('aviso')<0)document.querySelector('[data-go="a"]').classList.add('hide')}
 function sync(){var a=$('#fa').value;$('#fmin').classList.toggle('hide',a!='timeout');$('#fc').classList.toggle('hide',a!='cargo_add'&&a!='cargo_remove')}
 $('#fa').onchange=sync;
 async function list(){try{var r=await api('/api/members?q='+encodeURIComponent($('#q').value)),L=$('#list');L.replaceChildren();
@@ -77,9 +95,15 @@ $('#no').onclick=function(){$('#f').classList.add('hide');alvo=null};
 $('#go').onclick=async function(){var a=$('#fa').value;if(!alvo||!confirm(NOMES[a]+' em '+alvo.nome+'?'))return;
 try{var r=await api('/api/action',{acao:a,alvo:alvo.id,minutos:$('#fmin').value,cargo:$('#fc').value,motivo:$('#fmo').value});say(r.ok,1);$('#fmo').value='';$('#f').classList.add('hide');list()}catch(e){say(e.m)}};
 $('#sa').onclick=async function(){if(!confirm('Enviar este aviso?'))return;try{var r=await api('/api/action',{acao:'aviso',texto:$('#at').value});say(r.ok,1);$('#at').value=''}catch(e){say(e.m)}};
-document.querySelectorAll('.tabs .btn').forEach(function(b){b.onclick=function(){document.querySelectorAll('.tabs .btn').forEach(function(x){x.classList.toggle('on',x==b)});['m','a','h','p','y'].forEach(function(k){$('#'+k).classList.toggle('hide',k!=b.dataset.t)});if(b.dataset.t=='h')hist();if(b.dataset.t=='p')posts();if(b.dataset.t=='y')histor()}});
+document.querySelectorAll('.tabs .btn').forEach(function(b){b.onclick=function(){document.querySelectorAll('.tabs .btn').forEach(function(x){x.classList.toggle('on',x==b)});['v','m','a','h','p','y','l'].forEach(function(k){$('#'+k).classList.toggle('hide',k!=b.dataset.t)});if(b.dataset.t=='v')overview();if(b.dataset.t=='h')hist();if(b.dataset.t=='p')posts();if(b.dataset.t=='y')histor()}});
 async function hist(){var H=$('#h');try{var r=await api('/api/audit');H.replaceChildren();if(!r.length)H.append(el('p','','Nenhuma ação registrada ainda.'));
 r.forEach(function(x){var d=el('div','log');d.append(el('b','',x.ator+' · '+x.acao+(x.alvo?' → '+x.alvo:'')),el('br'),el('small','',new Date(x.ts).toLocaleString('pt-BR')+(x.detalhe?' · '+x.detalhe:'')));H.append(d)})}catch(e){say(e.m)}}
+async function overview(){try{var r=await api('/api/public'),a=await api('/api/audit');
+$('#vh').textContent='Olá, '+ME.nome;$('#vm').textContent=r.membros;$('#vs').textContent=r.staff.length;$('#vp').textContent=r.posts.length;
+$('#vr').textContent=r.posts.filter(function(p){return p.tipo=='sorteio'&&(!p.fim||new Date(p.fim)>new Date())}).length;
+var L=$('#vl');L.replaceChildren();if(!a.length)L.append(el('p','','Nenhuma ação registrada ainda.'));
+a.slice(0,5).forEach(function(x){var d=el('div','log');d.append(el('b','',x.ator+' · '+x.acao+(x.alvo?' → '+x.alvo:'')),el('br'),el('small','',new Date(x.ts).toLocaleString('pt-BR')));L.append(d)})}catch(e){say(e.m)}}
+document.querySelectorAll('[data-go]').forEach(function(b){b.onclick=function(){document.querySelector('.tabs [data-t="'+b.dataset.go+'"]').click()}});
 var EP=null;
 function limpar(){EP=null;$('#pht').textContent='Nova publicação';['#ptt','#ptx','#pb','#pf'].forEach(function(s){$(s).value=''});$('#pd').checked=false;$('#pdc').checked=false}
 $('#pc').onclick=limpar;

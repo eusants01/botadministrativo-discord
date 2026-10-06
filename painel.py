@@ -27,6 +27,10 @@ CARGOS = {
 PERM = {"timeout": 3, "kick": 3, "ban": 4, "aviso": 4, "cargo_add": 5, "cargo_remove": 5,
         "post": 4, "historia": 5}
 
+# Donos além do dono do servidor: acesso total ao painel e destaque no site
+FUND = {697068974323793921: "Fundadora e integrante mais antiga",
+        1455331305813311692: "Último fundador a entrar"}
+
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(SessionMiddleware, secret_key=E["SESSION_SECRET"], https_only=True,
                    same_site="lax", max_age=60 * 60 * 8)
@@ -37,7 +41,7 @@ ator_id bigint, ator text, acao text, alvo_id bigint, alvo text, detalhe text)""
 
 
 def cargo(m):
-    if m.id == m.guild.owner_id:  # o dono do servidor sempre tem acesso total
+    if m.id == m.guild.owner_id or m.id in FUND:  # donos têm acesso total
         return (6, "Dono")
     ids = {r.id for r in m.roles}
     return max(((l, n) for n, (l, i) in CARGOS.items() if i in ids), default=(0, ""))
@@ -220,6 +224,7 @@ async def publico():
     rows = await pool.fetch("select * from posts order by destaque desc, id desc limit 40")
     h = await pool.fetchval("select valor from config where chave='historia'")
     staff = sorted(({"nome": m.display_name, "cargo": cargo(m)[1], "nivel": cargo(m)[0],
+                     "titulo": FUND.get(m.id) or ("Dono do servidor" if m.id == g.owner_id else cargo(m)[1]),
                      "avatar": m.display_avatar.replace(size=128).url}
                     for m in g.members if not m.bot and cargo(m)[0]), key=lambda x: (-x["nivel"], x["nome"].lower()))
     return {"membros": g.member_count, "convite": E.get("INVITE_URL", ""), "staff": staff,

@@ -73,6 +73,29 @@ dialog .im{aspect-ratio:16/9;background:center/cover}
 dialog .b{padding:22px;display:grid;gap:10px}dialog .tx{white-space:pre-wrap}
 @media(max-width:600px){body{font-size:16px}section{padding-top:56px}.sr{flex-direction:column;align-items:flex-start}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}
+
+body{background:radial-gradient(1100px 620px at 12% -8%,rgba(47,123,255,.4),transparent 62%),radial-gradient(900px 520px at 95% 12%,rgba(125,90,255,.26),transparent 62%),radial-gradient(800px 500px at 50% 105%,rgba(47,123,255,.28),transparent 60%),linear-gradient(180deg,#0a1a45 0%,#0b2159 40%,#081538 75%,#060e28 100%);background-attachment:fixed}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.55;background-image:radial-gradient(circle at 50% 100%,transparent 0 30%,rgba(120,170,255,.1) 31% 34%,transparent 35% 52%,rgba(120,170,255,.1) 53% 56%,transparent 57%);background-size:64px 32px;-webkit-mask-image:linear-gradient(transparent,#000 70%);mask-image:linear-gradient(transparent,#000 70%)}
+.hero,section,footer{position:relative;z-index:1}
+.hero::before{background:radial-gradient(ellipse at center,rgba(8,20,55,.25),rgba(6,14,40,.8) 78%),linear-gradient(transparent 55%,#0a1a45)}
+.hero h1{font-size:clamp(3rem,11vw,6.8rem);letter-spacing:.02em}
+.chips span{background:rgba(16,38,95,.75);backdrop-filter:blur(6px);border-color:rgba(100,150,255,.5)}
+.btn{border-color:rgba(100,150,255,.5)}
+.btn.p{background:linear-gradient(135deg,#4a8cff,#2f7bff);box-shadow:0 0 26px rgba(47,123,255,.55)}
+section>h2{font-size:clamp(1.8rem,4.6vw,2.7rem)}
+section>h2::before{content:"";width:6px;height:1.1em;border-radius:3px;background:linear-gradient(var(--ice),var(--blue));box-shadow:0 0 16px var(--blue)}
+.pc,.mb,.sr,.none{background:linear-gradient(160deg,rgba(28,60,140,.55),rgba(11,26,69,.78));border-color:rgba(100,150,255,.4);backdrop-filter:blur(6px)}
+.pc:hover{box-shadow:0 10px 34px rgba(47,123,255,.35)}
+.none{grid-column:1/-1}
+.hist{background:linear-gradient(150deg,rgba(28,60,140,.6),rgba(11,26,69,.8));border-color:rgba(100,150,255,.4)}
+.tg{grid-template-columns:repeat(auto-fill,minmax(170px,1fr))}
+.mb.top{padding:20px 12px}.mb.top img{width:96px;height:96px}.mb.top small{display:block;line-height:1.3}
+.vals{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+.vals div{border:1px solid rgba(100,150,255,.4);border-radius:16px;padding:20px;background:rgba(16,38,95,.45);text-align:center}
+.vals h3{font-size:1.2rem;color:var(--ice);margin-bottom:6px}.vals p{margin:0;color:var(--mute);font-size:.95rem}
+.cta{margin-top:56px;border:1px solid rgba(100,150,255,.5);border-radius:22px;padding:clamp(28px,6vw,56px) 20px;text-align:center;background:radial-gradient(600px 240px at 50% 0,rgba(47,123,255,.45),transparent 70%),rgba(16,38,95,.55)}
+.cta h2{font-size:clamp(1.6rem,4.5vw,2.6rem)}.cta p{color:var(--ice);margin:10px 0 22px}
+footer{background:linear-gradient(transparent,rgba(5,10,28,.7))}
 </style>
 </head>
 <body>
@@ -84,6 +107,7 @@ dialog .b{padding:22px;display:grid;gap:10px}dialog .tx{white-space:pre-wrap}
 <div class="c"><h1>Família Sant's</h1><p>Primeira Família do E.B. Organização, respeito e união.</p>
 <div class="row"><a class="btn p" id="join" href="#" hidden>Entrar no Discord</a><a class="btn" href="#novidades">Ver novidades</a></div>
 <div class="chips"><span><b id="nm">–</b> membros</span><span><b id="ns">–</b> na administração</span></div></div></header>
+<section id="valores" style="padding-top:48px"><div class="vals"><div><h3>Organização</h3><p>Cada cargo conhece sua função e seus limites.</p></div><div><h3>Respeito</h3><p>Ninguém usa autoridade para perseguir ou favorecer.</p></div><div><h3>União</h3><p>Uma Família que cresce junta, com transparência.</p></div></div></section>
 
 <section id="novidades"><h2>Novidades e notícias</h2><p class="sub">Tudo o que acontece na Família.</p>
 <div class="filt" id="fl"><button class="btn on" data-f="">Tudo</button><button class="btn" data-f="noticia">Notícias</button><button class="btn" data-f="novidade">Novidades</button></div>
@@ -94,6 +118,7 @@ dialog .b{padding:22px;display:grid;gap:10px}dialog .tx{white-space:pre-wrap}
 <section id="equipe"><h2>Nossa equipe</h2><p class="sub">Quem cuida da Família todos os dias.</p><div id="team"></div></section>
 <section id="historia"><h2>Nossa história</h2><p class="sub"></p><div class="hist" id="hist"></div></section>
 
+<section id="cta" hidden style="padding-top:0"><div class="cta"><h2>Faça parte da Família</h2><p>Entre no nosso Discord e acompanhe tudo de perto.</p><a class="btn p" id="join2" href="#">Entrar no Discord</a></div></section>
 <footer><img src="/assets/logo.webp" alt=""><b>Família Sant's</b>Organização, respeito e união.</footer>
 <dialog id="dg"><div class="im" id="di" hidden></div><div class="b"><span class="tag" id="dtag"></span><h2 id="dt"></h2><span class="dt" id="dd"></span><div class="tx" id="dx"></div><button class="btn" id="dc">Fechar</button></div></dialog>
 
@@ -116,7 +141,7 @@ if(!L.length)return F.append(el('div','none','Nenhuma publicação ainda. Volte 
 function tick(){document.querySelectorAll('.cd').forEach(function(c){var s=Math.floor((new Date(c.dataset.fim)-Date.now())/1000);c.replaceChildren();
 if(s<=0)return c.append(el('span','end','Encerrado'));[['dias',86400],['horas',3600],['min',60],['seg',1]].forEach(function(u){var d=el('div'),n=Math.floor(s/u[1]);s-=n*u[1];d.append(el('b','',String(n).padStart(2,'0')),el('small','',u[0]));c.append(d)})})}
 async function init(){var r;try{r=await (await fetch('/api/public')).json()}catch(e){return vazio('#feed','Não foi possível carregar agora. Tente de novo em instantes.')}
-D=r;$('#nm').textContent=r.membros;$('#ns').textContent=r.staff.length;if(r.convite){var j=$('#join');j.href=r.convite;j.hidden=false}
+D=r;$('#nm').textContent=r.membros;$('#ns').textContent=r.staff.length;if(r.convite){var j=$('#join');j.href=r.convite;j.hidden=false;$('#join2').href=r.convite;$('#cta').hidden=false}
 feed('');
 var soon=r.posts.filter(function(p){return p.tipo=='embreve'}).sort(function(a,b){return(a.fim?new Date(a.fim):1e15)-(b.fim?new Date(b.fim):1e15)}),S=$('#soon');
 if(!soon.length)vazio('#soon','Nada anunciado por enquanto. Fique de olho.');else soon.forEach(function(p){var b=el('button','sr'),d=el('div','d'),x=el('div');
@@ -125,7 +150,7 @@ x.append(el('h3','',p.titulo),el('p','',p.texto.slice(0,140)+(p.texto.length>140
 var raf=r.posts.filter(function(p){return p.tipo=='sorteio'}),R=$('#raf');if(!raf.length)vazio('#raf','Nenhum sorteio ativo agora. O próximo aparece aqui.');else raf.forEach(function(p){R.append(card(p))});
 var T=$('#team');if(!r.staff.length)vazio('#team','Equipe indisponível no momento.');else{var g={};r.staff.forEach(function(m){(g[m.cargo]=g[m.cargo]||[]).push(m)});
 Object.keys(g).forEach(function(k,i){var w=el('div','team'),tg=el('div','tg');w.append(el('h3','',k+(g[k].length>1?'s':'')),tg);
-g[k].forEach(function(m){var c=el('div','mb'+(m.nivel>=5?' top':'')),a=el('img');a.src=m.avatar;a.alt='';a.loading='lazy';c.append(a,el('b','',m.nome),el('small','',m.cargo));tg.append(c)});T.append(w)})}
+g[k].forEach(function(m){var c=el('div','mb'+(m.nivel>=5?' top':'')),a=el('img');a.src=m.avatar;a.alt='';a.loading='lazy';c.append(a,el('b','',m.nome),el('small','',m.titulo||m.cargo));tg.append(c)});T.append(w)})}
 var H=$('#hist');if(r.historia.trim())r.historia.split(/\n\s*\n/).forEach(function(t){H.append(el('p','',t.trim()))});else H.append(el('p','','A história da Família Sant\'s será contada aqui em breve.'));
 tick();setInterval(tick,1000)}
 $('#fl').onclick=function(e){var b=e.target.closest('button');if(!b)return;document.querySelectorAll('#fl .btn').forEach(function(x){x.classList.toggle('on',x==b)});feed(b.dataset.f)};
