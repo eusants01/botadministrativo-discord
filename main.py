@@ -5,9 +5,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from painel import start_painel 
+
 intents = discord.Intents.default()
 intents.message_content = True
-intents.members = True  
+intents.members = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 
@@ -50,6 +52,13 @@ async def setup_hook():
 
     if not mudar_status.is_running():
         mudar_status.start()
+
+    # Painel administrativo (site)
+    try:
+        await start_painel(bot)
+        print('🌐 Painel iniciado')
+    except Exception as e:
+        print(f'❌ Erro ao iniciar o painel: {type(e).__name__}: {e}')
 
 bot.setup_hook = setup_hook
 

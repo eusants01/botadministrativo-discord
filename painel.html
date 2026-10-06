@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Painel · Família Sant's</title>
+<style>
+:root{--ink:#04070f;--deep:#0a1530;--panel:#0c1a3a;--line:#1d3a78;--ice:#cfe9ff;--blue:#2f7bff;--mute:#8fa6c9;--red:#ff4d5e;--ok:#5fe0a8;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ink);color:#e6ebf2;font:16px/1.6 system-ui,Segoe UI,sans-serif;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+h1,h2{font-family:Georgia,serif;margin:0;color:#fff}
+.w{max-width:960px;margin:0 auto;padding:16px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:18px}
+header small{color:var(--mute);display:block}
+.btn{background:var(--panel);color:var(--ice);border:1px solid var(--line);border-radius:10px;padding:10px 16px;font:600 .95rem inherit;cursor:pointer;min-height:44px;text-decoration:none;display:inline-flex;align-items:center}
+.btn:hover{background:var(--line)}.btn.p{background:var(--blue);border-color:var(--blue);color:#fff}.btn.d{border-color:var(--red);color:var(--red)}
+.tabs{display:flex;gap:6px;margin-bottom:16px;overflow-x:auto}
+.tabs .btn.on{background:var(--blue);color:#fff}
+input,select,textarea{width:100%;background:var(--deep);border:1px solid var(--line);border-radius:10px;color:#fff;padding:12px;font:inherit}
+.card{background:var(--deep);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.card small{color:var(--mute)}.card b{color:#fff}
+.box{background:var(--panel);border:1px solid var(--blue);border-radius:14px;padding:16px;margin:12px 0;display:grid;gap:10px}
+.log{font-size:.92rem;border-left:3px solid var(--blue);padding:6px 12px;margin-bottom:8px;background:var(--deep);border-radius:0 10px 10px 0}
+.log small{color:var(--mute)}
+.login{text-align:center;padding:60px 16px}
+.login p{color:var(--mute);max-width:42ch;margin:12px auto 24px}
+#msg{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);padding:10px 20px;border-radius:999px;font-weight:600;display:none;max-width:90vw;z-index:9}
+.hide{display:none!important}
+</style>
+</head>
+<body><div class="w">
+<div id="out" class="login hide"><h1>Painel da Administração</h1><p>Área restrita à equipe administrativa da Família Sant's. Entre com o seu Discord.</p><a class="btn p" href="/login">Entrar com Discord</a></div>
+<div id="app" class="hide">
+<header><div><h1>Painel · Família Sant's</h1><small id="who"></small></div><a class="btn" href="/logout">Sair</a></header>
+<div class="tabs"><button class="btn on" data-t="m">Membros</button><button class="btn" data-t="a" id="tAviso">Aviso</button><button class="btn" data-t="h">Histórico</button></div>
+
+<div id="m"><input id="q" type="search" placeholder="Buscar membro por nome ou usuário" aria-label="Buscar membro">
+<div class="box hide" id="f"><b id="ft"></b>
+<select id="fa"></select><input id="fmin" type="number" min="1" max="40320" value="10" placeholder="Minutos">
+<select id="fc"></select><input id="fmo" placeholder="Motivo (opcional)" maxlength="300">
+<div><button class="btn p" id="go">Executar</button> <button class="btn" id="no">Cancelar</button></div></div>
+<div id="list" style="margin-top:12px"></div></div>
+
+<div id="a" class="hide"><div class="box"><textarea id="at" rows="5" maxlength="1800" placeholder="Texto do aviso"></textarea><div><button class="btn p" id="sa">Enviar aviso</button></div></div></div>
+<div id="h" class="hide"></div>
+</div></div>
+<div id="msg" role="status"></div>
+<script>
+var $=function(s){return document.querySelector(s)},ME,alvo=null,NOMES={timeout:'Silenciar (timeout)',kick:'Expulsar',ban:'Banir',cargo_add:'Dar cargo',cargo_remove:'Remover cargo'};
+function say(t,ok){var m=$('#msg');m.textContent=t;m.style.background=ok?'var(--ok)':'var(--red)';m.style.color=ok?'#04140c':'#fff';m.style.display='block';setTimeout(function(){m.style.display='none'},3200)}
+async function api(u,b){var r=await fetch(u,b?{method:'POST',headers:{'Content-Type':'application/json','X-Panel':'1'},body:JSON.stringify(b)}:{});var j=await r.json().catch(function(){return{}});if(!r.ok)throw{s:r.status,m:j.detail||'Erro'};return j}
+function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
+async function init(){try{ME=await api('/api/me')}catch(e){$('#out').classList.remove('hide');if(e.s==403)$('#out p').textContent=e.m;return}
+$('#app').classList.remove('hide');$('#who').textContent=ME.nome+' · '+ME.cargo;
+if(ME.acoes.indexOf('aviso')<0)$('#tAviso').classList.add('hide');
+var ac=ME.acoes.filter(function(a){return a!='aviso'});$('#fa').replaceChildren.apply($('#fa'),ac.map(function(a){var o=el('option',0,NOMES[a]);o.value=a;return o}));
+$('#fc').replaceChildren.apply($('#fc'),ME.cargos.map(function(c){var o=el('option',0,c);o.value=c;return o}));
+if(!ac.length){$('#q').placeholder='Buscar membro (somente leitura no seu cargo)'}
+sync();list()}
+function sync(){var a=$('#fa').value;$('#fmin').classList.toggle('hide',a!='timeout');$('#fc').classList.toggle('hide',a!='cargo_add'&&a!='cargo_remove')}
+$('#fa').onchange=sync;
+async function list(){try{var r=await api('/api/members?q='+encodeURIComponent($('#q').value)),L=$('#list');L.replaceChildren();
+if(!r.length)L.append(el('p','',"Nenhum membro encontrado."));
+r.forEach(function(x){var c=el('div','card'),i=el('div');i.append(el('b','',x.nome),el('br'),el('small','',x.user+(x.cargo?' · '+x.cargo:'')));c.append(i);
+if(ME.acoes.some(function(a){return a!='aviso'})){var b=el('button','btn','Agir');b.onclick=function(){alvo=x;$('#ft').textContent='Alvo: '+x.nome;$('#f').classList.remove('hide');scrollTo({top:0})};c.append(b)}L.append(c)})}catch(e){say(e.m)}}
+var tm;$('#q').oninput=function(){clearTimeout(tm);tm=setTimeout(list,300)};
+$('#no').onclick=function(){$('#f').classList.add('hide');alvo=null};
+$('#go').onclick=async function(){var a=$('#fa').value;if(!alvo||!confirm(NOMES[a]+' em '+alvo.nome+'?'))return;
+try{var r=await api('/api/action',{acao:a,alvo:alvo.id,minutos:$('#fmin').value,cargo:$('#fc').value,motivo:$('#fmo').value});say(r.ok,1);$('#fmo').value='';$('#f').classList.add('hide');list()}catch(e){say(e.m)}};
+$('#sa').onclick=async function(){if(!confirm('Enviar este aviso?'))return;try{var r=await api('/api/action',{acao:'aviso',texto:$('#at').value});say(r.ok,1);$('#at').value=''}catch(e){say(e.m)}};
+document.querySelectorAll('.tabs .btn').forEach(function(b){b.onclick=function(){document.querySelectorAll('.tabs .btn').forEach(function(x){x.classList.toggle('on',x==b)});['m','a','h'].forEach(function(k){$('#'+k).classList.toggle('hide',k!=b.dataset.t)});if(b.dataset.t=='h')hist()}});
+async function hist(){var H=$('#h');try{var r=await api('/api/audit');H.replaceChildren();if(!r.length)H.append(el('p','','Nenhuma ação registrada ainda.'));
+r.forEach(function(x){var d=el('div','log');d.append(el('b','',x.ator+' · '+x.acao+(x.alvo?' → '+x.alvo:'')),el('br'),el('small','',new Date(x.ts).toLocaleString('pt-BR')+(x.detalhe?' · '+x.detalhe:'')));H.append(d)})}catch(e){say(e.m)}}
+init();
+</script></body></html>

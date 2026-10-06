@@ -1,2 +1,7 @@
 discord.py
 python-dotenv
+fastapi>=0.110
+uvicorn>=0.29
+aiohttp>=3.9
+asyncpg>=0.29
+itsdangerous>=2.1
