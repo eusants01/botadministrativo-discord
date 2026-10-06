@@ -1,11 +1,12 @@
 """Painel administrativo da Família Sant's (FastAPI + discord.py, no mesmo processo do bot)."""
 import asyncio, os, secrets
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import aiohttp, asyncpg, discord, uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 E = os.environ
@@ -23,7 +24,8 @@ CARGOS = {
     "Supervisor de Famílias": (1, int(E.get("ROLE_SUPERVISOR", 1556295901293715486))),
 }
 # nível mínimo para cada ação (Estagiário e Supervisor só leem)
-PERM = {"timeout": 3, "kick": 3, "ban": 4, "aviso": 4, "cargo_add": 5, "cargo_remove": 5}
+PERM = {"timeout": 3, "kick": 3, "ban": 4, "aviso": 4, "cargo_add": 5, "cargo_remove": 5,
+        "post": 4, "historia": 5}
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(SessionMiddleware, secret_key=E["SESSION_SECRET"], https_only=True,
@@ -35,6 +37,8 @@ ator_id bigint, ator text, acao text, alvo_id bigint, alvo text, detalhe text)""
 
 
 def cargo(m):
+    if m.id == m.guild.owner_id:  # o dono do servidor sempre tem acesso total
+        return (6, "Dono")
     ids = {r.id for r in m.roles}
     return max(((l, n) for n, (l, i) in CARGOS.items() if i in ids), default=(0, ""))
 
@@ -66,9 +70,18 @@ async def registrar(m, acao, alvo=None, detalhe=""):
         await ch.send(embed=e)
 
 
+HERE = Path(__file__).parent
+app.mount("/assets", StaticFiles(directory=HERE / "assets", check_dir=False), name="assets")
+
+
 @app.get("/", response_class=HTMLResponse)
 async def home():
-    return (Path(__file__).parent / "painel.html").read_text(encoding="utf-8")
+    return (HERE / "site.html").read_text(encoding="utf-8")
+
+
+@app.get("/painel", response_class=HTMLResponse)
+async def painel_page():
+    return (HERE / "painel.html").read_text(encoding="utf-8")
 
 
 @app.get("/login")
@@ -91,7 +104,7 @@ async def callback(req: Request, code: str = "", state: str = ""):
             raise HTTPException(400, "Não foi possível entrar com o Discord.")
         async with s.get("https://discord.com/api/users/@me", headers={"Authorization": f"Bearer {tok}"}) as r:
             req.session["uid"] = int((await r.json())["id"])
-    return RedirectResponse("/")
+    return RedirectResponse("/painel")
 
 
 @app.get("/logout")
@@ -133,7 +146,7 @@ async def action(req: Request):
         raise HTTPException(403, "Requisição inválida.")
     d = await req.json()
     a = d.get("acao")
-    if a not in PERM or lvl < PERM[a]:
+    if a not in PERM or a in ("post", "historia") or lvl < PERM[a]:
         raise HTTPException(403, "Seu cargo não permite esta ação.")
     motivo = (d.get("motivo") or "").strip()[:300]
     razao = f"{m} via painel" + (f": {motivo}" if motivo else "")
@@ -178,7 +191,104 @@ async def start_painel(client: discord.Client):
     global bot, pool
     bot = client
     pool = await asyncpg.create_pool(E["DATABASE_URL"])
-    await pool.execute(SQL)
+    await pool.execute(SQL + SQL2)
     cfg = uvicorn.Config(app, host="0.0.0.0", port=int(E.get("PORT", 8000)), log_level="warning",
                          proxy_headers=True, forwarded_allow_ips="*")
     asyncio.create_task(uvicorn.Server(cfg).serve())
+
+
+SQL2 = """;create table if not exists posts(id serial primary key, ts timestamptz default now(), tipo text,
+titulo text, texto text, banner text, autor text, fim timestamptz, destaque boolean default false);
+create table if not exists config(chave text primary key, valor text)"""
+TIPOS = {"noticia": "Notícia", "novidade": "Novidade", "embreve": "Em breve", "sorteio": "Sorteio"}
+
+
+def _csrf(req: Request):
+    if req.headers.get("x-panel") != "1":
+        raise HTTPException(403, "Requisição inválida.")
+
+
+def _post(r):
+    return {"id": r["id"], "tipo": r["tipo"], "titulo": r["titulo"], "texto": r["texto"], "banner": r["banner"],
+            "autor": r["autor"], "ts": r["ts"].isoformat(), "destaque": r["destaque"],
+            "fim": r["fim"].isoformat() if r["fim"] else None}
+
+
+@app.get("/api/public")  # aberto a todos: alimenta o site público
+async def publico():
+    g = bot.get_guild(GUILD_ID)
+    rows = await pool.fetch("select * from posts order by destaque desc, id desc limit 40")
+    h = await pool.fetchval("select valor from config where chave='historia'")
+    staff = sorted(({"nome": m.display_name, "cargo": cargo(m)[1], "nivel": cargo(m)[0],
+                     "avatar": m.display_avatar.replace(size=128).url}
+                    for m in g.members if not m.bot and cargo(m)[0]), key=lambda x: (-x["nivel"], x["nome"].lower()))
+    return {"membros": g.member_count, "convite": E.get("INVITE_URL", ""), "staff": staff,
+            "posts": [_post(r) for r in rows], "historia": h or ""}
+
+
+@app.post("/api/post")
+async def salvar_post(req: Request):
+    m, lvl = await usuario(req)
+    _csrf(req)
+    if lvl < PERM["post"]:
+        raise HTTPException(403, "Seu cargo não permite publicar.")
+    d = await req.json()
+    tipo, titulo = d.get("tipo"), (d.get("titulo") or "").strip()[:120]
+    texto, banner = (d.get("texto") or "").strip()[:4000], (d.get("banner") or "").strip()[:500] or None
+    if tipo not in TIPOS or not titulo or not texto:
+        raise HTTPException(400, "Preencha tipo, título e texto.")
+    if banner and not banner.startswith("https://"):
+        raise HTTPException(400, "O banner precisa ser um link que comece com https://")
+    fim = None
+    if d.get("fim"):
+        try:
+            fim = datetime.fromisoformat(d["fim"].replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(400, "Data inválida.")
+    dest = bool(d.get("destaque"))
+    if d.get("id"):
+        await pool.execute("update posts set tipo=$1,titulo=$2,texto=$3,banner=$4,fim=$5,destaque=$6 where id=$7",
+                           tipo, titulo, texto, banner, fim, dest, int(d["id"]))
+        acao = "post_editar"
+    else:
+        await pool.execute("insert into posts(tipo,titulo,texto,banner,autor,fim,destaque) values($1,$2,$3,$4,$5,$6,$7)",
+                           tipo, titulo, texto, banner, m.display_name, fim, dest)
+        acao = "post_criar"
+        if d.get("discord"):
+            e = discord.Embed(title=titulo, description=texto[:1500], color=0x2F7BFF, url=BASE)
+            e.set_footer(text=f"Família Sant's · {TIPOS[tipo]}")
+            if banner:
+                e.set_image(url=banner)
+            try:
+                await bot.get_channel(AVISOS_CH).send(embed=e)
+            except discord.HTTPException:
+                pass
+    await registrar(m, acao, None, f"{TIPOS[tipo]}: {titulo}")
+    return {"ok": "Publicado no site."}
+
+
+@app.post("/api/post/delete")
+async def apagar_post(req: Request):
+    m, lvl = await usuario(req)
+    _csrf(req)
+    if lvl < PERM["post"]:
+        raise HTTPException(403, "Seu cargo não permite excluir.")
+    d = await req.json()
+    r = await pool.fetchrow("delete from posts where id=$1 returning titulo", int(d.get("id") or 0))
+    if not r:
+        raise HTTPException(404, "Publicação não encontrada.")
+    await registrar(m, "post_excluir", None, r["titulo"])
+    return {"ok": "Excluído."}
+
+
+@app.post("/api/historia")
+async def salvar_historia(req: Request):
+    m, lvl = await usuario(req)
+    _csrf(req)
+    if lvl < PERM["historia"]:
+        raise HTTPException(403, "Só o Diretor Geral edita a história.")
+    t = ((await req.json()).get("texto") or "").strip()[:8000]
+    await pool.execute("insert into config(chave,valor) values('historia',$1) "
+                       "on conflict(chave) do update set valor=$1", t)
+    await registrar(m, "historia_editar", None, f"{len(t)} caracteres")
+    return {"ok": "História salva."}

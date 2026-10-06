@@ -31,8 +31,8 @@ input,select,textarea{width:100%;background:var(--deep);border:1px solid var(--l
 <body><div class="w">
 <div id="out" class="login hide"><h1>Painel da Administração</h1><p>Área restrita à equipe administrativa da Família Sant's. Entre com o seu Discord.</p><a class="btn p" href="/login">Entrar com Discord</a></div>
 <div id="app" class="hide">
-<header><div><h1>Painel · Família Sant's</h1><small id="who"></small></div><a class="btn" href="/logout">Sair</a></header>
-<div class="tabs"><button class="btn on" data-t="m">Membros</button><button class="btn" data-t="a" id="tAviso">Aviso</button><button class="btn" data-t="h">Histórico</button></div>
+<header><div><h1>Painel · Família Sant's</h1><small id="who"></small></div><span><a class="btn" href="/">Ver site</a> <a class="btn" href="/logout">Sair</a></span></header>
+<div class="tabs"><button class="btn on" data-t="m">Membros</button><button class="btn" data-t="a" id="tAviso">Aviso</button><button class="btn" data-t="h">Histórico</button><button class="btn hide" data-t="p" id="tPost">Publicar</button><button class="btn hide" data-t="y" id="tHist">História</button></div>
 
 <div id="m"><input id="q" type="search" placeholder="Buscar membro por nome ou usuário" aria-label="Buscar membro">
 <div class="box hide" id="f"><b id="ft"></b>
@@ -42,6 +42,15 @@ input,select,textarea{width:100%;background:var(--deep);border:1px solid var(--l
 <div id="list" style="margin-top:12px"></div></div>
 
 <div id="a" class="hide"><div class="box"><textarea id="at" rows="5" maxlength="1800" placeholder="Texto do aviso"></textarea><div><button class="btn p" id="sa">Enviar aviso</button></div></div></div>
+<div id="p" class="hide"><div class="box"><b id="pht">Nova publicação</b>
+<select id="pt"><option value="noticia">Notícia</option><option value="novidade">Novidade</option><option value="embreve">Em breve</option><option value="sorteio">Sorteio</option></select>
+<input id="ptt" placeholder="Título" maxlength="120"><textarea id="ptx" rows="6" maxlength="4000" placeholder="Texto"></textarea>
+<input id="pb" placeholder="Link do banner (opcional, começa com https://)">
+<small style="color:var(--mute)">Data e hora (opcional): fim do sorteio ou dia do evento</small><input id="pf" type="datetime-local">
+<label><input type="checkbox" id="pd" style="width:auto"> Fixar no topo do site</label>
+<label><input type="checkbox" id="pdc" style="width:auto"> Avisar também no Discord (só ao criar)</label>
+<div><button class="btn p" id="ps">Publicar</button> <button class="btn" id="pc">Limpar</button></div></div><div id="pl"></div></div>
+<div id="y" class="hide"><div class="box"><b>Nossa história</b><small style="color:var(--mute)">Separe os parágrafos com uma linha em branco.</small><textarea id="yt" rows="12" maxlength="8000"></textarea><div><button class="btn p" id="ys">Salvar história</button></div></div></div>
 <div id="h" class="hide"></div>
 </div></div>
 <div id="msg" role="status"></div>
@@ -52,8 +61,8 @@ async function api(u,b){var r=await fetch(u,b?{method:'POST',headers:{'Content-T
 function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
 async function init(){try{ME=await api('/api/me')}catch(e){$('#out').classList.remove('hide');if(e.s==403)$('#out p').textContent=e.m;return}
 $('#app').classList.remove('hide');$('#who').textContent=ME.nome+' · '+ME.cargo;
-if(ME.acoes.indexOf('aviso')<0)$('#tAviso').classList.add('hide');
-var ac=ME.acoes.filter(function(a){return a!='aviso'});$('#fa').replaceChildren.apply($('#fa'),ac.map(function(a){var o=el('option',0,NOMES[a]);o.value=a;return o}));
+if(ME.acoes.indexOf('aviso')<0)$('#tAviso').classList.add('hide');if(ME.acoes.indexOf('post')>-1)$('#tPost').classList.remove('hide');if(ME.acoes.indexOf('historia')>-1)$('#tHist').classList.remove('hide');
+var ac=ME.acoes.filter(function(a){return NOMES[a]});$('#fa').replaceChildren.apply($('#fa'),ac.map(function(a){var o=el('option',0,NOMES[a]);o.value=a;return o}));
 $('#fc').replaceChildren.apply($('#fc'),ME.cargos.map(function(c){var o=el('option',0,c);o.value=c;return o}));
 if(!ac.length){$('#q').placeholder='Buscar membro (somente leitura no seu cargo)'}
 sync();list()}
@@ -62,14 +71,26 @@ $('#fa').onchange=sync;
 async function list(){try{var r=await api('/api/members?q='+encodeURIComponent($('#q').value)),L=$('#list');L.replaceChildren();
 if(!r.length)L.append(el('p','',"Nenhum membro encontrado."));
 r.forEach(function(x){var c=el('div','card'),i=el('div');i.append(el('b','',x.nome),el('br'),el('small','',x.user+(x.cargo?' · '+x.cargo:'')));c.append(i);
-if(ME.acoes.some(function(a){return a!='aviso'})){var b=el('button','btn','Agir');b.onclick=function(){alvo=x;$('#ft').textContent='Alvo: '+x.nome;$('#f').classList.remove('hide');scrollTo({top:0})};c.append(b)}L.append(c)})}catch(e){say(e.m)}}
+if(ME.acoes.some(function(a){return NOMES[a]})){var b=el('button','btn','Agir');b.onclick=function(){alvo=x;$('#ft').textContent='Alvo: '+x.nome;$('#f').classList.remove('hide');scrollTo({top:0})};c.append(b)}L.append(c)})}catch(e){say(e.m)}}
 var tm;$('#q').oninput=function(){clearTimeout(tm);tm=setTimeout(list,300)};
 $('#no').onclick=function(){$('#f').classList.add('hide');alvo=null};
 $('#go').onclick=async function(){var a=$('#fa').value;if(!alvo||!confirm(NOMES[a]+' em '+alvo.nome+'?'))return;
 try{var r=await api('/api/action',{acao:a,alvo:alvo.id,minutos:$('#fmin').value,cargo:$('#fc').value,motivo:$('#fmo').value});say(r.ok,1);$('#fmo').value='';$('#f').classList.add('hide');list()}catch(e){say(e.m)}};
 $('#sa').onclick=async function(){if(!confirm('Enviar este aviso?'))return;try{var r=await api('/api/action',{acao:'aviso',texto:$('#at').value});say(r.ok,1);$('#at').value=''}catch(e){say(e.m)}};
-document.querySelectorAll('.tabs .btn').forEach(function(b){b.onclick=function(){document.querySelectorAll('.tabs .btn').forEach(function(x){x.classList.toggle('on',x==b)});['m','a','h'].forEach(function(k){$('#'+k).classList.toggle('hide',k!=b.dataset.t)});if(b.dataset.t=='h')hist()}});
+document.querySelectorAll('.tabs .btn').forEach(function(b){b.onclick=function(){document.querySelectorAll('.tabs .btn').forEach(function(x){x.classList.toggle('on',x==b)});['m','a','h','p','y'].forEach(function(k){$('#'+k).classList.toggle('hide',k!=b.dataset.t)});if(b.dataset.t=='h')hist();if(b.dataset.t=='p')posts();if(b.dataset.t=='y')histor()}});
 async function hist(){var H=$('#h');try{var r=await api('/api/audit');H.replaceChildren();if(!r.length)H.append(el('p','','Nenhuma ação registrada ainda.'));
 r.forEach(function(x){var d=el('div','log');d.append(el('b','',x.ator+' · '+x.acao+(x.alvo?' → '+x.alvo:'')),el('br'),el('small','',new Date(x.ts).toLocaleString('pt-BR')+(x.detalhe?' · '+x.detalhe:'')));H.append(d)})}catch(e){say(e.m)}}
+var EP=null;
+function limpar(){EP=null;$('#pht').textContent='Nova publicação';['#ptt','#ptx','#pb','#pf'].forEach(function(s){$(s).value=''});$('#pd').checked=false;$('#pdc').checked=false}
+$('#pc').onclick=limpar;
+async function posts(){try{var r=await api('/api/public'),L=$('#pl');L.replaceChildren();if(!r.posts.length)L.append(el('p','','Nenhuma publicação ainda.'));
+r.posts.forEach(function(x){var c=el('div','card'),i=el('div');i.append(el('b','',x.titulo),el('br'),el('small','',x.tipo+(x.destaque?' · fixado':'')+' · '+new Date(x.ts).toLocaleDateString('pt-BR')));c.append(i);
+var d=el('div'),e=el('button','btn','Editar'),k=el('button','btn d','Excluir');
+e.onclick=function(){EP=x.id;$('#pht').textContent='Editando: '+x.titulo;$('#pt').value=x.tipo;$('#ptt').value=x.titulo;$('#ptx').value=x.texto;$('#pb').value=x.banner||'';$('#pf').value=x.fim?new Date(new Date(x.fim)-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16):'';$('#pd').checked=x.destaque;scrollTo({top:0})};
+k.onclick=async function(){if(!confirm('Excluir "'+x.titulo+'"?'))return;try{await api('/api/post/delete',{id:x.id});say('Excluído.',1);posts()}catch(er){say(er.m)}};
+d.append(e,' ',k);c.append(d);L.append(c)})}catch(er){say(er.m)}}
+$('#ps').onclick=async function(){try{var f=$('#pf').value,r=await api('/api/post',{id:EP,tipo:$('#pt').value,titulo:$('#ptt').value,texto:$('#ptx').value,banner:$('#pb').value,fim:f?new Date(f).toISOString():'',destaque:$('#pd').checked,discord:$('#pdc').checked&&!EP});say(r.ok,1);limpar();posts()}catch(er){say(er.m)}};
+async function histor(){try{$('#yt').value=(await api('/api/public')).historia||''}catch(er){say(er.m)}}
+$('#ys').onclick=async function(){try{say((await api('/api/historia',{texto:$('#yt').value})).ok,1)}catch(er){say(er.m)}};
 init();
 </script></body></html>
