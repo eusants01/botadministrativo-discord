@@ -1,6 +1,6 @@
 """Painel administrativo da Família Sant's (FastAPI + discord.py, no mesmo processo do bot)."""
 import asyncio, os, secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import aiohttp, asyncpg, discord, uvicorn
@@ -196,6 +196,7 @@ async def start_painel(client: discord.Client):
     bot = client
     pool = await asyncpg.create_pool(E["DATABASE_URL"])
     await pool.execute(SQL + SQL2)
+    await semear()
     cfg = uvicorn.Config(app, host="0.0.0.0", port=int(E.get("PORT", 8000)), log_level="warning",
                          proxy_headers=True, forwarded_allow_ips="*")
     asyncio.create_task(uvicorn.Server(cfg).serve())
@@ -204,7 +205,7 @@ async def start_painel(client: discord.Client):
 SQL2 = """;create table if not exists posts(id serial primary key, ts timestamptz default now(), tipo text,
 titulo text, texto text, banner text, autor text, fim timestamptz, destaque boolean default false);
 create table if not exists config(chave text primary key, valor text)"""
-TIPOS = {"noticia": "Notícia", "novidade": "Novidade", "embreve": "Em breve", "sorteio": "Sorteio"}
+TIPOS = {"evento": "Evento", "noticia": "Notícia", "novidade": "Novidade", "embreve": "Em breve", "sorteio": "Sorteio"}
 
 
 def _csrf(req: Request):
@@ -227,8 +228,10 @@ async def publico():
                      "titulo": FUND.get(m.id) or ("Dono do servidor" if m.id == g.owner_id else cargo(m)[1]),
                      "avatar": m.display_avatar.replace(size=128).url}
                     for m in g.members if not m.bot and cargo(m)[0]), key=lambda x: (-x["nivel"], x["nome"].lower()))
-    return {"membros": g.member_count, "convite": E.get("INVITE_URL", ""), "staff": staff,
-            "posts": [_post(r) for r in rows], "historia": h or ""}
+    return {"membros": g.member_count, "convite": E.get("INVITE_URL", "https://discord.gg/evsYVUsJAk"), "staff": staff,
+            "posts": [_post(r) for r in rows], "historia": h or "",
+            "grupos": grupos(g), "cassino": top_cassino(g),
+            "cassino_url": f"https://discord.com/channels/{GUILD_ID}/{CASSINO_CH}"}
 
 
 @app.post("/api/post")
@@ -242,8 +245,8 @@ async def salvar_post(req: Request):
     texto, banner = (d.get("texto") or "").strip()[:4000], (d.get("banner") or "").strip()[:500] or None
     if tipo not in TIPOS or not titulo or not texto:
         raise HTTPException(400, "Preencha tipo, título e texto.")
-    if banner and not banner.startswith("https://"):
-        raise HTTPException(400, "O banner precisa ser um link que comece com https://")
+    if banner and not banner.startswith(("https://", "/assets/")):
+        raise HTTPException(400, "O banner precisa ser um link https:// ou um arquivo em /assets/")
     fim = None
     if d.get("fim"):
         try:
@@ -297,3 +300,86 @@ async def salvar_historia(req: Request):
                        "on conflict(chave) do update set valor=$1", t)
     await registrar(m, "historia_editar", None, f"{len(t)} caracteres")
     return {"ok": "História salva."}
+
+
+CASSINO_CH = int(E.get("CANAL_CASSINO_ID", 1502025561445240982))
+EXTRAS = {"Criadores": int(E.get("ROLE_CRIADORES", 1553944794957615175)),
+          "Membros Oficiais": int(E.get("ROLE_OFICIAIS", 1554367619463913582))}
+# Edite os textos abaixo à vontade: aparecem no site, em "Cargos da Família"
+DESC = {
+    "Dono": "Fundadores e donos da Família. Decidem o rumo da Família e têm acesso total aos sistemas.",
+    "Diretor Geral": "Maior cargo da administração. Define projetos e sistemas, nomeia a equipe e resolve os conflitos mais sérios.",
+    "Administrador": "Cuida da gestão do servidor, analisa denúncias e orienta moderadores e estagiários.",
+    "Moderador": "Mantém a ordem, aplica as regras e ajuda os membros no dia a dia.",
+    "Estagiário": "Em aprendizado: apoia a equipe e acompanha os atendimentos.",
+    "Supervisor de Famílias": "Função externa do E.B do Alpha. Fiscaliza e reporta, sem autoridade sobre os membros.",
+    "Criadores": "Membros que criam conteúdo e dão vida à comunidade da Família.",
+    "Membros Oficiais": "Integrantes oficiais da Família Sant's.",
+}
+
+
+def _mem(m, titulo=""):
+    return {"nome": m.display_name, "titulo": titulo, "avatar": m.display_avatar.replace(size=128).url}
+
+
+def _grupo(chave, role, ms, kind, limite=None, cor="#2f7bff"):
+    ms = sorted(ms, key=lambda m: m.display_name.lower())
+    c = f"#{role.color.value:06x}" if role and role.color.value else cor
+    return {"chave": chave, "nome": role.name if role else chave + "s", "cor": c, "desc": DESC[chave], "kind": kind,
+            "total": len(ms), "membros": [_mem(m, FUND.get(m.id) or ("Dono do servidor" if m.id == m.guild.owner_id else ""))
+                                          for m in ms[:limite]]}
+
+
+def grupos(g):
+    """Monta os grupos do site direto dos cargos do Discord (muda no servidor, muda no site)."""
+    out, vivos = [], [m for m in g.members if not m.bot]
+    out.append(_grupo("Dono", None, [m for m in vivos if cargo(m)[0] == 6], "staff", cor="#ffd166"))
+    for nome, (lvl, rid) in sorted(CARGOS.items(), key=lambda x: -x[1][0]):
+        out.append(_grupo(nome, g.get_role(rid), [m for m in vivos if cargo(m)[1] == nome], "staff"))
+    for nome, rid in EXTRAS.items():
+        r = g.get_role(rid)
+        todos = [m for m in vivos if r and r in m.roles]
+        gr = _grupo(nome, r, [m for m in todos if not cargo(m)[0]], "comum", limite=60)
+        gr["total"] = len(todos)
+        out.append(gr)
+    return [x for x in out if x["total"]]
+
+
+def top_cassino(g):
+    try:
+        from utils.cassino_db import ranking_ricos
+        rows = ranking_ricos(5)
+    except Exception:
+        return []
+    res = []
+    for uid, moedas in rows:
+        m = g.get_member(int(uid))
+        res.append({"nome": m.display_name if m else "Membro", "moedas": int(moedas),
+                    "avatar": m.display_avatar.replace(size=64).url if m else ""})
+    return res
+
+
+EV_TEXTO = """Durante uma semana, você terá a oportunidade de convidar novos membros para a Família e disputar prêmios incríveis.
+
+Início: 04/10/2026
+
+Premiação:
+1º lugar: 1000 Robux
+2º lugar: 400 Robux
+3º lugar: Classic N1TR0
+
+Durante o período do evento, os membros deverão convidar novas pessoas para o servidor. Ao final, os participantes com maior número de convites válidos ocuparão as primeiras posições do ranking e receberão suas premiações.
+
+Regras:
+• Convites por DM sem autorização: não é permitido enviar convite do servidor por mensagem privada para outra pessoa sem a autorização prévia da mesma. O objetivo é evitar spam e convites indesejados.
+• Contas alternativas (ALTS): não será permitida a utilização de contas alternativas para aumentar a quantidade de convites. Contas identificadas como falsas ou utilizadas para benefício próprio poderão ser desconsideradas.
+• Convites válidos: somente serão contabilizados convites reais e válidos, realizados por pessoas que realmente tenham entrado no servidor através do convite do participante."""
+
+
+async def semear():
+    """Na primeira vez, publica o Evento de Convites que está rolando (edite a data no painel)."""
+    if await pool.fetchval("select count(*) from posts"):
+        return
+    await pool.execute("insert into posts(tipo,titulo,texto,banner,autor,fim,destaque) values('evento',$1,$2,$3,$4,$5,true)",
+                       "Evento de Convites", EV_TEXTO, "/assets/evento-convites.jpg", "Administração",
+                       datetime(2026, 10, 11, 23, 59, tzinfo=timezone(timedelta(hours=-3))))
