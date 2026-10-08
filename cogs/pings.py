@@ -7,28 +7,53 @@ from datetime import datetime, timezone
 import discord
 from discord.ext import commands, tasks
 
+# ╔══════════════════════════════════════════════════════════════╗
+# ║                        CONFIGURAÇÃO                          ║
+# ╚══════════════════════════════════════════════════════════════╝
+#
+# O bot precisa da permissão "Gerenciar Cargos" e o cargo dele precisa estar
+# ACIMA dos cargos de notificação na lista de cargos do servidor.
+# A atualização automática do painel usa o PostgreSQL (bot.pool) para lembrar
+# em quais mensagens o painel está. Sem o pool, tudo funciona, só não atualiza sozinho.
+
 NOME_SERVIDOR = "Família Sant's"
 
+# Mesma identidade do painel de tickets
 COR_PRINCIPAL = 0x1A3C8C
 COR_SUCESSO = 0x2ECC71
 COR_ALERTA = 0xE67E22
 COR_ERRO = 0xE74C3C
 COR_NEUTRA = 0x95A5A6
+
+# Linha divisória usada nas mensagens do painel
 SEPARADOR = "▬" * 16
 
-IMAGEM_PINGS_ARQUIVO = "https://i.imgur.com/BU2ot5J.png"
+# ── Banner ──────────────────────────────────────────────────────
+# Opção 1 (recomendada): arquivo local. Coloque a imagem na pasta do projeto
+# (ao lado do main.py), sem espaços no nome. O bot envia o arquivo junto com o painel.
+IMAGEM_PINGS_ARQUIVO = "assets/banner_pings.png"
+# Opção 2: link direto da imagem (https://...). Usado se o arquivo não existir.
 IMAGEM_PINGS_URL = ""
+# Ícone pequeno do rodapé (opcional).
 ICONE_PINGS = ""
 
+# Quem pode usar os comandos: Administrador OU algum destes cargos.
 CARGOS_STAFF = [
     1553832098404499516,
     1553832097905377422,
 ]
 
-LOG_CANAL_ID = 1556915094615752824
+# Canal (só da staff) que recebe um registro quando alguém muda as notificações.
+# 0 = desligado.
+LOG_CANAL_ID = 0
 
+# Tempo mínimo (segundos) entre duas alterações da mesma pessoa.
 COOLDOWN_SEG = 3
+
+# De quanto em quanto tempo os painéis são atualizados (só se algo mudou).
 INTERVALO_ATUALIZACAO_SEG = 60
+
+# chave → dados de cada notificação (a ordem aqui é a ordem no menu)
 NOTIFICACOES: dict[str, dict] = {
     "sorteios": {
         "nome": "Sorteios",
@@ -398,65 +423,33 @@ class PingsCog(commands.Cog, name="Notificações"):
 
     # ── Painel ──────────────────────────────────────────────────
     def embed_painel(self, guild: discord.Guild) -> discord.Embed:
-        embed = embed_base(
-            "🔔 Central de Notificações",
-            (
-                f"Escolha **o que você quer receber** na **{NOME_SERVIDOR}** "
-                "e fique por dentro sem ser marcado à toa.\n"
-                f"{SEPARADOR}"
-            ),
-            banner=True,
-        )
-
         linhas = []
         inscritos: set[int] = set()
         for chave, n in NOTIFICACOES.items():
             cargo = cargo_de(guild, chave)
             if cargo:
-                membros = cargo.members
-                inscritos.update(m.id for m in membros)
-                qtd = len(membros)
-                rotulo = "inscrito" if qtd == 1 else "inscritos"
-                linhas.append(
-                    f"{n['emoji']} **{n['nome']}** • {cargo.mention}\n"
-                    f"╰ {n['desc']} (**{qtd}** {rotulo})"
-                )
-            else:
-                linhas.append(f"{n['emoji']} **{n['nome']}**\n╰ {n['desc']}")
+                inscritos.update(m.id for m in cargo.members)
+            linhas.append(f"> {n['emoji']} **{n['nome']}** — {n['desc']}")
 
-        embed.add_field(
-            name="📋 Notificações disponíveis",
-            value="\n\n".join(linhas),
-            inline=False,
+        total = len(inscritos)
+        recebem = "pessoa recebe" if total == 1 else "pessoas recebem"
+
+        descricao = (
+            "Escolha no menu abaixo as notificações que deseja receber.\n\n"
+            "**Escolha suas Notificações**\n"
+            + "\n".join(linhas)
+            + "\n\n"
+            "**Como funciona**\n"
+            "> Escolha uma ou mais opções no menu para **ativar**.\n"
+            "> Escolha de novo para **desativar**.\n"
+            "> Use **Ativar todas** ou **Desativar todas** para mudar tudo de uma vez.\n\n"
+            "**Comunidade**\n"
+            f"> 👥 **{total}** {recebem} pelo menos uma notificação.\n\n"
+            "**Aviso**\n"
+            "> ⚠️ Ative só o que você quer acompanhar — você pode mudar quando quiser."
         )
-        embed.add_field(
-            name="📌 Como funciona",
-            value=(
-                "**1.** Abra o menu abaixo\n"
-                "**2.** Escolha uma ou mais notificações\n"
-                "**3.** Escolha de novo para **desativar**"
-            ),
-            inline=True,
-        )
-        embed.add_field(
-            name="⚡ Atalhos do menu",
-            value=(
-                "✅ **Ativar todas**\n"
-                "🚫 **Desativar todas**\n"
-                "📋 **Ver minhas notificações**"
-            ),
-            inline=True,
-        )
-        embed.add_field(
-            name="👥 Comunidade",
-            value=(
-                f"**{len(inscritos)}** "
-                f"{'pessoa recebe' if len(inscritos) == 1 else 'pessoas recebem'} "
-                "pelo menos uma notificação."
-            ),
-            inline=False,
-        )
-        return embed
+
+        return embed_base("🔔 Central de Notificações", descricao, banner=True)
 
     # ── Atualização automática dos painéis ──────────────────────
     @tasks.loop(seconds=60)
