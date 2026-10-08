@@ -22,11 +22,8 @@ LOGAR_SAIDAS = False
 
 JANELA_AGRUPAR = 2.0
 
-# Um convite que sumiu só é considerado "usado até o limite" se o Discord avisou
-# da exclusão dele nos últimos X segundos.
 JANELA_DELETE = 30
 
-# ── Visual (mesma identidade do painel de tickets) ──────────────
 NOME_SERVIDOR = "Família Sant's"
 COR_PRINCIPAL = 0x1A3C8C   # azul escuro
 COR_SUCESSO = 0x2ECC71

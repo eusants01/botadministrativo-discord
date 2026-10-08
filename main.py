@@ -1,11 +1,12 @@
 import discord
 import os
+import asyncpg
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from painel import start_painel 
+from painel import start_painel
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -39,6 +40,18 @@ async def on_ready():
 
 
 async def setup_hook():
+    # Pool do PostgreSQL (Railway), compartilhado por todos os cogs.
+    # Precisa ser criado ANTES de carregar os cogs.
+    url = os.getenv('DATABASE_URL')
+    if not url:
+        print('❌ DATABASE_URL não encontrada no ambiente.')
+    else:
+        try:
+            bot.pool = await asyncpg.create_pool(url, min_size=1, max_size=10)
+            print('🗄️ Pool PostgreSQL conectado')
+        except Exception as e:
+            print(f'❌ Erro ao conectar no PostgreSQL: {type(e).__name__}: {e}')
+
     if not os.path.exists('./cogs'):
         os.makedirs('./cogs')
 
@@ -59,6 +72,19 @@ async def setup_hook():
     except Exception as e:
         print(f'❌ Erro ao iniciar o painel: {type(e).__name__}: {e}')
 
+
+# Fecha o pool do PostgreSQL ao desligar o bot
+_close_original = bot.close
+
+
+async def close_com_pool():
+    pool = getattr(bot, 'pool', None)
+    if pool is not None:
+        await pool.close()
+    await _close_original()
+
+
+bot.close = close_com_pool
 bot.setup_hook = setup_hook
 
 TOKEN = os.getenv('DISCORD_TOKEN')
