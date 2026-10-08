@@ -23,7 +23,7 @@ CARGOS_STAFF = [
 
 ]
 
-CARGOS_NOTIFICAR = [1553832098404499516]
+CARGOS_NOTIFICAR = [1553832098404499516,1553832097905377422]
 
 
 CATEGORIA_TICKETS_ID = 1555449984453972009
@@ -38,15 +38,13 @@ COOLDOWN_CHAMAR_EQUIPE = 100
 ALERTA_SEM_ATENDENTE_MINUTOS = 5
 
 
-INATIVIDADE_AVISO_HORAS = 24
-INATIVIDADE_FECHAR_APOS_AVISO_HORAS = 12
+INATIVIDADE_AVISO_HORAS = 0
+INATIVIDADE_FECHAR_APOS_AVISO_HORAS = 0
 
 # ── 3) Visual ───────────────────────────────────────────────────
 
 BANNER_PRINCIPAL = "https://cdn.discordapp.com/attachments/961677475191078992/1555452137499271249/content.png?backend=b2&ex=6ac09330&is=6abf41b0&hm=69fd6e5a44be95e298fc5f9c2cad885291bec77f1a1919a0343f275f2820c8cd&"
 
-# Texto do painel principal (!painelticket). Pode editar à vontade —
-# aceita a formatação do Discord (negrito, `código`, > citação).
 PAINEL_DESCRICAO = """\
 # <a:sino:1555469607341654047> **Central de Atendimento**
 Escolha no menu abaixo uma categoria que deseja receber o suporte necessário.
@@ -73,15 +71,6 @@ PRIORIDADES = {
     "urgente": ("🔴", "Urgente"),
 }
 
-# ── 4) Categorias ───────────────────────────────────────────────
-# Cada categoria tem: banner, mensagem de boas-vindas, cor, emoji, cargos
-# marcados e um FORMULÁRIO (perguntas) que o usuário responde ao abrir.
-#   • "mensagem": texto que aparece dentro do ticket. Use {usuario} para
-#     mencionar quem abriu e a formatação do Discord (**negrito**, `código`,
-#     > citação), no mesmo estilo do painel principal.
-#   • "perguntas": até 5. Deixe [] para não ter formulário.
-#   • "categoria_discord_id": só preencha se esta categoria específica
-#     precisar ir para OUTRA categoria do Discord (senão deixe None).
 CATEGORIAS = {
     "suporte": {
         "nome": "Suporte",

@@ -53,7 +53,6 @@ async def setup_hook():
     if not mudar_status.is_running():
         mudar_status.start()
 
-    # Painel administrativo (site)
     try:
         await start_painel(bot)
         print('🌐 Painel iniciado')
