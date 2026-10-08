@@ -31,8 +31,8 @@ COR_NEUTRA = 0x95A5A6
 SEPARADOR = "▬" * 16
 
 
-IMAGEM_PINGS_ARQUIVO = "https://i.imgur.com/BU2ot5J.png"
-IMAGEM_PINGS_URL = ""
+IMAGEM_PINGS_ARQUIVO = ""
+IMAGEM_PINGS_URL = "https://i.imgur.com/BU2ot5J.png"
 ICONE_PINGS = ""
 
 # Quem pode usar os comandos: Administrador OU algum destes cargos.
@@ -65,8 +65,8 @@ Escolha no menu abaixo as notificações que deseja receber.
 > `✅` Escolha uma opção no menu para **ativar**.
 > `🚫` Escolha a mesma opção de novo para **desativar**.
 
-**Aviso**
-> `⚠️` Ative só o que você quer acompanhar — você pode mudar quando quiser.
+
+
 """
 
 # chave → dados de cada notificação (a ordem aqui é a ordem no menu)
