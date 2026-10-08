@@ -30,13 +30,9 @@ COR_NEUTRA = 0x95A5A6
 # Linha divisória usada nas mensagens do painel
 SEPARADOR = "▬" * 16
 
-# ── Banner ──────────────────────────────────────────────────────
-# Opção 1 (recomendada): arquivo local. Coloque a imagem na pasta do projeto
-# (ao lado do main.py), sem espaços no nome. O bot envia o arquivo junto com o painel.
-IMAGEM_PINGS_ARQUIVO = "assets/banner_pings.png"
-# Opção 2: link direto da imagem (https://...). Usado se o arquivo não existir.
+
+IMAGEM_PINGS_ARQUIVO = "https://i.imgur.com/BU2ot5J.png"
 IMAGEM_PINGS_URL = ""
-# Ícone pequeno do rodapé (opcional).
 ICONE_PINGS = ""
 
 # Quem pode usar os comandos: Administrador OU algum destes cargos.
