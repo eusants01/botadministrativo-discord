@@ -5,6 +5,7 @@ import time
 from datetime import datetime, timezone
 
 import discord
+from discord import app_commands
 from discord.ext import commands, tasks
 
 # ╔══════════════════════════════════════════════════════════════╗
@@ -53,6 +54,33 @@ COOLDOWN_SEG = 3
 # De quanto em quanto tempo os painéis são atualizados (só se algo mudou).
 INTERVALO_ATUALIZACAO_SEG = 60
 
+# ── Texto do painel (EDITE AQUI e rode !atualizarpings para aplicar) ───────────
+PAINEL_TITULO = "🔔 Central de Notificações"
+PAINEL_INTRO = "Escolha no menu abaixo as notificações que deseja receber."
+PAINEL_TITULO_LISTA = "Escolha suas Notificações"
+
+# Seções que aparecem depois da lista, na ordem. Formato: (título, [linhas]).
+# Cada linha vira uma linha em citação (>). Para remover uma seção, apague a tupla;
+# para não ter nenhuma, deixe a lista vazia: PAINEL_SECOES = []
+PAINEL_SECOES: list[tuple[str, list[str]]] = [
+    (
+        "Como funciona",
+        [
+            "Escolha uma ou mais opções no menu para **ativar**.",
+            "Escolha de novo para **desativar**.",
+        ],
+    ),
+    (
+        "Aviso",
+        [
+            "⚠️ Ative só o que você quer acompanhar — você pode mudar quando quiser.",
+        ],
+    ),
+]
+
+# Mostra uma seção "Comunidade" com o total de pessoas inscritas (se True).
+MOSTRAR_COMUNIDADE = False
+
 # chave → dados de cada notificação (a ordem aqui é a ordem no menu)
 NOTIFICACOES: dict[str, dict] = {
     "sorteios": {
@@ -89,7 +117,6 @@ NOTIFICACOES: dict[str, dict] = {
 
 VALOR_TODAS = "__todas"
 VALOR_NENHUMA = "__nenhuma"
-VALOR_VER = "__ver"
 
 IDS_CARGOS = {n["cargo_id"] for n in NOTIFICACOES.values()}
 
@@ -221,6 +248,22 @@ def status_linhas(ativas) -> str:
 # ════════════════════════════════════════════════════════════════
 
 
+def embed_minhas(guild: discord.Guild, membro: discord.Member) -> discord.Embed:
+    tem = {c for c in NOTIFICACOES if (cargo := cargo_de(guild, c)) and cargo in membro.roles}
+    embed = embed_base(
+        "📋 Suas notificações",
+        f"{membro.mention}, veja o que você recebe hoje.\n{SEPARADOR}",
+        cor=COR_PRINCIPAL,
+    )
+    embed.set_thumbnail(url=membro.display_avatar.url)
+    embed.add_field(
+        name=f"📊 Seu status • {len(tem)}/{len(NOTIFICACOES)} ativas",
+        value=status_linhas(tem),
+        inline=False,
+    )
+    return embed
+
+
 class PingsSelect(discord.ui.Select):
     """Menu único. Escolher uma notificação alterna: ativa se não tem, remove se já tem."""
 
@@ -243,12 +286,6 @@ class PingsSelect(discord.ui.Select):
                 value=VALOR_NENHUMA,
                 description="Remover todas as notificações.",
                 emoji="🚫",
-            ),
-            discord.SelectOption(
-                label="Ver minhas notificações",
-                value=VALOR_VER,
-                description="Só consultar, sem alterar nada.",
-                emoji="📋",
             ),
         ]
         super().__init__(
@@ -283,21 +320,6 @@ class PingsSelect(discord.ui.Select):
         tem = {c for c in NOTIFICACOES if (cargo := cargo_de(guild, c)) and cargo in membro.roles}
         escolhidas = set(self.values)
 
-        # Só consultar
-        if escolhidas == {VALOR_VER}:
-            embed = embed_base(
-                "📋 Suas notificações",
-                f"{membro.mention}, veja o que você recebe hoje.\n{SEPARADOR}",
-                cor=COR_PRINCIPAL,
-            )
-            embed.set_thumbnail(url=membro.display_avatar.url)
-            embed.add_field(
-                name=f"📊 Seu status • {len(tem)}/{len(NOTIFICACOES)} ativas",
-                value=status_linhas(tem),
-                inline=False,
-            )
-            return await interaction.followup.send(embed=embed, ephemeral=True)
-        escolhidas.discard(VALOR_VER)
 
         # Sem permissão nenhuma → nada a fazer
         if not usaveis:
@@ -391,12 +413,33 @@ class PingsSelect(discord.ui.Select):
                     pass
 
 
+class BotaoMinhasNotificacoes(discord.ui.Button):
+    def __init__(self):
+        super().__init__(
+            label="Ver minhas notificações",
+            emoji="📋",
+            style=discord.ButtonStyle.secondary,
+            custom_id="pings:minhas",
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        membro = interaction.user
+        if interaction.guild is None or not isinstance(membro, discord.Member):
+            return await interaction.response.send_message(
+                "❌ Não foi possível verificar suas notificações.", ephemeral=True
+            )
+        await interaction.response.send_message(
+            embed=embed_minhas(interaction.guild, membro), ephemeral=True
+        )
+
+
 class PainelPingsView(discord.ui.View):
     """View persistente (custom_id fixo): continua funcionando depois de reiniciar."""
 
     def __init__(self):
         super().__init__(timeout=None)
         self.add_item(PingsSelect())
+        self.add_item(BotaoMinhasNotificacoes())
 
 
 # ════════════════════════════════════════════════════════════════
@@ -423,33 +466,34 @@ class PingsCog(commands.Cog, name="Notificações"):
 
     # ── Painel ──────────────────────────────────────────────────
     def embed_painel(self, guild: discord.Guild) -> discord.Embed:
-        linhas = []
-        inscritos: set[int] = set()
-        for chave, n in NOTIFICACOES.items():
-            cargo = cargo_de(guild, chave)
-            if cargo:
-                inscritos.update(m.id for m in cargo.members)
-            linhas.append(f"> {n['emoji']} **{n['nome']}** — {n['desc']}")
+        def secao(titulo: str, linhas: list[str]) -> str:
+            return f"**{titulo}**\n" + "\n".join(f"> {linha}" for linha in linhas)
 
-        total = len(inscritos)
-        recebem = "pessoa recebe" if total == 1 else "pessoas recebem"
+        lista = [
+            f"`{n['emoji']}` **{n['nome']}** — {n['desc']}"
+            for n in NOTIFICACOES.values()
+        ]
 
-        descricao = (
-            "Escolha no menu abaixo as notificações que deseja receber.\n\n"
-            "**Escolha suas Notificações**\n"
-            + "\n".join(linhas)
-            + "\n\n"
-            "**Como funciona**\n"
-            "> Escolha uma ou mais opções no menu para **ativar**.\n"
-            "> Escolha de novo para **desativar**.\n"
-            "> Use **Ativar todas** ou **Desativar todas** para mudar tudo de uma vez.\n\n"
-            "**Comunidade**\n"
-            f"> 👥 **{total}** {recebem} pelo menos uma notificação.\n\n"
-            "**Aviso**\n"
-            "> ⚠️ Ative só o que você quer acompanhar — você pode mudar quando quiser."
-        )
+        partes = []
+        if PAINEL_INTRO:
+            partes.append(PAINEL_INTRO)
+        partes.append(secao(PAINEL_TITULO_LISTA, lista))
+        for titulo, linhas in PAINEL_SECOES:
+            partes.append(secao(titulo, linhas))
 
-        return embed_base("🔔 Central de Notificações", descricao, banner=True)
+        if MOSTRAR_COMUNIDADE:
+            inscritos: set[int] = set()
+            for chave in NOTIFICACOES:
+                cargo = cargo_de(guild, chave)
+                if cargo:
+                    inscritos.update(m.id for m in cargo.members)
+            total = len(inscritos)
+            recebem = "pessoa recebe" if total == 1 else "pessoas recebem"
+            partes.append(
+                secao("Comunidade", [f"👥 **{total}** {recebem} pelo menos uma notificação."])
+            )
+
+        return embed_base(PAINEL_TITULO, "\n\n".join(partes), banner=True)
 
     # ── Atualização automática dos painéis ──────────────────────
     @tasks.loop(seconds=60)
@@ -534,7 +578,23 @@ class PingsCog(commands.Cog, name="Notificações"):
             raise error
 
     # ── Comandos ────────────────────────────────────────────────
-    @commands.command(name="painelpings")
+    async def _registrar_painel(self, guild_id: int, channel_id: int, message_id: int):
+        """Salva a mensagem do painel no PostgreSQL (para a atualização automática)."""
+        if self.pool is None:
+            return
+        try:
+            await self.pool.execute(SQL_CRIAR_TABELA)
+            await self.pool.execute(
+                """
+                INSERT INTO pings_paineis (guild_id, channel_id, message_id)
+                VALUES ($1,$2,$3) ON CONFLICT DO NOTHING
+                """,
+                guild_id, channel_id, message_id,
+            )
+        except Exception as e:  # noqa: BLE001
+            print(f"[pings] erro ao salvar painel: {type(e).__name__}: {e}")
+
+    @commands.command(name="painelpings", aliases=["painel_notificacoes"])
     @apenas_staff()
     async def painelpings(self, ctx: commands.Context):
         """Envia o painel de notificações neste canal."""
@@ -561,24 +621,53 @@ class PingsCog(commands.Cog, name="Notificações"):
             view=PainelPingsView(),
             file=banner_arquivo(),
         )
-
-        if self.pool is not None:
-            try:
-                await self.pool.execute(SQL_CRIAR_TABELA)
-                await self.pool.execute(
-                    """
-                    INSERT INTO pings_paineis (guild_id, channel_id, message_id)
-                    VALUES ($1,$2,$3) ON CONFLICT DO NOTHING
-                    """,
-                    ctx.guild.id, ctx.channel.id, msg.id,
-                )
-            except Exception as e:  # noqa: BLE001
-                print(f"[pings] erro ao salvar painel: {type(e).__name__}: {e}")
+        await self._registrar_painel(ctx.guild.id, ctx.channel.id, msg.id)
 
         try:
             await ctx.message.delete()
         except discord.HTTPException:
             pass
+
+    @app_commands.command(
+        name="painel_notificacoes",
+        description="🔔 Envia o painel de notificações neste canal.",
+    )
+    @app_commands.guild_only()
+    async def painel_slash(self, interaction: discord.Interaction):
+        if not eh_staff(interaction.user):
+            return await interaction.response.send_message(
+                "❌ Apenas a staff pode usar este comando.", ephemeral=True
+            )
+
+        usaveis, problemas = cargos_usaveis(interaction.guild)
+        if not usaveis:
+            embed = embed_base(
+                "⚠️ Ajuste antes de usar o painel",
+                "\n".join(f"• {p}" for p in problemas),
+                cor=COR_ERRO,
+            )
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        kwargs = {}
+        arquivo = banner_arquivo()
+        if arquivo:
+            kwargs["file"] = arquivo
+
+        await interaction.response.send_message(
+            embed=self.embed_painel(interaction.guild),
+            view=PainelPingsView(),
+            **kwargs,
+        )
+        msg = await interaction.original_response()
+        await self._registrar_painel(interaction.guild.id, interaction.channel_id, msg.id)
+
+        if problemas:
+            aviso = embed_base(
+                "⚠️ Atenção",
+                "\n".join(f"• {p}" for p in problemas),
+                cor=COR_ERRO,
+            )
+            await interaction.followup.send(embed=aviso, ephemeral=True)
 
     @commands.command(name="atualizarpings")
     @apenas_staff()
