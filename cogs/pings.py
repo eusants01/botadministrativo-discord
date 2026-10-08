@@ -4,9 +4,10 @@ import os
 import time
 from datetime import datetime, timezone
 
+import aiohttp
 import discord
 from discord import app_commands
-from discord.ext import commands, tasks
+from discord.ext import commands
 
 # ╔══════════════════════════════════════════════════════════════╗
 # ║                        CONFIGURAÇÃO                          ║
@@ -14,8 +15,9 @@ from discord.ext import commands, tasks
 #
 # O bot precisa da permissão "Gerenciar Cargos" e o cargo dele precisa estar
 # ACIMA dos cargos de notificação na lista de cargos do servidor.
-# A atualização automática do painel usa o PostgreSQL (bot.pool) para lembrar
-# em quais mensagens o painel está. Sem o pool, tudo funciona, só não atualiza sozinho.
+# O PostgreSQL (bot.pool) é usado só para lembrar em quais mensagens o painel está,
+# para o !atualizarpings conseguir aplicar mudanças nos painéis já enviados.
+# Sem o pool, tudo funciona normalmente.
 
 NOME_SERVIDOR = "Família Sant's"
 
@@ -29,59 +31,36 @@ COR_NEUTRA = 0x95A5A6
 # Linha divisória usada nas mensagens do painel
 SEPARADOR = "▬" * 16
 
-# ── Banner ──────────────────────────────────────────────────────
-# Opção 1 (recomendada): arquivo local. Coloque a imagem na pasta do projeto
-# (ao lado do main.py), sem espaços no nome. O bot envia o arquivo junto com o painel.
-IMAGEM_PINGS_ARQUIVO = "assets/banner_pings.png"
-# Opção 2: link direto da imagem (https://...). Usado se o arquivo não existir.
-IMAGEM_PINGS_URL = ""
-# Ícone pequeno do rodapé (opcional).
+BANNER = "https://i.imgur.com/BU2ot5J.png"
+
+# Ícone pequeno do rodapé (opcional, link direto).
 ICONE_PINGS = ""
 
-# Quem pode usar os comandos: Administrador OU algum destes cargos.
 CARGOS_STAFF = [
     1553832098404499516,
     1553832097905377422,
 ]
 
-# Canal (só da staff) que recebe um registro quando alguém muda as notificações.
-# 0 = desligado.
 LOG_CANAL_ID = 0
 
-# Tempo mínimo (segundos) entre duas alterações da mesma pessoa.
 COOLDOWN_SEG = 3
 
-# De quanto em quanto tempo os painéis são atualizados (só se algo mudou).
-INTERVALO_ATUALIZACAO_SEG = 60
+PAINEL_DESCRICAO = """\
+# <a:animated_Notifications:1557622860569120821> **Central de Notificações**
+Escolha no menu abaixo as notificações que deseja receber.
 
-# ── Texto do painel (EDITE AQUI e rode !atualizarpings para aplicar) ───────────
-PAINEL_TITULO = "🔔 Central de Notificações"
-PAINEL_INTRO = "Escolha no menu abaixo as notificações que deseja receber."
-PAINEL_TITULO_LISTA = "Escolha suas Notificações"
+**Escolha suas Notificações**
+> `🎁` **Sorteios** — Seja avisado quando rolar um sorteio.
+> `🎉` **Eventos** — Eventos e atividades do servidor.
+> `📢` **Anúncios** — Comunicados importantes da administração.
+> `⚠️` **Avisos** — Avisos gerais e lembretes rápidos.
+> `📰` **Notícias** — Novidades e atualizações da família.
 
-# Seções que aparecem depois da lista, na ordem. Formato: (título, [linhas]).
-# Cada linha vira uma linha em citação (>). Para remover uma seção, apague a tupla;
-# para não ter nenhuma, deixe a lista vazia: PAINEL_SECOES = []
-PAINEL_SECOES: list[tuple[str, list[str]]] = [
-    (
-        "Como funciona",
-        [
-            "Escolha uma ou mais opções no menu para **ativar**.",
-            "Escolha de novo para **desativar**.",
-        ],
-    ),
-    (
-        "Aviso",
-        [
-            "⚠️ Ative só o que você quer acompanhar — você pode mudar quando quiser.",
-        ],
-    ),
-]
+**Como funciona**
+> `✅` Escolha uma opção no menu para **ativar**.
+> `🚫` Escolha a mesma opção de novo para **desativar**.
+"""
 
-# Mostra uma seção "Comunidade" com o total de pessoas inscritas (se True).
-MOSTRAR_COMUNIDADE = False
-
-# chave → dados de cada notificação (a ordem aqui é a ordem no menu)
 NOTIFICACOES: dict[str, dict] = {
     "sorteios": {
         "nome": "Sorteios",
@@ -118,8 +97,6 @@ NOTIFICACOES: dict[str, dict] = {
 VALOR_TODAS = "__todas"
 VALOR_NENHUMA = "__nenhuma"
 
-IDS_CARGOS = {n["cargo_id"] for n in NOTIFICACOES.values()}
-
 SQL_CRIAR_TABELA = """
 CREATE TABLE IF NOT EXISTS pings_paineis (
     guild_id BIGINT NOT NULL,
@@ -130,12 +107,6 @@ CREATE TABLE IF NOT EXISTS pings_paineis (
 """
 
 _ultimo_uso: dict[int, float] = {}
-
-
-# ════════════════════════════════════════════════════════════════
-#                              AUXILIARES
-# ════════════════════════════════════════════════════════════════
-
 
 def eh_staff(membro) -> bool:
     if not isinstance(membro, discord.Member):
@@ -154,30 +125,55 @@ def apenas_staff():
 
     return commands.check(predicate)
 
+def _banner_eh_link() -> bool:
+    return BANNER.strip().lower().startswith(("http://", "https://"))
 
-def _banner_local() -> str | None:
-    if IMAGEM_PINGS_ARQUIVO and os.path.isfile(IMAGEM_PINGS_ARQUIVO):
-        return IMAGEM_PINGS_ARQUIVO
-    return None
+
+def _banner_arquivo_existe() -> bool:
+    return bool(BANNER.strip()) and not _banner_eh_link() and os.path.isfile(BANNER.strip())
 
 
 def banner_arquivo() -> discord.File | None:
-    """Novo discord.File a cada envio (um File só pode ser usado uma vez)."""
-    caminho = _banner_local()
-    if caminho:
+    """Só existe quando o BANNER é um arquivo local (um File só pode ser usado uma vez)."""
+    if _banner_arquivo_existe():
+        caminho = BANNER.strip()
         return discord.File(caminho, filename=os.path.basename(caminho))
     return None
 
 
 def banner_url() -> str | None:
-    caminho = _banner_local()
-    if caminho:
-        return f"attachment://{os.path.basename(caminho)}"
-    return IMAGEM_PINGS_URL or None
+    if _banner_eh_link():
+        return BANNER.strip()
+    if _banner_arquivo_existe():
+        return f"attachment://{os.path.basename(BANNER.strip())}"
+    return None
+
+
+async def testar_banner() -> tuple[bool, str]:
+    """Confere se o banner está utilizável e devolve (ok, texto para exibir)."""
+    if not BANNER.strip():
+        return False, "Nenhum banner configurado."
+    if not _banner_eh_link():
+        if _banner_arquivo_existe():
+            return True, f"Arquivo local `{BANNER.strip()}`"
+        return False, f"Arquivo `{BANNER.strip()}` não encontrado."
+    try:
+        timeout = aiohttp.ClientTimeout(total=6)
+        async with aiohttp.ClientSession(timeout=timeout) as sessao:
+            async with sessao.get(BANNER.strip(), headers={"User-Agent": "Mozilla/5.0"}) as r:
+                tipo = r.headers.get("Content-Type", "")
+                if r.status == 200 and tipo.startswith("image/"):
+                    return True, f"Link OK (`{tipo}`)"
+                return False, (
+                    f"O link respondeu HTTP {r.status} (`{tipo or 'sem tipo'}`). "
+                    "Use o link direto da imagem (ex.: `https://i.imgur.com/xxxx.png`)."
+                )
+    except Exception as e:  # noqa: BLE001
+        return False, f"Não consegui abrir o link ({type(e).__name__})."
 
 
 def embed_base(
-    titulo: str,
+    titulo: str | None,
     descricao: str | None = None,
     cor: int = COR_PRINCIPAL,
     banner: bool = False,
@@ -243,11 +239,6 @@ def status_linhas(ativas) -> str:
     )
 
 
-# ════════════════════════════════════════════════════════════════
-#                  PAINEL (MENU PERSISTENTE, COMO O TICKET)
-# ════════════════════════════════════════════════════════════════
-
-
 def embed_minhas(guild: discord.Guild, membro: discord.Member) -> discord.Embed:
     tem = {c for c in NOTIFICACOES if (cargo := cargo_de(guild, c)) and cargo in membro.roles}
     embed = embed_base(
@@ -262,7 +253,6 @@ def embed_minhas(guild: discord.Guild, membro: discord.Member) -> discord.Embed:
         inline=False,
     )
     return embed
-
 
 class PingsSelect(discord.ui.Select):
     """Menu único. Escolher uma notificação alterna: ativa se não tem, remove se já tem."""
@@ -319,7 +309,6 @@ class PingsSelect(discord.ui.Select):
         usaveis, problemas = cargos_usaveis(guild)
         tem = {c for c in NOTIFICACOES if (cargo := cargo_de(guild, c)) and cargo in membro.roles}
         escolhidas = set(self.values)
-
 
         # Sem permissão nenhuma → nada a fazer
         if not usaveis:
@@ -447,10 +436,9 @@ class PainelPingsView(discord.ui.View):
 # ════════════════════════════════════════════════════════════════
 
 
-class PingsCog(commands.Cog, name="Notificações"):
+class PingsCog(commands.Cog, name="Pings"):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.sujo: set[int] = set()  # guilds cujos painéis precisam ser atualizados
 
     @property
     def pool(self):
@@ -458,75 +446,36 @@ class PingsCog(commands.Cog, name="Notificações"):
 
     async def cog_load(self):
         self.bot.add_view(PainelPingsView())
-        self.atualizar_paineis.change_interval(seconds=INTERVALO_ATUALIZACAO_SEG)
-        self.atualizar_paineis.start()
-
-    async def cog_unload(self):
-        self.atualizar_paineis.cancel()
 
     # ── Painel ──────────────────────────────────────────────────
-    def embed_painel(self, guild: discord.Guild) -> discord.Embed:
-        def secao(titulo: str, linhas: list[str]) -> str:
-            return f"**{titulo}**\n" + "\n".join(f"> {linha}" for linha in linhas)
+    def embed_painel(self, guild: discord.Guild | None = None) -> discord.Embed:
+        return embed_base(None, PAINEL_DESCRICAO.strip(), banner=True)
 
-        lista = [
-            f"`{n['emoji']}` **{n['nome']}** — {n['desc']}"
-            for n in NOTIFICACOES.values()
-        ]
-
-        partes = []
-        if PAINEL_INTRO:
-            partes.append(PAINEL_INTRO)
-        partes.append(secao(PAINEL_TITULO_LISTA, lista))
-        for titulo, linhas in PAINEL_SECOES:
-            partes.append(secao(titulo, linhas))
-
-        if MOSTRAR_COMUNIDADE:
-            inscritos: set[int] = set()
-            for chave in NOTIFICACOES:
-                cargo = cargo_de(guild, chave)
-                if cargo:
-                    inscritos.update(m.id for m in cargo.members)
-            total = len(inscritos)
-            recebem = "pessoa recebe" if total == 1 else "pessoas recebem"
-            partes.append(
-                secao("Comunidade", [f"👥 **{total}** {recebem} pelo menos uma notificação."])
-            )
-
-        return embed_base(PAINEL_TITULO, "\n\n".join(partes), banner=True)
-
-    # ── Atualização automática dos painéis ──────────────────────
-    @tasks.loop(seconds=60)
-    async def atualizar_paineis(self):
-        if not self.sujo or self.pool is None:
+    # ── Painéis já enviados (PostgreSQL) ────────────────────────
+    async def _registrar_painel(self, guild_id: int, channel_id: int, message_id: int):
+        """Salva a mensagem do painel para o !atualizarpings conseguir editá-la depois."""
+        if self.pool is None:
             return
-        gids = list(self.sujo)
-        self.sujo.clear()
-        for gid in gids:
-            await self._atualizar_guild(gid)
-
-    @atualizar_paineis.before_loop
-    async def _antes_atualizar(self):
-        await self.bot.wait_until_ready()
-        if self.pool is not None:
-            try:
-                await self.pool.execute(SQL_CRIAR_TABELA)
-            except Exception as e:  # noqa: BLE001
-                print(f"[pings] ERRO ao criar tabela: {type(e).__name__}: {e}")
-        # Ao ligar, atualiza as contagens de todos os painéis
-        self.sujo.update(g.id for g in self.bot.guilds)
-
-    @atualizar_paineis.error
-    async def _erro_atualizar(self, error):
-        print(f"[pings] erro na atualização dos painéis: {type(error).__name__}: {error}")
+        try:
+            await self.pool.execute(SQL_CRIAR_TABELA)
+            await self.pool.execute(
+                """
+                INSERT INTO pings_paineis (guild_id, channel_id, message_id)
+                VALUES ($1,$2,$3) ON CONFLICT DO NOTHING
+                """,
+                guild_id, channel_id, message_id,
+            )
+        except Exception as e:  # noqa: BLE001
+            print(f"[pings] erro ao salvar painel: {type(e).__name__}: {e}")
 
     async def _atualizar_guild(self, gid: int) -> int:
-        """Atualiza todos os painéis da guild. Retorna quantos foram atualizados."""
+        """Reaplica o texto/banner em todos os painéis da guild. Retorna quantos foram atualizados."""
         guild = self.bot.get_guild(gid)
         if guild is None or self.pool is None:
             return 0
 
         try:
+            await self.pool.execute(SQL_CRIAR_TABELA)
             rows = await self.pool.fetch(
                 "SELECT channel_id, message_id FROM pings_paineis WHERE guild_id=$1", gid
             )
@@ -545,6 +494,7 @@ class PingsCog(commands.Cog, name="Notificações"):
                 )
                 continue
             try:
+                # Mantém o arquivo anexado (se o banner for local); só troca o embed.
                 await canal.get_partial_message(r["message_id"]).edit(embed=embed)
                 atualizados += 1
             except discord.NotFound:
@@ -556,20 +506,6 @@ class PingsCog(commands.Cog, name="Notificações"):
                 pass
         return atualizados
 
-    @commands.Cog.listener()
-    async def on_member_update(self, antes: discord.Member, depois: discord.Member):
-        if antes.roles == depois.roles:
-            return
-        ids_antes = {r.id for r in antes.roles} & IDS_CARGOS
-        ids_depois = {r.id for r in depois.roles} & IDS_CARGOS
-        if ids_antes != ids_depois:
-            self.sujo.add(depois.guild.id)
-
-    @commands.Cog.listener()
-    async def on_member_remove(self, membro: discord.Member):
-        if any(r.id in IDS_CARGOS for r in membro.roles):
-            self.sujo.add(membro.guild.id)
-
     # ── Erros de comando ────────────────────────────────────────
     async def cog_command_error(self, ctx: commands.Context, error):
         if isinstance(error, commands.CheckFailure):
@@ -578,22 +514,6 @@ class PingsCog(commands.Cog, name="Notificações"):
             raise error
 
     # ── Comandos ────────────────────────────────────────────────
-    async def _registrar_painel(self, guild_id: int, channel_id: int, message_id: int):
-        """Salva a mensagem do painel no PostgreSQL (para a atualização automática)."""
-        if self.pool is None:
-            return
-        try:
-            await self.pool.execute(SQL_CRIAR_TABELA)
-            await self.pool.execute(
-                """
-                INSERT INTO pings_paineis (guild_id, channel_id, message_id)
-                VALUES ($1,$2,$3) ON CONFLICT DO NOTHING
-                """,
-                guild_id, channel_id, message_id,
-            )
-        except Exception as e:  # noqa: BLE001
-            print(f"[pings] erro ao salvar painel: {type(e).__name__}: {e}")
-
     @commands.command(name="painelpings", aliases=["painel_notificacoes"])
     @apenas_staff()
     async def painelpings(self, ctx: commands.Context):
@@ -610,11 +530,9 @@ class PingsCog(commands.Cog, name="Notificações"):
             if not usaveis:
                 return
 
-        if IMAGEM_PINGS_ARQUIVO and not _banner_local() and not IMAGEM_PINGS_URL:
-            await ctx.send(
-                f"ℹ️ Banner não encontrado em `{IMAGEM_PINGS_ARQUIVO}` — painel enviado sem imagem.",
-                delete_after=10,
-            )
+        ok, info = await testar_banner()
+        if BANNER.strip() and not ok:
+            await ctx.send(f"⚠️ **Banner com problema:** {info}", delete_after=15)
 
         msg = await ctx.send(
             embed=self.embed_painel(ctx.guild),
@@ -672,7 +590,7 @@ class PingsCog(commands.Cog, name="Notificações"):
     @commands.command(name="atualizarpings")
     @apenas_staff()
     async def atualizarpings(self, ctx: commands.Context):
-        """Força a atualização das contagens nos painéis."""
+        """Aplica o texto e o banner atuais nos painéis já enviados."""
         if self.pool is None:
             return await ctx.send("❌ O pool do PostgreSQL não está configurado.", delete_after=8)
         n = await self._atualizar_guild(ctx.guild.id)
@@ -682,7 +600,7 @@ class PingsCog(commands.Cog, name="Notificações"):
     @apenas_staff()
     async def statuspings(self, ctx: commands.Context):
         """Mostra quantas pessoas têm cada notificação e a saúde da configuração."""
-        embed = embed_base("📊 Status das notificações", banner=True)
+        embed = embed_base("📊 Status das notificações")
         linhas = []
         for chave, n in NOTIFICACOES.items():
             cargo = cargo_de(ctx.guild, chave)
@@ -699,25 +617,20 @@ class PingsCog(commands.Cog, name="Notificações"):
             inline=False,
         )
 
-        if _banner_local():
-            banner = f"✅ Arquivo `{IMAGEM_PINGS_ARQUIVO}`"
-        elif IMAGEM_PINGS_URL:
-            banner = "✅ Link configurado"
-        else:
-            banner = "⚠️ Nenhum banner configurado"
+        ok, info = await testar_banner()
+        embed.add_field(name="🖼️ Banner", value=f"{'✅' if ok else '⚠️'} {info}", inline=False)
 
         if self.pool is not None:
             try:
                 qtd = await self.pool.fetchval(
                     "SELECT COUNT(*) FROM pings_paineis WHERE guild_id=$1", ctx.guild.id
                 )
-                paineis = f"**{qtd}** registrado(s) (atualização automática)"
+                paineis = f"**{qtd}** registrado(s)"
             except Exception:  # noqa: BLE001
                 paineis = "❌ erro ao consultar o banco"
         else:
-            paineis = "⚠️ sem PostgreSQL (não atualiza sozinho)"
+            paineis = "⚠️ sem PostgreSQL (!atualizarpings indisponível)"
 
-        embed.add_field(name="🖼️ Banner", value=banner, inline=True)
         embed.add_field(name="🗄️ Painéis", value=paineis, inline=True)
         embed.add_field(
             name="🧾 Log de alterações",
