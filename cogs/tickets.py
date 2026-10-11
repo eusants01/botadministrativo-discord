@@ -42,12 +42,8 @@ ALERTA_SEM_ATENDENTE_MINUTOS = 5
 INATIVIDADE_AVISO_HORAS = 0
 INATIVIDADE_FECHAR_APOS_AVISO_HORAS = 0
 
-# ── 3) Visual ───────────────────────────────────────────────────
-
-# Dica: links do cdn.discordapp.com expiram. Prefira um link fixo (ex.: imgur).
 BANNER_PRINCIPAL = "https://i.imgur.com/UC3W9D7.png"
 
-# Texto do painel público (edite à vontade e rode !painelticket de novo)
 PAINEL_DESCRICAO = """\
 # <a:sino:1555469607341654047> **Central de Atendimento**
 Escolha no menu abaixo uma categoria que deseja receber o atendimento necessário.
@@ -55,16 +51,17 @@ Escolha no menu abaixo uma categoria que deseja receber o atendimento necessári
 **Escolha a sua Categoria**
 > `☎️` **Denúncias** — Reportar jogadores ou comportamentos.
 > `🎖️` **Solicitar Medalhas** — Peça uma medalha com comprovação.
-> `🛒` **Comprar Vaga na Família** — Adquira a sua vaga com segurança.
+> `🛒` **Comprar Vaga na Família** — Adquira a sua vaga.
 > `💼` **Solicitar Parcerias** — Propostas de parceria entre servidores.
 > `💬` **Outros Assuntos** — Qualquer outra dúvida ou pedido.
 
 **Horário de Funcionamento.**
-> `⏳` Segunda a Sexta: das **09:00 até 23:59h**
-> `⏳` Sábado e Domingo: das **12:00 até 19:00h**
+> `⏳` Segunda a Sexta: das **09:00 até 22:59h**
+> `⏳` Sábado e Domingo: das **11:00 até 18:00h**
 
-**Aviso**
+**Avisos**
 > `⚠️` O uso abusivo desnecessário acarretará em punição.
+> `❌` Não vendemos vaga da Família diretamente, apenas aprovamos ou reprovamos.
 """
 
 # Prioridades que a staff pode definir no painel do ticket
@@ -75,8 +72,6 @@ PRIORIDADES = {
     "urgente": ("🔴", "Urgente"),
 }
 
-# Respostas prontas que a staff envia com um clique (botão "Respostas")
-# chave: (nome no menu, emoji, texto). Use {usuario} para mencionar quem abriu.
 RESPOSTAS_PRONTAS = {
     "recebido": (
         "Recebido",
@@ -110,11 +105,6 @@ RESPOSTAS_PRONTAS = {
     ),
 }
 
-# ── Categorias ──────────────────────────────────────────────────
-# "escolha": pergunta rápida (menu) ANTES do formulário. Opções: (nome, descrição, emoji).
-# "perguntas": campos do formulário (máx. 5). "validar": "convite" ou "numero".
-# "decisao": True mostra os botões Aprovar/Recusar para a staff dentro do ticket.
-# "cargo_ao_aprovar": ID de um cargo entregue automaticamente quando a staff aprova.
 CATEGORIAS = {
     "denuncia": {
         "nome": "Denúncias",
@@ -200,14 +190,14 @@ Recebemos o seu pedido de medalha.
         },
         "perguntas": [
             {
-                "label": "Por que você merece esta medalha?",
-                "placeholder": "Explique com detalhes...",
+                "label": "Qual medalha você deseja?",
+                "placeholder": "Ex: Medalha ???",
                 "longo": True,
                 "obrigatorio": True,
             },
             {
-                "label": "Comprovação (links)",
-                "placeholder": "Links de prints/clipes (ou envie aqui no ticket)",
+                "label": "Cumpre os requisitos da medalha?",
+                "placeholder": "Ex: Sim, cumpro todos os requisitos",
                 "longo": False,
                 "obrigatorio": False,
             },
@@ -243,11 +233,11 @@ Recebemos o seu interesse em uma vaga na **Família Sant's**.
     
         "escolha": {
             "label": "Forma de pagamento",
-            "placeholder": "Alguém de indicou?",
+            "placeholder": "Alguém te indicou?",
             "opcoes": [
-                ("Sant's", "", "💠"),
-                ("Bruna", "", "💳"),
-                ("Kael", "", "🤝"),
+                ("Sant's", "", "⚔️"),
+                ("Bruna", "", "🌸"),
+                ("Kael", "", "💙"),
             ],
         },
         "perguntas": [
