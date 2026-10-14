@@ -10,6 +10,7 @@ import discord
 from discord.ext import commands
 from utils import cassino_db as db
 from utils import cassino_partidas as partidas
+from utils import cassino_extras as extras
 
 LOG = logging.getLogger(__name__)
 COR = 0xA52A35
@@ -28,12 +29,14 @@ def painel_embed():
         '**BEM-VINDO À MESA DO DESTINO**\n'
         '> `🎲` Escolha um jogo no menu abaixo.\n'
         '> `🪙` Aposte Sant’s Coins, a moeda compartilhada com os leilões.\n'
-        '> `🔒` As partidas são privadas; apenas grandes vitórias podem ser anunciadas.\n\n'
+        '> `📜` Apenas grandes vitórias podem ser anunciadas.\n\n'
         '**JOGOS DISPONÍVEIS**\n'
         '> `🪙` Cara ou Coroa\n'
         '> `🎲` Dados\n'
         '> `🎡` Roleta\n'
-        '> `👑` Mesa do King Dice\n\n'
+        '> `👑` Mesa do King Dice\n'
+        '> `📜` Contratos do Diabo — recompensas diárias gratuitas\n'
+        '> `🃏` Cartas do Destino — uma escolha gratuita por dia\n\n'
         '**LIMITES**\n'
         f'> `💰` {fmt(MIN_APOSTA)} a {fmt(MAX_APOSTA)} por rodada.\n'
         '> `⏳` Uma partida por vez, com intervalo de 5 segundos.\n'
@@ -112,9 +115,15 @@ class CassinoView(discord.ui.View):
         discord.SelectOption(label='Dados', value='dados', emoji='🎲', description='Acerte o número • prêmio 5×'),
         discord.SelectOption(label='Roleta', value='roleta', emoji='🎡', description='Vermelho, preto ou verde'),
         discord.SelectOption(label='Mesa do King Dice', value='kingdice', emoji='👑', description='Escolha 1, 2 ou 3 desafios'),
+        discord.SelectOption(label='Contratos do Diabo', value='contratos', emoji='📜', description='Missões gratuitas diárias'),
+        discord.SelectOption(label='Cartas do Destino', value='cartas', emoji='🃏', description='Uma carta grátis por dia'),
     ])
     async def mesa(self, interaction, select):
         jogo = select.values[0]
+        if jogo == 'contratos':
+            return await self.cog.mostrar_contratos(interaction)
+        if jogo == 'cartas':
+            return await self.cog.mostrar_cartas(interaction)
         await interaction.response.send_modal(KingDiceModal(self.cog) if jogo == 'kingdice' else ApostaModal(self.cog, jogo))
 
     @discord.ui.button(label='Carteira', emoji='🪙', style=discord.ButtonStyle.secondary, custom_id='sants:cassino2:saldo', row=1)
@@ -137,6 +146,29 @@ class CassinoView(discord.ui.View):
         await interaction.response.send_message('🏆 **Ranking semanal por lucro líquido**\n' + texto, ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
 
 
+
+class ContratoView(discord.ui.View):
+    def __init__(self, cog):
+        super().__init__(timeout=180)
+        self.cog = cog
+
+    @discord.ui.button(label='Concluir visita (+40 SC)', emoji='📜', style=discord.ButtonStyle.success)
+    async def coletar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.cog.coletar_visita(interaction)
+
+
+class CartasView(discord.ui.View):
+    def __init__(self, cog):
+        super().__init__(timeout=180)
+        self.cog = cog
+        for numero in (1, 2, 3):
+            botao = discord.ui.Button(label=f'Carta {numero}', emoji='🂠', style=discord.ButtonStyle.primary)
+            async def callback(interaction, n=numero):
+                await self.cog.revelar_carta(interaction, n)
+            botao.callback = callback
+            self.add_item(botao)
+
+
 class Cassino(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -150,8 +182,74 @@ class Cassino(commands.Cog):
         db.configurar_pool(pool)
         await db.inicializar_tabelas(pool)
         await partidas.inicializar_cassino(pool)
+        await extras.inicializar_extras(pool)
         self.bot.add_view(CassinoView(self))
         LOG.info('Cassino 2.0: painel persistente registrado')
+
+    async def mostrar_contratos(self, interaction):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            dados = await extras.estado_contratos(interaction.user.id)
+            embed = discord.Embed(
+                title='📜 CONTRATOS DO DIABO',
+                description=(
+                    '**╭・MISSÕES DO DIA (UTC)**\n'
+                    f'> `🚪` Visitar o salão — **40 SC** {"✅" if dados["visita"] else "⏳"}\n'
+                    f'> `🃏` Revelar uma Carta do Destino — **60 SC** {"✅" if dados["carta"] else "⏳"}\n\n'
+                    '> `ℹ️` A recompensa de visita é obtida pelo botão abaixo.\n'
+                    '> `🔒` A missão da carta é creditada automaticamente ao revelar uma carta.\n'
+                    '> `🕛` Reinício diário às 00:00 UTC.'
+                ), color=COR)
+            await interaction.followup.send(embed=embed, view=ContratoView(self), ephemeral=True)
+        except Exception:
+            LOG.exception('Falha ao consultar contratos')
+            await interaction.followup.send('❌ Não foi possível consultar os contratos agora.', ephemeral=True)
+
+    async def mostrar_cartas(self, interaction):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            dados = await extras.estado_contratos(interaction.user.id)
+            if dados['carta']:
+                return await interaction.followup.send('🃏 Sua carta de hoje já foi revelada. Volte após 00:00 UTC.', ephemeral=True)
+            embed = discord.Embed(title='🃏 CARTAS DO DESTINO', description=(
+                '**Três cartas. Um destino.**\n'
+                '> `🂠` Escolha uma das cartas abaixo.\n'
+                '> `🎁` Recompensas possíveis: 0, 25, 50 ou 100 SC.\n'
+                '> `📜` A primeira carta do dia também conclui o contrato de **60 SC**.\n\n'
+                '**Probabilidades por tentativa**\n'
+                '> `40%` — 0 SC\n> `35%` — 25 SC\n'
+                '> `20%` — 50 SC\n> `5%` — 100 SC\n\n'
+                '*As três cartas possuem as mesmas probabilidades. Uma tentativa por dia (UTC).*'
+            ), color=COR)
+            await interaction.followup.send(embed=embed, view=CartasView(self), ephemeral=True)
+        except Exception:
+            LOG.exception('Falha ao abrir cartas')
+            await interaction.followup.send('❌ Não foi possível abrir as cartas agora.', ephemeral=True)
+
+    async def coletar_visita(self, interaction):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            ganho, saldo = await extras.coletar_visita(interaction.user.id)
+            msg = f'📜 Contrato concluído! **+40 SC**. Saldo: **{fmt(saldo)}**.' if ganho else '⌛ Você já concluiu o contrato de visita hoje.'
+            await interaction.followup.send(msg, ephemeral=True)
+        except Exception:
+            LOG.exception('Falha ao coletar visita')
+            await interaction.followup.send('❌ Não foi possível concluir o contrato. Tente mais tarde.', ephemeral=True)
+
+    async def revelar_carta(self, interaction, carta):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            resultado = await extras.revelar_carta(interaction.user.id, carta)
+            if not resultado['novo']:
+                return await interaction.followup.send('🃏 Você já revelou uma carta hoje. Volte amanhã (UTC).', ephemeral=True)
+            await interaction.followup.send(
+                f'🃏 **Carta {carta} revelada!**\n'
+                f'> Prêmio da carta: **{fmt(resultado["premio"])}**\n'
+                f'> Contrato concluído: **+60 SC**\n'
+                f'> Saldo atual: **{fmt(resultado["saldo"])}**', ephemeral=True)
+        except Exception:
+            LOG.exception('Falha ao revelar carta')
+            await interaction.followup.send('❌ Não foi possível confirmar sua carta. Consulte seu extrato antes de tentar novamente.', ephemeral=True)
 
     async def jogar(self, interaction, jogo, aposta, escolha):
         await interaction.response.defer(ephemeral=True, thinking=True)
