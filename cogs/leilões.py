@@ -68,7 +68,7 @@ MAX_LEILOES_ATIVOS = 10
 FORCAR_ECONOMIA_PROPRIA = False
 
 # ── Texto do painel (EDITE AQUI e rode !painelleilao de novo) ──────────────────
-PAINEL_DESCRICAO = """\\
+PAINEL_DESCRICAO = """
 
 # 🎪 **Grande Leilão Cartoon**
 Entre no espetáculo da Família Sant's! Dê seus lances e tente levar o prêmio para casa.
