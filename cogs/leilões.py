@@ -85,7 +85,7 @@ Participe das disputas oficiais da Família Sant's usando suas moedas.
 
 *Selecione uma opção abaixo para continuar.*"""
 
-COMO_FUNCIONA = f"""\\
+COMO_FUNCIONA = f"""
 # <a:CUPCHALICEIDLE:1559813476573118476> **Regras do Espetáculo**
 
 **Apostas**
