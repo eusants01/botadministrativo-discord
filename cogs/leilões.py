@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import os
 import math
 import re
 import time
@@ -35,8 +36,14 @@ MOEDA_EMOJI = "🪙"
 COR_AZUL = 0x211A1A  # Preto de tinta, inspirado no visual vintage de Cuphead
 COR_AZUL_CLARO = 0xD94A38  # Vermelho cartunesco
 
-# Link direto do banner (https://...). "" = sem banner.
-BANNER_LEILAO = ""  # Opcional: link direto para um banner vintage inspirado em Cuphead
+BANNER_PAINEL_LEILAO = os.getenv("BANNER_PAINEL_LEILAO", "").strip()
+BANNER_LEILAO_ATIVO = os.getenv("BANNER_LEILAO_ATIVO", "").strip()
+# Compatibilidade com configurações antigas.
+BANNER_LEILAO = os.getenv("BANNER_LEILAO", "").strip()
+
+def url_banner(valor: str) -> bool:
+    return valor.startswith(("https://", "http://")) and " " not in valor
+
 
 # Canal onde os leilões são publicados. 0 = o canal em que o painel foi enviado.
 CANAL_LEILAO_ID = 0
@@ -68,25 +75,15 @@ MAX_LEILOES_ATIVOS = 10
 FORCAR_ECONOMIA_PROPRIA = False
 
 # ── Texto do painel (EDITE AQUI e rode !painelleilao de novo) ──────────────────
-PAINEL_DESCRICAO = """
+PAINEL_DESCRICAO = """**BEM-VINDO AOS LEILÕES**
+Participe das disputas oficiais da Família Sant's usando suas moedas.
 
-# 🎪 **Grande Leilão Cartoon**
-Entre no espetáculo da Família Sant's! Dê seus lances e tente levar o prêmio para casa.
+**COMO COMEÇAR**
+> `🎟️` Consulte os leilões em andamento.
+> `🪙` Verifique seu saldo antes de apostar.
+> `📜` Leia as regras de participação.
 
-**Como participar**
-> `🪙` Aposte suas moedas no item desejado.
-> `🎭` Se alguém cobrir seu lance, suas moedas voltam automaticamente.
-> `⏱️` Lances no último instante podem estender o espetáculo.
-
-**No balcão de ofertas**
-> `🎟️` **Leilões Ativos** — Veja os itens em disputa.
-> `💰` **Meu Saldo** — Confira sua carteira.
-> `📜` **Como Funciona** — Consulte as regras.
-> `🎩` **Criar Leilão** — Acesso exclusivo à equipe autorizada.
-
-**Atenção, parceiro!**
-> `⚠️` Todo lance é cobrado na hora. Pense bem antes de apostar!
-"""
+*Selecione uma opção abaixo para continuar.*"""
 
 COMO_FUNCIONA = f"""\\
 # 🎭 **Regras do Espetáculo**
@@ -318,6 +315,7 @@ def embed_base(
     descricao: str | None = None,
     cor: int = COR_AZUL,
     banner: bool = False,
+    banner_url: str | None = None,
 ) -> discord.Embed:
     e = discord.Embed(
         title=titulo,
@@ -326,8 +324,9 @@ def embed_base(
         timestamp=datetime.now(timezone.utc),
     )
     e.set_footer(text=f"{NOME_SERVIDOR} • {NOME_LEILAO}")
-    if banner and BANNER_LEILAO.lower().startswith("http"):
-        e.set_image(url=BANNER_LEILAO)
+    imagem_banner = banner_url if banner_url is not None else BANNER_LEILAO
+    if banner and url_banner(imagem_banner):
+        e.set_image(url=imagem_banner)
     return e
 
 
@@ -438,7 +437,8 @@ def embed_leilao(l: LeilaoEstado) -> discord.Embed:
         "> `↩️` Superado? Suas moedas voltam automaticamente.\n"
         f"> `⚡` Lances nos últimos {ANTI_SNIPER_SEGUNDOS}s prorrogam o tempo."
     )
-    e = embed_base(None, descricao[:4096], banner=True)
+    e = embed_base(None, descricao[:4096], banner=True,
+                   banner_url=BANNER_LEILAO_ATIVO or BANNER_LEILAO)
     e.set_footer(text=f"{NOME_SERVIDOR} • {NOME_LEILAO} • #{l.id}")
     if l.imagem:
         e.set_thumbnail(url=l.imagem)
@@ -473,7 +473,8 @@ def embed_final(l: LeilaoEstado) -> discord.Embed:
             "> `📭` Ninguém deu lance neste item."
         )
         cor = COR_AZUL
-    e = embed_base(None, descricao, cor=cor, banner=True)
+    e = embed_base(None, descricao, cor=cor, banner=True,
+                   banner_url=BANNER_LEILAO_ATIVO or BANNER_LEILAO)
     e.set_footer(text=f"{NOME_SERVIDOR} • {NOME_LEILAO} • #{l.id}")
     if l.imagem:
         e.set_thumbnail(url=l.imagem)
@@ -864,7 +865,7 @@ class PainelLeilaoView(discord.ui.View):
     @discord.ui.button(label="Regras do Jogo", emoji="📜", style=discord.ButtonStyle.secondary, custom_id="leilao_painel:info", row=0)
     async def btn_info(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message(
-            embed=embed_base(None, COMO_FUNCIONA, banner=True), ephemeral=True
+            embed=embed_base(None, COMO_FUNCIONA, banner=False), ephemeral=True
         )
 
     @discord.ui.button(label="Abrir Leilão", emoji="🎩", style=discord.ButtonStyle.success, custom_id="leilao_painel:criar", row=0)
@@ -1454,7 +1455,8 @@ class Leilao(commands.Cog, name="Leilao"):
             await ctx.message.delete()
         except discord.HTTPException:
             pass
-        embed = embed_base(None, PAINEL_DESCRICAO.strip(), banner=True)
+        embed = embed_base("🎩 CENTRAL DE LEILÕES", PAINEL_DESCRICAO.strip(), banner=True,
+                           banner_url=BANNER_PAINEL_LEILAO or BANNER_LEILAO)
         await ctx.send(embed=embed, view=PainelLeilaoView(self))
 
     @commands.command(name="leiloes")

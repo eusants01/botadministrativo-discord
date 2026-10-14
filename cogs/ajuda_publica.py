@@ -46,9 +46,9 @@ OPCOES = [
 def criar_embed(pagina='inicio'):
     if pagina == 'inicio':
         embed = discord.Embed(
-            title='📘 Central de Ajuda',
+            title='<a:animated_Settings:1556187476177981440> Central de Ajuda',
             description=(
-                "<a:animated_Settings:1556187476177981440> Bem-vindo à central de informações da **Família Sant's**.\n\n"
+                "Bem-vindo à central de informações da **Família Sant's**.\n\n"
                 'Selecione uma categoria no menu abaixo para consultar os comandos e suas funcionalidades.\n\n'
                 '**Categorias disponíveis**\n'
                 '> `🪙` Economia e Cassino\n'
