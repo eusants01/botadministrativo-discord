@@ -1,4 +1,3 @@
-
 import logging
 import os
 
@@ -7,128 +6,84 @@ from discord.ext import commands
 
 LOG = logging.getLogger(__name__)
 COR = 0x2375C8
-MARCA = "Família Sant's  •  Central de Ajuda"
-BANNER_URL = os.getenv("AJUDA_BANNER_URL", "https://i.imgur.com/epIDAS3.png").strip()
+BANNER_URL = os.getenv('AJUDA_BANNER_URL', 'https://cdn.discordapp.com/attachments/961677475191078992/1559807635270934588/Samurai_mask_glowing_blue_flames_20261014025530.gif?ex=6ad06b90&is=6acf1a10&hm=b1b189ae19d523c4eed1b09251e04071578ee6486a2de1d68cbcacc0ef0aff9d&').strip()
+RODAPE = "Família Sant's • Central de Ajuda"
 
 SECOES = {
-    "inicio": (
-        "<a:animated_Settings:1556187476177981440> CENTRAL DE AJUDA",
-        "**BEM-VINDO À CENTRAL DA FAMÍLIA SANT'S**\n"
-        "> `📚` Consulte os comandos disponíveis para membros.\n"
-        "> `🧭` Selecione uma categoria no menu abaixo.\n"
-        "> `🔒` As opções da administração não são exibidas.\n\n"
-        "**COMO FUNCIONA?**\n"
-        "> `01` Escolha um sistema no seletor.\n"
-        "> `02` Leia as instruções e exemplos.\n"
-        "> `03` Use o comando no canal permitido.\n\n"
-        "*As respostas do menu são privadas para quem consulta.*",
-    ),
-    "economia": (
-        "🪙  ECONOMIA • SANT'S COINS",
-        "**SUA CARTEIRA**\n"
-        "> `🪙` `!saldo` — consultar suas moedas.\n"
-        "> `👤` `!saldo @membro` — consultar outro saldo, quando permitido.\n"
-        "> `🎁` `!diario` — coletar a recompensa diária.\n"
-        "> `📜` `!extrato` — conferir movimentações.\n\n"
-        "**TRANSFERÊNCIAS**\n"
-        "> `💸` `!transferir @membro 100` — enviar 100 moedas.\n\n"
-        "**ATALHOS**\n"
-        "> `🔁` `!carteira`, `!coins`, `!daily`, `!coletar`, `!pagar`, `!pix`, `!historico`, `!transacoes`.\n\n"
-        "*As moedas também podem ser usadas nos jogos e leilões.*",
-    ),
-    "cassino": (
-        "🎲  CASSINO • JOGOS",
-        "**ESCOLHA SEU JOGO**\n"
-        "> `🪙` `!cara 100 cara` — apostar 100 em cara.\n"
-        "> `🪙` `!cara 100 coroa` — apostar 100 em coroa.\n"
-        "> `🎲` `!dados 100 4` — apostar 100 no número 4.\n"
-        "> `🎡` `!roleta 100 vermelho` — apostar 100 no vermelho.\n\n"
-        "**ANTES DE JOGAR**\n"
-        "> `💰` Confira suas moedas com `!saldo`.\n"
-        "> `⚠️` Apostar pode aumentar ou diminuir seu saldo.\n"
-        "> `📝` Informe o valor da aposta depois do comando.",
-    ),
-    "leiloes": (
-        "🔨  LEILÕES • PARTICIPAÇÃO",
-        "**CONSULTAR**\n"
-        "> `📦` `!leiloes` — visualizar os leilões ativos.\n"
-        "> `🪙` `!leilaosaldo` — consultar saldo disponível.\n\n"
-        "**COMO PARTICIPAR**\n"
-        "> `01` Abra o anúncio de um leilão ativo.\n"
-        "> `02` Use os botões e formulários do anúncio.\n"
-        "> `03` Confira seu lance antes de confirmar.\n\n"
-        "`⚠️` Você precisa ter saldo suficiente para ofertar.",
-    ),
-    "tickets": (
-        "🎟️  TICKETS • ATENDIMENTO",
-        "**PRECISA DE AJUDA?**\n"
-        "> `🎫` Encontre o painel de tickets do servidor.\n"
-        "> `📂` Selecione a categoria adequada ao seu pedido.\n"
-        "> `✍️` Explique a situação com informações úteis.\n"
-        "> `⌛` Aguarde o atendimento da equipe.\n\n"
-        "`🔒` As ferramentas de gerenciamento são reservadas aos responsáveis.",
-    ),
-    "sorteios": (
-        "🎁  SORTEIOS • PARTICIPAÇÃO",
-        "**COMO PARTICIPAR**\n"
-        "> `🎁` Localize um anúncio de sorteio ativo.\n"
-        "> `🖱️` Utilize o botão de participação, se disponível.\n"
-        "> `📋` Leia os requisitos e as regras do sorteio.\n"
-        "> `🏆` Acompanhe o resultado no canal correspondente.\n\n"
-        "`ℹ️` Cada sorteio pode ter condições próprias.",
-    ),
-    "notificacoes": (
-        "🔔  NOTIFICAÇÕES • AVISOS",
-        "**ESCOLHA O QUE RECEBER**\n"
-        "> `🔔` Encontre o painel de notificações do servidor.\n"
-        "> `🏷️` Selecione os cargos de avisos disponíveis.\n"
-        "> `🔄` Volte ao painel quando quiser alterar sua escolha.\n\n"
-        "`ℹ️` Os avisos dependem das opções configuradas pela equipe.",
-    ),
+    'economia': ('🪙 Economia', [
+        ('Carteira', '`!saldo` — Consultar moedas\n`!extrato` — Ver movimentações\n`!diario` — Coletar recompensa diária'),
+        ('Transferências', '`!transferir @membro 100` — Enviar 100 moedas'),
+    ]),
+    'cassino': ('🎲 Cassino', [
+        ('Jogos', '`!cara 100 cara` — Cara ou coroa\n`!dados 100 4` — Apostar no número 4\n`!roleta 100 vermelho` — Apostar no vermelho'),
+        ('Atenção', 'As apostas utilizam Sant’s Coins e podem gerar perdas.'),
+    ]),
+    'leiloes': ('🔨 Leilões', [
+        ('Comandos', '`!leiloes` — Consultar leilões\n`!leilaosaldo` — Consultar saldo'),
+        ('Participação', 'Abra um leilão ativo e utilize os botões para dar seu lance.'),
+    ]),
+    'tickets': ('🎟️ Atendimento', [
+        ('Como solicitar', 'Acesse o painel de tickets, escolha a categoria e descreva seu pedido.'),
+    ]),
+    'sorteios': ('🎁 Sorteios', [
+        ('Como participar', 'Acesse um sorteio ativo, confira as regras e use o botão de participação.'),
+    ]),
+    'notificacoes': ('🔔 Notificações', [
+        ('Preferências', 'Acesse o painel de notificações e selecione os cargos de avisos desejados.'),
+    ]),
 }
 
 OPCOES = [
-    ("inicio", "Página inicial", "📘"),
-    ("economia", "Economia", "🪙"),
-    ("cassino", "Cassino", "🎲"),
-    ("leiloes", "Leilões", "🔨"),
-    ("tickets", "Tickets", "🎟️"),
-    ("sorteios", "Sorteios", "🎁"),
-    ("notificacoes", "Notificações", "🔔"),
+    discord.SelectOption(label='Economia', value='economia', emoji='🪙', description='Saldo, diário e transferências'),
+    discord.SelectOption(label='Cassino', value='cassino', emoji='🎲', description='Jogos e apostas'),
+    discord.SelectOption(label='Leilões', value='leiloes', emoji='🔨', description='Lances e consultas'),
+    discord.SelectOption(label='Tickets', value='tickets', emoji='🎟️', description='Atendimento e suporte'),
+    discord.SelectOption(label='Sorteios', value='sorteios', emoji='🎁', description='Participação em sorteios'),
+    discord.SelectOption(label='Notificações', value='notificacoes', emoji='🔔', description='Cargos de avisos'),
 ]
 
 
-def criar_embed(pagina: str) -> discord.Embed:
-    titulo, descricao = SECOES.get(pagina, SECOES["inicio"])
-    embed = discord.Embed(title=titulo, description=descricao, color=COR)
-    if pagina == "inicio":
-        embed.add_field(
-            name="╭・CATEGORIAS DISPONÍVEIS",
-            value=("> `🪙` Economia  •  `🎲` Cassino\n"
-                   "> `🔨` Leilões  •  `🎟️` Tickets\n"
-                   "> `🎁` Sorteios  •  `🔔` Notificações"),
-            inline=False,
+def criar_embed(pagina='inicio'):
+    if pagina == 'inicio':
+        embed = discord.Embed(
+            title='📘 Central de Ajuda',
+            description=(
+                "<a:animated_Settings:1556187476177981440> Bem-vindo à central de informações da **Família Sant's**.\n\n"
+                'Selecione uma categoria no menu abaixo para consultar os comandos e suas funcionalidades.\n\n'
+                '**Categorias disponíveis**\n'
+                '> `🪙` Economia e Cassino\n'
+                '> `🔨` Leilões\n'
+                '> `🎟️` Atendimento\n'
+                '> `🎁` Sorteios\n'
+                '> `🔔` Notificações'
+            ),
+            color=COR,
         )
-        if BANNER_URL.startswith(("https://", "http://")):
+        if BANNER_URL.startswith(('https://', 'http://')):
             embed.set_image(url=BANNER_URL)
-    embed.set_footer(text=MARCA)
+    else:
+        titulo, campos = SECOES.get(pagina, SECOES['economia'])
+        embed = discord.Embed(title=titulo, color=COR)
+        for nome, valor in campos:
+            embed.add_field(name=nome, value=valor, inline=False)
+    embed.set_footer(text=RODAPE)
     return embed
 
 
 class MenuAjuda(discord.ui.Select):
     def __init__(self):
         super().__init__(
-            placeholder="📚 Escolha a categoria que deseja consultar",
+            placeholder='Selecione uma categoria',
+            custom_id='sants:ajuda_publica:categoria',
             min_values=1,
             max_values=1,
-            custom_id="sants:ajuda_publica:categoria",
-            options=[discord.SelectOption(label=nome, value=chave, emoji=emoji)
-                     for chave, nome, emoji in OPCOES],
+            options=OPCOES,
         )
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.send_message(
-            embed=criar_embed(self.values[0]), ephemeral=True,
+            embed=criar_embed(self.values[0]),
+            ephemeral=True,
             allowed_mentions=discord.AllowedMentions.none(),
         )
 
@@ -140,26 +95,24 @@ class PainelAjuda(discord.ui.View):
 
 
 class AjudaPublica(commands.Cog):
-    def __init__(self, bot: commands.Bot):
+    def __init__(self, bot):
         self.bot = bot
 
     async def cog_load(self):
         self.bot.add_view(PainelAjuda())
-        LOG.info("Painel público de ajuda registrado como view persistente")
+        LOG.info('Painel público de ajuda registrado como view persistente')
 
-    @commands.command(name="ajuda", aliases=["comandos", "helpme"])
+    @commands.command(name='ajuda', aliases=['comandos', 'helpme'])
     @commands.guild_only()
-    async def ajuda(self, ctx: commands.Context):
-        """Mostra a ajuda; o painel fixo deve ser publicado com !publicarajuda."""
-        await ctx.send(embed=criar_embed("inicio"), view=PainelAjuda(),
+    async def ajuda(self, ctx):
+        await ctx.send(embed=criar_embed(), view=PainelAjuda(),
                        allowed_mentions=discord.AllowedMentions.none())
 
-    @commands.command(name="publicarajuda")
+    @commands.command(name='publicarajuda')
     @commands.guild_only()
     @commands.has_guild_permissions(manage_guild=True)
-    async def publicar_ajuda(self, ctx: commands.Context):
-        """Publica o painel permanente no canal atual."""
-        await ctx.send(embed=criar_embed("inicio"), view=PainelAjuda(),
+    async def publicar_ajuda(self, ctx):
+        await ctx.send(embed=criar_embed(), view=PainelAjuda(),
                        allowed_mentions=discord.AllowedMentions.none())
         try:
             await ctx.message.delete()
@@ -167,13 +120,12 @@ class AjudaPublica(commands.Cog):
             pass
 
     @publicar_ajuda.error
-    async def erro_publicar(self, ctx: commands.Context, error):
+    async def erro_publicar(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
-            await ctx.send("❌ Apenas quem possui **Gerenciar Servidor** pode publicar este painel.",
-                           delete_after=12)
+            await ctx.send('❌ Apenas membros com **Gerenciar Servidor** podem publicar o painel.', delete_after=12)
         else:
             raise error
 
 
-async def setup(bot: commands.Bot):
+async def setup(bot):
     await bot.add_cog(AjudaPublica(bot))
