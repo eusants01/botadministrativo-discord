@@ -46,7 +46,7 @@ def url_banner(valor: str) -> bool:
 
 
 # Canal onde os leilões são publicados. 0 = o canal em que o painel foi enviado.
-CANAL_LEILAO_ID = 0
+CANAL_LEILAO_ID = 1553940001354555422
 
 # Canal (só da staff) que recebe o registro de leilões criados/encerrados. 0 = desligado.
 CANAL_LOGS_ID = 1559312469959119039
@@ -86,7 +86,7 @@ Participe das disputas oficiais da Família Sant's usando suas moedas.
 *Selecione uma opção abaixo para continuar.*"""
 
 COMO_FUNCIONA = f"""\\
-# 🎭 **Regras do Espetáculo**
+# <a:CUPCHALICEIDLE:1559813476573118476> **Regras do Espetáculo**
 
 **Apostas**
 > `🪙` Ao apostar, o valor sai do seu saldo imediatamente.
@@ -102,7 +102,7 @@ COMO_FUNCIONA = f"""\\
 > `⚡` Alguns itens têm **arremate imediato**: atingiu o valor, o leilão termina.
 > `🎁` Cargos anunciados como prêmio são entregues automaticamente, quando configurados.
 
-🎩 Boa sorte — e que comece o espetáculo!
+<:Dizzycup:1559778114974785608> Boa sorte e que comece o espetáculo!
 """
 
 # ════════════════════════════════════════════════════════════════
