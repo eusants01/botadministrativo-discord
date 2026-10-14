@@ -24,16 +24,16 @@ def fmt(n):
 
 
 def painel_embed():
-    e = discord.Embed(title='🎰 CASSINO DO DIABO', description=(
+    e = discord.Embed(title='<:thedevilgrin:1559778113519493151> CASSINO DO DIABO', description=(
         '**BEM-VINDO À MESA DO DESTINO**\n'
         '> `🎲` Escolha um jogo no menu abaixo.\n'
         '> `🪙` Aposte Sant’s Coins, a moeda compartilhada com os leilões.\n'
         '> `🔒` As partidas são privadas; apenas grandes vitórias podem ser anunciadas.\n\n'
         '**JOGOS DISPONÍVEIS**\n'
-        '> `🪙` Cara ou Coroa — 2× | 50%\n'
-        '> `🎲` Dados — 5× | 16,67%\n'
-        '> `🎡` Roleta — vermelho/preto 2×; verde 14×\n'
-        '> `👑` Mesa do King Dice — até 3 desafios consecutivos\n\n'
+        '> `🪙` Cara ou Coroa\n'
+        '> `🎲` Dados\n'
+        '> `🎡` Roleta\n'
+        '> `👑` Mesa do King Dice\n\n'
         '**LIMITES**\n'
         f'> `💰` {fmt(MIN_APOSTA)} a {fmt(MAX_APOSTA)} por rodada.\n'
         '> `⏳` Uma partida por vez, com intervalo de 5 segundos.\n'
@@ -42,7 +42,7 @@ def painel_embed():
     ), color=COR)
     if BANNER.startswith(('https://', 'http://')):
         e.set_image(url=BANNER)
-    e.set_footer(text="Família Sant's • Cassino do Diabo")
+    e.set_footer(text="Família Sant's • Cassino do Diabo • Esperamos que você perca")
     return e
 
 
@@ -59,7 +59,7 @@ def resultado_embed(jogo, escolha, sorteio, aposta, premio, saldo, numero):
                      f'**Saldo:** {fmt(saldo)}'),
         color=0x26996C if venceu else COR
     )
-    e.set_footer(text='Família Sant\'s • Partida registrada no PostgreSQL')
+    e.set_footer(text='Família Sant\'s • Partida registrada • Esperamos que você perca')
     return e
 
 
