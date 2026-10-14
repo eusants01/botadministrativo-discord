@@ -10,52 +10,67 @@ BANNER_URL = os.getenv('AJUDA_BANNER_URL', 'https://cdn.discordapp.com/attachmen
 RODAPE = "Família Sant's • Central de Ajuda"
 
 SECOES = {
-    'economia': ('🪙 Economia', [
-        ('Carteira', '`!saldo` — Consultar moedas\n`!extrato` — Ver movimentações\n`!diario` — Coletar recompensa diária'),
-        ('Transferências', '`!transferir @membro 100` — Enviar 100 moedas'),
+    'economia': ('🪙 Economia • Sant’s Coins', [
+        ('Sua carteira', '`!saldo` — Consultar saldo\n`!extrato` — Ver movimentações'),
+        ('Recompensas e transferências', '`!diario` — Resgatar moedas diárias\n`!transferir @membro 100` — Transferir SC'),
+        ('Integração', 'A mesma carteira de Sant’s Coins é utilizada nos leilões e no Cassino do Diabo.'),
     ]),
-    'cassino': ('🎲 Cassino', [
-        ('Jogos', '`!cara 100 cara` — Cara ou coroa\n`!dados 100 4` — Apostar no número 4\n`!roleta 100 vermelho` — Apostar no vermelho'),
-        ('Atenção', 'As apostas utilizam Sant’s Coins e podem gerar perdas.'),
+    'cassino': ('🎰 Cassino do Diabo • Episódio Cuphead', [
+        ('Como acessar', 'Utilize o painel do **Cassino do Diabo** e selecione uma modalidade no menu.\n`!painelcassino` — Publicar painel (**Gerenciar Servidor**).'),
+        ('Jogos disponíveis', '🪙 **Cara ou Coroa** — Escolha um lado.\n🎲 **Dados** — Escolha um número de 1 a 6.\n🎡 **Roleta** — Vermelho, preto ou verde.\n👑 **King Dice** — Escolha 1, 2 ou 3 desafios.'),
+        ('Atividades diárias gratuitas', '📜 **Contratos do Diabo** — Missões diárias com recompensas.\n🃏 **Cartas do Destino** — Revele uma carta por dia.'),
+        ('Consultas', 'Os botões do painel permitem consultar **Carteira**, **Meu perfil** e **Ranking semanal**.'),
+        ('Regras', 'Apostas entre **10 e 1.000 SC** por rodada, com intervalo de 5 segundos. Jogos com apostas podem gerar perdas. As Sant’s Coins são exclusivamente virtuais.\nOs comandos antigos `!cara`, `!dados` e `!roleta` apenas orientam a usar o painel.'),
     ]),
     'leiloes': ('🔨 Leilões', [
-        ('Comandos', '`!leiloes` — Consultar leilões\n`!leilaosaldo` — Consultar saldo'),
-        ('Participação', 'Abra um leilão ativo e utilize os botões para dar seu lance.'),
+        ('Como participar', 'Abra o painel de leilões, consulte os lotes ativos e utilize os botões para ofertar lances com Sant’s Coins.'),
+        ('Comandos', '`!leiloes` — Consultar leilões ativos\n`!leilaosaldo` — Consultar carteira\n`!leilaostatus` — Ver situação dos leilões'),
+        ('Painel', '`!painelleilao` — Abrir painel de leilões (conforme permissões do servidor).'),
+        ('Importante', 'Cada lote possui condições, valores e prazos próprios. Confira-os antes de participar.'),
     ]),
-    'tickets': ('🎟️ Atendimento', [
-        ('Como solicitar', 'Acesse o painel de tickets, escolha a categoria e descreva seu pedido.'),
+    'tickets': ('🎟️ Atendimento e Tickets', [
+        ('Solicitações', 'No painel de tickets, escolha a categoria apropriada, como suporte, denúncia, parcerias ou solicitação de cargos, e descreva seu pedido.'),
+        ('Comandos úteis', '`!ticketajuda` — Informações do sistema\n`!painelticket` — Publicar painel (equipe autorizada).'),
     ]),
     'sorteios': ('🎁 Sorteios', [
-        ('Como participar', 'Acesse um sorteio ativo, confira as regras e use o botão de participação.'),
+        ('Participação', 'Acesse um sorteio ativo, confira o prêmio, o prazo e as regras, e use o botão **Participar**.'),
+        ('Comandos úteis', '`!sorteioajuda` — Informações sobre sorteios\n`!painelsorteio` — Painel de sorteios (equipe autorizada).'),
     ]),
     'notificacoes': ('🔔 Notificações', [
-        ('Preferências', 'Acesse o painel de notificações e selecione os cargos de avisos desejados.'),
+        ('Preferências', 'No painel de notificações, escolha os cargos de aviso que deseja receber.'),
+        ('Comandos úteis', '`!painelpings` — Painel de notificações (equipe autorizada)\n`!statuspings` — Consultar status.'),
+    ]),
+    'convites': ('📨 Convites', [
+        ('Consultas', '`!convites` — Seus convites\n`!topconvites` — Ranking\n`!quemconvidou` — Consultar quem convidou\n`!convidados` — Ver convidados'),
+        ('Ajuda', '`!conviteajuda` — Mais informações sobre o sistema de convites.'),
     ]),
 }
 
 OPCOES = [
     discord.SelectOption(label='Economia', value='economia', emoji='🪙', description='Saldo, diário e transferências'),
-    discord.SelectOption(label='Cassino', value='cassino', emoji='🎲', description='Jogos e apostas'),
-    discord.SelectOption(label='Leilões', value='leiloes', emoji='🔨', description='Lances e consultas'),
+    discord.SelectOption(label='Cassino do Diabo', value='cassino', emoji='🎰', description='King Dice, contratos e cartas'),
+    discord.SelectOption(label='Leilões', value='leiloes', emoji='🔨', description='Lances, itens e carteira'),
     discord.SelectOption(label='Tickets', value='tickets', emoji='🎟️', description='Atendimento e suporte'),
-    discord.SelectOption(label='Sorteios', value='sorteios', emoji='🎁', description='Participação em sorteios'),
+    discord.SelectOption(label='Sorteios', value='sorteios', emoji='🎁', description='Sorteios e premiações'),
     discord.SelectOption(label='Notificações', value='notificacoes', emoji='🔔', description='Cargos de avisos'),
+    discord.SelectOption(label='Convites', value='convites', emoji='📨', description='Estatísticas e ranking'),
 ]
-
-
 def criar_embed(pagina='inicio'):
     if pagina == 'inicio':
         embed = discord.Embed(
             title='<a:animated_Settings:1556187476177981440> Central de Ajuda',
             description=(
                 "Bem-vindo à central de informações da **Família Sant's**.\n\n"
-                'Selecione uma categoria no menu abaixo para consultar os comandos e suas funcionalidades.\n\n'
+                'Selecione uma categoria no menu abaixo para consultar os recursos e comandos disponíveis.\n\n'
                 '**Categorias disponíveis**\n'
-                '> `🪙` Economia e Cassino\n'
+                '> `🪙` Economia • Sant’s Coins\n'
+                '> `🎰` Cassino do Diabo • Cuphead\n'
                 '> `🔨` Leilões\n'
                 '> `🎟️` Atendimento\n'
                 '> `🎁` Sorteios\n'
-                '> `🔔` Notificações'
+                '> `🔔` Notificações\n'
+                '> `📨` Convites\n\n'
+                '*Selecione uma categoria abaixo. As instruções serão exibidas apenas para você.*' 
             ),
             color=COR,
         )
