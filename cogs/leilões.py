@@ -1455,7 +1455,7 @@ class Leilao(commands.Cog, name="Leilao"):
             await ctx.message.delete()
         except discord.HTTPException:
             pass
-        embed = embed_base("🎩 CENTRAL DE LEILÕES", PAINEL_DESCRICAO.strip(), banner=True,
+        embed = embed_base("<:1753e5be7b7c49fb9c45eb7179394e7a:1559816531955683408> CENTRAL DE LEILÕES", PAINEL_DESCRICAO.strip(), banner=True,
                            banner_url=BANNER_PAINEL_LEILAO or BANNER_LEILAO)
         await ctx.send(embed=embed, view=PainelLeilaoView(self))
 
