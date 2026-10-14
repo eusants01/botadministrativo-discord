@@ -1,25 +1,33 @@
-import discord
+import asyncio
+import logging
 import os
+from pathlib import Path
+
 import asyncpg
+import discord
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
-load_dotenv()
-
 from painel import start_painel
+
+load_dotenv()
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('sants.bot')
+
+BASE_DIR = Path(__file__).resolve().parent
+COGS_DIR = BASE_DIR / 'cogs'
 
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-
 status_list = [
     "Sant's Family 👑",
     "Primeira Família do E.B 🎖️",
     "Desenvolvido por Sant's 🛠️",
     "Bot Administrativo da Família Sant's 🤖",
-    "Monitorando o Servidor 🕒"
+    "Monitorando o Servidor 🕒",
 ]
 
 
@@ -36,59 +44,103 @@ async def antes_status():
 
 @bot.event
 async def on_ready():
-    print(f'✅ O bot {bot.user} está online!')
+    logger.info('✅ Bot %s online | ID: %s', bot.user, bot.user.id)
+    logger.info('📊 Servidores conectados: %s', len(bot.guilds))
+
+
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CommandNotFound):
+        logger.warning('Comando desconhecido: %s', ctx.message.content[:150])
+        return
+    logger.error('Erro no comando !%s: %r', ctx.command, error, exc_info=error)
+    if isinstance(error, commands.CheckFailure):
+        await ctx.send('❌ Você não tem permissão para executar este comando.')
+    elif isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send('❌ Faltam argumentos para este comando.')
+    elif isinstance(error, commands.CommandOnCooldown):
+        await ctx.send(f'⏳ Aguarde {error.retry_after:.1f} segundos.')
+    else:
+        await ctx.send('❌ Ocorreu um erro ao executar o comando.')
+
+
+@bot.tree.error
+async def on_app_command_error(interaction, error):
+    logger.error('Erro no comando /: %r', error, exc_info=error)
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send('❌ Ocorreu um erro no comando.', ephemeral=True)
+        else:
+            await interaction.response.send_message('❌ Ocorreu um erro no comando.', ephemeral=True)
+    except discord.HTTPException:
+        logger.exception('Não foi possível informar o erro ao usuário.')
 
 
 async def setup_hook():
-    # Pool do PostgreSQL (Railway), compartilhado por todos os cogs.
-    # Precisa ser criado ANTES de carregar os cogs.
     url = os.getenv('DATABASE_URL')
     if not url:
-        print('❌ DATABASE_URL não encontrada no ambiente.')
+        logger.error('❌ DATABASE_URL não encontrada no ambiente.')
     else:
         try:
             bot.pool = await asyncpg.create_pool(url, min_size=1, max_size=10)
-            print('🗄️ Pool PostgreSQL conectado')
-        except Exception as e:
-            print(f'❌ Erro ao conectar no PostgreSQL: {type(e).__name__}: {e}')
+            logger.info('🗄️ Pool PostgreSQL conectado')
+        except Exception:
+            logger.exception('❌ Falha ao conectar ao PostgreSQL')
 
-    if not os.path.exists('./cogs'):
-        os.makedirs('./cogs')
-
-    for filename in sorted(os.listdir('./cogs')):
-        if filename.endswith('.py') and not filename.startswith('_'):
+    if not COGS_DIR.is_dir():
+        logger.error('❌ Pasta de cogs não encontrada: %s', COGS_DIR)
+    else:
+        for arquivo in sorted(COGS_DIR.glob('*.py')):
+            if arquivo.name.startswith('_'):
+                continue
+            extensao = f'cogs.{arquivo.stem}'
             try:
-                await bot.load_extension(f'cogs.{filename[:-3]}')
-                print(f'📦 Cog carregado: {filename}')
-            except Exception as e:
-                print(f'❌ Erro ao carregar {filename}: {type(e).__name__}: {e}')
+                await bot.load_extension(extensao)
+                logger.info('📦 Cog carregado: %s', extensao)
+            except Exception:
+                logger.exception('❌ Erro ao carregar %s', extensao)
+
+    logger.info('📦 Extensões carregadas: %s', list(bot.extensions))
+    logger.info('🔎 Comandos !: %s', [c.qualified_name for c in bot.walk_commands()])
+    logger.info('🔎 Comandos / globais locais: %s', [c.name for c in bot.tree.get_commands()])
+
+    try:
+        sincronizados = await bot.tree.sync()
+        logger.info('✅ %d comandos / globais sincronizados: %s',
+                    len(sincronizados), [c.name for c in sincronizados])
+    except Exception:
+        logger.exception('❌ Erro ao sincronizar comandos / globais')
 
     if not mudar_status.is_running():
         mudar_status.start()
 
     try:
         await start_painel(bot)
-        print('🌐 Painel iniciado')
-    except Exception as e:
-        print(f'❌ Erro ao iniciar o painel: {type(e).__name__}: {e}')
+        logger.info('🌐 Painel iniciado')
+    except Exception:
+        logger.exception('❌ Erro ao iniciar o painel')
 
 
-# Fecha o pool do PostgreSQL ao desligar o bot
+bot.setup_hook = setup_hook
+
 _close_original = bot.close
 
 
 async def close_com_pool():
-    pool = getattr(bot, 'pool', None)
-    if pool is not None:
-        await pool.close()
-    await _close_original()
+    try:
+        if mudar_status.is_running():
+            mudar_status.cancel()
+        pool = getattr(bot, 'pool', None)
+        if pool is not None:
+            await pool.close()
+    finally:
+        await _close_original()
 
 
 bot.close = close_com_pool
-bot.setup_hook = setup_hook
 
-TOKEN = os.getenv('DISCORD_TOKEN')
-if TOKEN:
-    bot.run(TOKEN)
-else:
-    print("ERRO: Token não encontrado.")
+if __name__ == '__main__':
+    token = os.getenv('DISCORD_TOKEN')
+    if not token:
+        raise RuntimeError('DISCORD_TOKEN não encontrado no ambiente.')
+    bot.run(token)
