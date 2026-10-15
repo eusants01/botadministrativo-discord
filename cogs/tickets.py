@@ -8,6 +8,7 @@ import json
 import os
 import re
 import time
+import unicodedata
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -26,7 +27,7 @@ CARGOS_STAFF = [
     1553832097905377422,
 ]
 
-CARGOS_NOTIFICAR = [1553832098404499516, 1553832097905377422]
+CARGOS_NOTIFICAR = [1560385636819796059]
 
 CATEGORIA_TICKETS_ID = 1555449984453972009
 
@@ -36,14 +37,18 @@ CANAL_AVALIACOES_ID = 1555453132387913728
 
 MAX_TICKETS_POR_USUARIO = 1
 TEMPO_PARA_APAGAR = 3
-COOLDOWN_CHAMAR_EQUIPE = 100
+COOLDOWN_CHAMAR_EQUIPE = 60
 ALERTA_SEM_ATENDENTE_MINUTOS = 5
 
 INATIVIDADE_AVISO_HORAS = 0
 INATIVIDADE_FECHAR_APOS_AVISO_HORAS = 0
 
+# Fecha o ticket sozinho X minutos depois de Aprovar/Recusar. 0 = desligado.
+FECHAR_APOS_DECISAO_MIN = 0
+
 BANNER_PRINCIPAL = "https://i.imgur.com/UC3W9D7.png"
 
+# Texto do painel público (edite à vontade e rode !painelticket de novo)
 PAINEL_DESCRICAO = """\
 # <a:sino:1555469607341654047> **Central de Atendimento**
 Escolha no menu abaixo uma categoria que deseja receber o atendimento necessário.
@@ -51,20 +56,18 @@ Escolha no menu abaixo uma categoria que deseja receber o atendimento necessári
 **Escolha a sua Categoria**
 > `☎️` **Denúncias** — Reportar jogadores ou comportamentos.
 > `🎖️` **Solicitar Medalhas** — Peça uma medalha com comprovação.
-> `🛒` **Comprar Vaga na Família** — Adquira a sua vaga.
+> `🪖` **Solicitar Cargo no E.B** — Peça cargo em uma divisão (CGEx, AFEx...).
 > `💼` **Solicitar Parcerias** — Propostas de parceria entre servidores.
 > `💬` **Outros Assuntos** — Qualquer outra dúvida ou pedido.
 
 **Horário de Funcionamento.**
-> `⏳` Segunda a Sexta: das **09:00 até 22:59h**
+> `⏳` Segunda a Sexta: das **09:00 até 22:00h**
 > `⏳` Sábado e Domingo: das **11:00 até 18:00h**
 
 **Avisos**
 > `⚠️` O uso abusivo desnecessário acarretará em punição.
-> `❌` Não vendemos vaga da Família diretamente, apenas aprovamos ou reprovamos.
 """
 
-# Prioridades que a staff pode definir no painel do ticket
 PRIORIDADES = {
     "baixa": ("🟢", "Baixa"),
     "normal": ("🟡", "Normal"),
@@ -72,6 +75,8 @@ PRIORIDADES = {
     "urgente": ("🔴", "Urgente"),
 }
 
+# Respostas prontas que a staff envia com um clique (botão "Respostas")
+# chave: (nome no menu, emoji, texto). Use {usuario} para mencionar quem abriu.
 RESPOSTAS_PRONTAS = {
     "recebido": (
         "Recebido",
@@ -97,6 +102,12 @@ RESPOSTAS_PRONTAS = {
         "{usuario}, estamos aguardando a sua resposta para dar andamento. "
         "Sem retorno, o ticket poderá ser encerrado.",
     ),
+    "comprovacao": (
+        "Pedir comprovação",
+        "📎",
+        "{usuario}, envie aqui os prints ou links que comprovem os requisitos "
+        "do que você solicitou.",
+    ),
     "resolvido": (
         "Resolvido",
         "✅",
@@ -108,7 +119,7 @@ RESPOSTAS_PRONTAS = {
 CATEGORIAS = {
     "denuncia": {
         "nome": "Denúncias",
-        "emoji": "☎️",
+        "emoji": "<:denuncias:1560383906551697649>",
         "descricao": "Reportar jogadores ou comportamentos",
         "cor": COR_AZUL,
         "banner": "",
@@ -166,7 +177,7 @@ Sua denúncia será tratada com **sigilo e seriedade**.
     },
     "medalhas": {
         "nome": "Solicitar Medalhas",
-        "emoji": "🎖️",
+        "emoji": "<:medalhas:1560384481783718289>",
         "descricao": "Peça uma medalha com comprovação",
         "cor": COR_AZUL,
         "banner": "",
@@ -190,14 +201,14 @@ Recebemos o seu pedido de medalha.
         },
         "perguntas": [
             {
-                "label": "Qual medalha você deseja?",
-                "placeholder": "Ex: Medalha ???",
+                "label": "Como você cumpriu os requisitos?",
+                "placeholder": "Explique com detalhes...",
                 "longo": True,
                 "obrigatorio": True,
             },
             {
-                "label": "Cumpre os requisitos da medalha?",
-                "placeholder": "Ex: Sim, cumpro todos os requisitos",
+                "label": "Comprovação (links)",
+                "placeholder": "Links de prints/clipes (ou envie aqui no ticket)",
                 "longo": False,
                 "obrigatorio": False,
             },
@@ -213,67 +224,76 @@ Recebemos o seu pedido de medalha.
         "cargos_ping": [],
         "categoria_discord_id": None,
     },
-    "vaga": {
-        "nome": "Comprar Vaga na Família",
-        "emoji": "🛒",
-        "descricao": "Adquira a sua vaga com segurança",
+    "cargo_eb": {
+        "nome": "Solicitar Cargo no E.B",
+        "emoji": "<:download1:1560384545642127480>",
+        "descricao": "Peça cargo em uma divisão do E.B",
         "cor": COR_AZUL,
         "banner": "",
-        "mensagem": """Olá, {usuario}! 🛒
-Recebemos o seu interesse em uma vaga na **Família Sant's**.
+        "mensagem": """Olá, {usuario}! 🪖
+Recebemos o seu pedido de cargo no **E.B**.
 
 **Como funciona**
-> `💬` O membros oficiais da Família Sant's decidem se aprovam ou não a sua entrada.
-> `⚖️` Todos os membros oficiais serão notificados.
-> `⏳` Voce será notificado(a) caso a sua solicitação seja aprovada ou recusada.
+> `🔎` A equipe confere o seu pedido e os requisitos do cargo.
+> `⚖️` Você recebe a decisão (**aprovado** ou **recusado**) aqui mesmo.
+> `⏳` Aguarde — a equipe já foi avisada.
 
 **Aviso**
-> `⚠️` **Não vendemos diretamente aqui. Abra um ticket no servidor do E.B pra isso!!.**
+> `⚠️` Informe o seu nome/ID corretamente para a equipe te localizar no E.B.
 """,
-    
+        # EDITE com as divisões do E.B (nome, descrição, emoji). Máximo de 25.
         "escolha": {
-            "label": "Forma de pagamento",
-            "placeholder": "Alguém te indicou?",
+            "label": "Divisão",
+            "placeholder": "Em qual divisão você quer o cargo?",
             "opcoes": [
-                ("Sant's", "", "⚔️"),
-                ("Bruna", "", "🌸"),
-                ("Kael", "", "💙"),
+                ("CGEx", "Solicitar cargo no CGEx", "🎖️"),
+                ("AFEx", "Solicitar cargo no AFEx", "🎖️"),
+                ("Outra divisão", "Informe qual no formulário", "📌"),
             ],
         },
         "perguntas": [
             {
-                "label": "Por que voce deseja ingressar na Família?",
-                "placeholder": "Ex: Quero fazer parte da comunidade e contribuir com o crescimento",
+                "label": "Qual cargo você deseja?",
+                "placeholder": "Nome do cargo/patente (e divisão, se for outra)",
                 "longo": False,
                 "obrigatorio": True,
             },
             {
-                "label": "Seu nome/ID no servidor",
-                "placeholder": "Como a equipe vai te identificar",
+                "label": "Seu nome/ID no E.B",
+                "placeholder": "Como a equipe vai te localizar",
                 "longo": False,
                 "obrigatorio": True,
             },
             {
-                "label": "Há quanto tempo conhece a Família?",
-                "placeholder": "Ex: 1 mês",
+                "label": "Cargo atual (se tiver)",
+                "placeholder": "Ex: Soldado / nenhum",
                 "longo": False,
                 "obrigatorio": False,
             },
             {
-                "label": "Observações",
-                "placeholder": "Algo que a equipe precise saber?",
+                "label": "Por que merece o cargo?",
+                "placeholder": "Atividade, tempo e requisitos que você cumpre...",
                 "longo": True,
+                "obrigatorio": True,
+            },
+            {
+                "label": "Comprovação (links)",
+                "placeholder": "Links de prints/vídeos (ou envie aqui no ticket)",
+                "longo": False,
                 "obrigatorio": False,
             },
         ],
         "decisao": True,
         "cargo_ao_aprovar": None,
+        # IDs de cargos que podem abrir esta categoria ([] = qualquer pessoa)
+        "cargos_permitidos": [],
+        # IDs de cargos marcados quando o ticket é aberto (além da staff)
         "cargos_ping": [],
         "categoria_discord_id": None,
     },
     "parceria": {
         "nome": "Solicitar Parcerias",
-        "emoji": "💼",
+        "emoji": "<:parcerias:1560384427316617328>",
         "descricao": "Propostas de parceria entre servidores",
         "cor": COR_AZUL,
         "banner": "",
@@ -329,7 +349,7 @@ Que bom ter interesse em uma parceria com a **Família Sant's**.
     },
     "outros": {
         "nome": "Outros Assuntos",
-        "emoji": "💬",
+        "emoji": "<:outros:1560384516164558909>",
         "descricao": "Qualquer outra dúvida ou pedido",
         "cor": COR_AZUL,
         "banner": "",
@@ -383,7 +403,17 @@ for _antigo, _novo in (
         os.replace(_antigo, _novo)
 
 CANAIS_FECHANDO: set[int] = set()
+CRIANDO: set[int] = set()
 COOLDOWN_CHAMAR: dict[int, float] = {}
+
+
+# ════════════════════════════════════════════════════════════════
+#           ARMAZENAMENTO (PostgreSQL com cache + arquivo de reserva)
+# ════════════════════════════════════════════════════════════════
+#
+# Os dados dos tickets (contador, abertos, histórico, avaliações, bloqueios) ficam
+# no PostgreSQL quando bot.pool existe. Assim nada se perde quando o Railway reinicia
+# ou faz um novo deploy. As funções abaixo continuam síncronas para o resto do código.
 
 SQL_KV = """
 CREATE TABLE IF NOT EXISTS tickets_kv (
@@ -603,6 +633,23 @@ def estrelas(nota: int) -> str:
     return "⭐" * nota + "☆" * (5 - nota)
 
 
+def slug(texto: str, limite: int = 20) -> str:
+    s = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode().lower()
+    return re.sub(r"[^a-z0-9]+", "-", s).strip("-")[:limite].strip("-")
+
+
+def nome_canal(chave: str, respostas: list, numero: int) -> str:
+    """Ex.: cargo-eb-cgex-0007 (a escolha do menu entra no nome do canal)."""
+    partes = [chave.replace("_", "-")]
+    esc = CATEGORIAS.get(chave, {}).get("escolha")
+    if esc and respostas and respostas[0][0] == esc["label"]:
+        extra = slug(respostas[0][1])
+        if extra:
+            partes.append(extra)
+    partes.append(f"{numero:04d}")
+    return "-".join(partes)[:90]
+
+
 def protocolo_de(criado_em: datetime, numero: int) -> str:
     """Protocolo único do atendimento. Ex.: SANTS-2610-0042"""
     d = criado_em.astimezone(FUSO)
@@ -754,7 +801,7 @@ def montar_card(guild: discord.Guild, canal, t: dict) -> discord.Embed:
         linhas.append("> `🔒` Ticket trancado pela equipe")
     partes.append("**Atendimento**\n" + "\n".join(linhas))
 
-    # Seção: decisão (medalhas, vaga, parcerias)
+    # Seção: decisão (medalhas, cargos, parcerias)
     dec = t.get("decisao")
     if dec:
         aprovado = dec.get("status") == "aprovado"
@@ -1164,6 +1211,21 @@ class BotaoNota(
 async def criar_ticket(
     interaction: discord.Interaction, chave: str, respostas: list[list[str]]
 ):
+    """Evita dois tickets do mesmo usuário ao mesmo tempo (clique duplo)."""
+    if interaction.user.id in CRIANDO:
+        return await interaction.followup.send(
+            "⏳ O seu ticket já está sendo criado, aguarde um instante.", ephemeral=True
+        )
+    CRIANDO.add(interaction.user.id)
+    try:
+        await _criar_ticket(interaction, chave, respostas)
+    finally:
+        CRIANDO.discard(interaction.user.id)
+
+
+async def _criar_ticket(
+    interaction: discord.Interaction, chave: str, respostas: list[list[str]]
+):
     """Chamar DEPOIS de interaction.response.defer(ephemeral=True)."""
     guild = interaction.guild
     user = interaction.user
@@ -1208,7 +1270,7 @@ async def criar_ticket(
     numero = proximo_numero()
     try:
         canal = await guild.create_text_channel(
-            name=f"{chave}-{numero:04d}",
+            name=nome_canal(chave, respostas, numero),
             category=categoria_discord,
             overwrites=overwrites,
             topic=f"owner={user.id};cat={chave};num={numero}",
@@ -1317,7 +1379,7 @@ class EscolhaSelect(discord.ui.Select):
             placeholder=esc.get("placeholder", "Escolha uma opção...")[:150],
             options=[
                 discord.SelectOption(
-                    label=nome[:100], value=str(i), description=desc[:100], emoji=emoji
+                    label=nome[:100], value=str(i), description=(desc or "")[:100] or None, emoji=emoji
                 )
                 for i, (nome, desc, emoji) in enumerate(esc["opcoes"])
             ],
@@ -1410,6 +1472,17 @@ class TicketSelect(discord.ui.Select):
             await interaction.response.send_message(erro, ephemeral=True)
             return await self._resetar(interaction)
 
+        permitidos = cat.get("cargos_permitidos") or []
+        if permitidos and not (
+            eh_staff(interaction.user)
+            or any(r.id in permitidos for r in getattr(interaction.user, "roles", []))
+        ):
+            await interaction.response.send_message(
+                "🔒 Esta categoria é restrita a membros com cargo autorizado.",
+                ephemeral=True,
+            )
+            return await self._resetar(interaction)
+
         # Etapa 1 (opcional): pergunta rápida em menu
         if cat.get("escolha"):
             embed = discord.Embed(
@@ -1481,7 +1554,7 @@ class MotivoFechamentoModal(discord.ui.Modal, title="Fechar Ticket"):
 
 
 class DecisaoModal(discord.ui.Modal):
-    """Aprovar/Recusar uma solicitação (medalhas, vaga, parcerias)."""
+    """Aprovar/Recusar uma solicitação (medalhas, cargos, parcerias)."""
 
     def __init__(self, aprovar: bool):
         super().__init__(
@@ -1573,6 +1646,15 @@ class DecisaoModal(discord.ui.Modal):
                 )
             except (discord.Forbidden, discord.HTTPException):
                 pass
+
+        if FECHAR_APOS_DECISAO_MIN:
+            fechar_em = int(time.time()) + FECHAR_APOS_DECISAO_MIN * 60
+            salvar_estado(canal.id, fechar_em=fechar_em)
+            await aviso_no_ticket(
+                canal,
+                f"⏳ Este ticket será fechado automaticamente <t:{fechar_em}:R>. "
+                "Se precisar de algo, responda aqui antes disso.",
+            )
 
         await registrar(
             guild,
@@ -2482,7 +2564,7 @@ class TicketsCog(commands.Cog):
             raise error
 
     # ── Monitoramento: alerta sem atendente + inatividade ───────
-    @tasks.loop(minutes=5)
+    @tasks.loop(minutes=1)
     async def monitorar(self):
         agora_utc = datetime.now(timezone.utc)
         for cid in list(estados().keys()):
@@ -2497,6 +2579,16 @@ class TicketsCog(commands.Cog):
                 if not t:
                     continue
                 guild = canal.guild
+
+                # 0) Fechamento automático após a decisão
+                if t.get("fechar_em") and time.time() >= t["fechar_em"]:
+                    salvar_estado(canal.id, fechar_em=None)
+                    asyncio.create_task(
+                        fechar_ticket(
+                            self.bot, canal, guild.me, "Fechado automaticamente após a decisão."
+                        )
+                    )
+                    continue
 
                 # 1) Ninguém assumiu
                 if (
