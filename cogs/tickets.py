@@ -244,10 +244,10 @@ Recebemos o seu pedido de cargo no **E.B**.
         # EDITE com as divisões do E.B (nome, descrição, emoji). Máximo de 25.
         "escolha": {
             "label": "Divisão",
-            "placeholder": "Em qual divisão você quer o cargo?",
+            "placeholder": "Em qual divisão/organização você quer o cargo?",
             "opcoes": [
-                ("CGEx", "Solicitar cargo no CGEx", "🎖️"),
-                ("AFEx", "Solicitar cargo no AFEx", "🎖️"),
+                ("CGEx", "Solicitar cargo no CGEx", "<:CGEx:1560374896138256524>"),
+                ("AFEx", "Solicitar cargo no AFEx", "<:AFEx:1560375341145391196>"),
                 ("Outra divisão", "Informe qual no formulário", "📌"),
             ],
         },
