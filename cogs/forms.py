@@ -89,7 +89,7 @@ FORMULARIOS = {
         "cargos_bloqueados": [],          # quem tem algum destes cargos não pode responder
         "dias_no_servidor_min": 0,
         # Para onde vão as respostas e quem avalia
-        "canal_respostas_id": 1553923854877990945,          # <<< PREENCHA com o canal da staff
+        "canal_respostas_id": 1560397237534597332,          # <<< PREENCHA com o canal da staff
         "cargos_avaliadores": [],         # cargos que também podem aprovar/recusar e são marcados
         "cargo_ao_aprovar": None,         # cargo entregue automaticamente ao aprovar
         "painel": """\
@@ -136,8 +136,8 @@ Obrigado, {usuario}! O seu protocolo é **{protocolo}**.
 """,
         "perguntas": [
             {
-                "id": "Kael é gay?",
-                "texto": "Sim, não ou talvez?",
+                "id": "Teste de honestidade?",
+                "texto": "Voce acha que o Kael é gay?",
                 "tipo": "texto",
                 "max_chars": 60,
             },
