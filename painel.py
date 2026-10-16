@@ -194,7 +194,9 @@ async def start_painel(client: discord.Client):
     """Chame dentro do setup_hook do bot."""
     global bot, pool
     bot = client
-    pool = await asyncpg.create_pool(E["DATABASE_URL"])
+    pool = getattr(client, "pool", None)
+    if pool is None:
+        pool = await asyncpg.create_pool(E["DATABASE_URL"])
     await pool.execute(SQL + SQL2)
     await semear()
     cfg = uvicorn.Config(app, host="0.0.0.0", port=int(E.get("PORT", 8000)), log_level="warning",
@@ -205,7 +207,8 @@ async def start_painel(client: discord.Client):
 SQL2 = """;create table if not exists posts(id serial primary key, ts timestamptz default now(), tipo text,
 titulo text, texto text, banner text, autor text, fim timestamptz, destaque boolean default false);
 create table if not exists config(chave text primary key, valor text)"""
-TIPOS = {"evento": "Evento", "noticia": "Notícia", "novidade": "Novidade", "embreve": "Em breve", "sorteio": "Sorteio"}
+TIPOS = {"evento": "Evento", "noticia": "Notícia", "novidade": "Novidade", "embreve": "Em breve", "sorteio": "Sorteio",
+         "tecnologia": "Tecnologia", "projeto": "Projeto", "guia": "Guia", "jogos": "Jogos"}
 
 
 def _csrf(req: Request):
@@ -230,7 +233,7 @@ async def publico():
                     for m in g.members if not m.bot and cargo(m)[0]), key=lambda x: (-x["nivel"], x["nome"].lower()))
     return {"membros": g.member_count, "convite": E.get("INVITE_URL", "https://discord.gg/evsYVUsJAk"), "staff": staff,
             "posts": [_post(r) for r in rows], "historia": h or "",
-            "grupos": grupos(g), "cassino": top_cassino(g),
+            "grupos": grupos(g), "cassino": await top_cassino(g),
             "cassino_url": f"https://discord.com/channels/{GUILD_ID}/{CASSINO_CH}"}
 
 
@@ -345,18 +348,27 @@ def grupos(g):
     return [x for x in out if x["total"]]
 
 
-def top_cassino(g):
+async def top_cassino(g):
+    """Ranking público das Sant's Coins compartilhadas com os cogs.
+
+    Consulta a tabela já existente; não altera carteiras nem exige comandos novos.
+    """
     try:
-        from utils.cassino_db import ranking_ricos
-        rows = ranking_ricos(5)
-    except Exception:
-        return []
-    res = []
-    for uid, moedas in rows:
-        m = g.get_member(int(uid))
-        res.append({"nome": m.display_name if m else "Membro", "moedas": int(moedas),
-                    "avatar": m.display_avatar.replace(size=64).url if m else ""})
-    return res
+        rows = await pool.fetch(
+            "SELECT user_id, saldo FROM sants_carteiras WHERE saldo > 0 "
+            "ORDER BY saldo DESC, user_id LIMIT 5"
+        )
+    except (asyncpg.PostgresError, AttributeError):
+        return []  # A carteira pode ainda não ter sido inicializada.
+    result = []
+    for r in rows:
+        m = g.get_member(int(r["user_id"])) if g else None
+        result.append({
+            "nome": m.display_name if m else "Membro",
+            "moedas": int(r["saldo"]),
+            "avatar": m.display_avatar.replace(size=64).url if m else ""
+        })
+    return result
 
 
 EV_TEXTO = """Durante uma semana, você terá a oportunidade de convidar novos membros para a Família e disputar prêmios incríveis.
