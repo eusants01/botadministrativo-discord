@@ -144,3 +144,4 @@ if __name__ == '__main__':
     if not token:
         raise RuntimeError('DISCORD_TOKEN não encontrado no ambiente.')
     bot.run(token)
+    
