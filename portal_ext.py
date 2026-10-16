@@ -323,7 +323,7 @@ def installed_on(app, *, get_bot, get_pool, guild_id, get_admin, audit_fn, guard
         return {'hero_banner': values.get('hero_banner') or '/assets/banner.jpg',
                 'membros_banner': values.get('membros_banner') or '/assets/banner.jpg',
                 'hierarquia_banner': values.get('hierarquia_banner') or '/assets/banner.jpg',
-                'evento_banner': values.get('evento_banner') or '/assets/evento-teaser.webp',
+                'evento_banner': values.get('evento_banner') or '/assets/portal-capa.webp',
                 'evento_titulo': values.get('evento_titulo') or 'Uma nova energia se aproxima.',
                 'evento_subtitulo': values.get('evento_subtitulo') or 'Um novo evento está sendo preparado.',
                 'evento_promotor': values.get('evento_promotor') or 'Kael',

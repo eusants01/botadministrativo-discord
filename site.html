@@ -8,13 +8,15 @@
   <meta property="og:title" content="Portal Sant's — Uma comunidade. Novas possibilidades.">
   <meta property="og:description" content="Conheça a Família Sant's, acompanhe eventos, explore conteúdos e descubra o universo do cassino e dos pactos.">
   <meta property="og:image" content="/assets/banner.jpg">
-  <title>Portal Sant's — Comunidade, cultura e entretenimento</title>
+  <title>Portal Sant's 3.0 — Membros, eventos e comunidade</title>
   <link rel="icon" href="/assets/logo.webp" type="image/webp">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/assets/portal.css?v=1">
-  <script src="/assets/portal.js?v=1" defer></script>
+  <link rel="stylesheet" href="/assets/portal.css?v=3.1">
+  <script src="/assets/portal.js?v=3.1" defer></script>
+  <link rel="stylesheet" href="/assets/portal-upgrade.css?v=3.1">
+  <script src="/assets/portal-upgrade.js?v=3.1" defer></script>
 </head>
 <body>
   <a class="skip" href="#conteudo">Ir para o conteúdo</a>
@@ -25,10 +27,10 @@
         <a class="brand" href="#inicio" aria-label="Portal Sant's — início"><img src="/assets/logo.webp" alt="" width="46" height="46"><span><strong>SANT'S</strong><small>PORTAL DA COMUNIDADE</small></span></a>
         <button class="menu-toggle" id="menu-toggle" type="button" aria-label="Abrir menu" aria-expanded="false" aria-controls="menu-principal"><span></span><span></span><span></span></button>
         <nav class="site-nav" id="menu-principal" aria-label="Navegação principal">
-          <a href="#explorar">Explorar</a><a href="#novidades">Novidades</a><a href="#entretenimento">Entretenimento</a><a href="#agenda">Eventos</a><a href="#conteudos">Conteúdos</a><a href="#comunidade">Comunidade</a>
-          <a class="nav-mobile-panel" href="/painel">Área administrativa ↗</a>
+          <a href="#explorar">Explorar</a><a href="#novidades">Novidades</a><a href="#entretenimento">Entretenimento</a><a href="#agenda">Eventos</a><a href="#conteudos">Conteúdos</a><a href="#comunidade">Comunidade</a><a href="/membros">Membros</a><a href="/hierarquia">Hierarquia</a>
+          <a class="nav-mobile-panel" href="/conta">Meu perfil ↗</a><a class="nav-mobile-panel" href="/painel">Área administrativa ↗</a>
         </nav>
-        <a class="btn btn-small btn-outline nav-panel" href="/painel" aria-label="Acessar painel administrativo">Painel <span aria-hidden="true">↗</span></a>
+        <a class="btn btn-small btn-outline nav-panel" href="/conta" aria-label="Personalizar meu perfil">Meu perfil</a><a class="btn btn-small btn-outline nav-panel" href="/painel" aria-label="Acessar painel administrativo">Painel <span aria-hidden="true">↗</span></a>
       </div>
     </header>
 
@@ -40,7 +42,7 @@
             <div class="eyebrow"><span class="eyebrow-mark"></span> FAMÍLIA SANT'S · PORTAL OFICIAL DA COMUNIDADE</div>
             <h1 id="hero-heading">Mais que uma família.<br><span>Um universo para explorar.</span></h1>
             <p>Uma comunidade que reúne pessoas, projetos e experiências. Notícias, eventos, desafios e diversão — tudo em um só lugar.</p>
-            <div class="hero-actions"><a class="btn btn-primary" data-invite href="https://discord.gg/evsYVUsJAk" target="_blank" rel="noopener noreferrer">Entrar na comunidade <span aria-hidden="true">↗</span></a><a class="btn btn-quiet" href="#explorar">Explorar o portal <span aria-hidden="true">↓</span></a></div>
+            <div class="hero-actions"><a class="btn btn-primary" data-invite href="https://discord.gg/EfRaFAXgHb" target="_blank" rel="noopener noreferrer">Entrar na comunidade <span aria-hidden="true">↗</span></a><a class="btn btn-quiet" href="#explorar">Explorar o portal <span aria-hidden="true">↓</span></a></div>
             <div class="hero-foot"><span class="avatars" aria-hidden="true"><i>S</i><i>★</i><i>✦</i></span><span>Um espaço aberto a novas histórias.<br><strong>Faça parte da próxima.</strong></span></div>
           </div>
           <aside class="hero-summary" aria-label="Resumo do portal"><span class="summary-overline">NOSSO UNIVERSO</span><div class="summary-item"><span class="summary-symbol">↗</span><div><strong>Comunidade ativa</strong><small>Conectada pelo Discord</small></div></div><div class="summary-item"><span class="summary-symbol">✦</span><div><strong>Experiências próprias</strong><small>Jogos, eventos e desafios</small></div></div><div class="summary-item"><span class="summary-symbol">⌘</span><div><strong>Conteúdos e projetos</strong><small>Mais do que apenas um servidor</small></div></div></aside>
@@ -67,7 +69,7 @@
       </div></section>
 
       <section class="section container" id="entretenimento"><div class="section-header"><div><span class="section-kicker">03 / UNIVERSO SANT'S</span><h2>A diversão tem endereço.</h2><p>Experiências desenvolvidas para nossa comunidade, conectadas ao bot no Discord.</p></div></div>
-        <div class="entertain-grid"><div class="devil-panel"><div class="devil-filigree" aria-hidden="true">♠</div><div class="devil-content"><span class="devil-kicker">✦ A MESA DOS CONTRATOS ✦</span><h3>A CASA TE<br>ESPERA.</h3><p>Faça pactos, desafie outro jogador e encare as surpresas da mesa. A decisão é sua.</p><div class="devil-tags"><span>PACTOS EM DUPLA</span><span>DESAFIOS</span><span>SANT'S COINS</span></div><a class="btn btn-devil" id="cassino-link" data-invite href="https://discord.gg/evsYVUsJAk" target="_blank" rel="noopener noreferrer">Conhecer os jogos <span aria-hidden="true">↗</span></a></div><span class="devil-fine">Personagens e identidade originais · Estética clássica de animação</span></div>
+        <div class="entertain-grid"><div class="devil-panel"><div class="devil-filigree" aria-hidden="true">♠</div><div class="devil-content"><span class="devil-kicker">✦ A MESA DOS CONTRATOS ✦</span><h3>A CASA TE<br>ESPERA.</h3><p>Faça pactos, desafie outro jogador e encare as surpresas da mesa. A decisão é sua.</p><div class="devil-tags"><span>PACTOS EM DUPLA</span><span>DESAFIOS</span><span>SANT'S COINS</span></div><a class="btn btn-devil" id="cassino-link" data-invite href="https://discord.gg/EfRaFAXgHb" target="_blank" rel="noopener noreferrer">Conhecer os jogos <span aria-hidden="true">↗</span></a></div><span class="devil-fine">Personagens e identidade originais · Estética clássica de animação</span></div>
           <div class="ranking-card"><div class="ranking-heading"><div><span class="section-kicker">PLACAR DA COMUNIDADE</span><h3>Ranking de moedas</h3></div><span class="ranking-coin">✦ SC</span></div><p class="ranking-sub">Quem está no topo da economia Sant's Coins?</p><div class="ranking-list" id="ranking"><div class="empty-state">Carregando ranking...</div></div><span class="ranking-footer">Saldos consultados no banco de dados do bot.</span></div></div>
       </section>
 
@@ -79,14 +81,34 @@
       </section>
 
       <section class="section section-tint" id="comunidade"><div class="container"><div class="section-header"><div><span class="section-kicker">06 / A COMUNIDADE</span><h2>As pessoas por trás da Sant's.</h2><p>Nossa equipe e grupos são atualizados diretamente pelos cargos do Discord.</p></div><a class="text-link" href="#sobre">Nossa história <span aria-hidden="true">↗</span></a></div>
-        <div class="community-layout"><div class="team"><div class="team-head"><h3>Quem faz acontecer</h3><span id="team-total">Equipe da Família</span></div><div class="team-tabs" id="team-tabs"><button type="button" class="filter active" data-team="adm" aria-pressed="true">Administração</button><button type="button" class="filter" data-team="Criadores" aria-pressed="false">Criadores</button><button type="button" class="filter" data-team="Membros Oficiais" aria-pressed="false">Membros oficiais</button></div><div class="team-grid" id="team-grid"><div class="empty-state">Carregando equipe...</div></div></div><aside class="community-card"><img class="community-emblem" src="/assets/logo.webp" alt="Símbolo da Família Sant's" width="112" height="112"><span class="community-label">NOSSA ORIGEM</span><h3>Uma família.<br>Muitas histórias.</h3><p>Organização, respeito e união são parte do que construímos. Nossa trajetória começou no universo do E.B e segue crescendo com novos projetos.</p><a data-invite class="btn btn-primary" href="https://discord.gg/evsYVUsJAk" target="_blank" rel="noopener noreferrer">Fazer parte <span aria-hidden="true">↗</span></a><a class="community-eb" href="https://discord.gg/tH3xDb9MHk" target="_blank" rel="noopener noreferrer">Conhecer o E.B do Alpha ↗</a></aside></div>
+        <div class="community-layout"><div class="team"><div class="team-head"><h3>Quem faz acontecer</h3><span id="team-total">Equipe da Família</span></div><div class="team-tabs" id="team-tabs"><button type="button" class="filter active" data-team="adm" aria-pressed="true">Administração</button><button type="button" class="filter" data-team="Criadores" aria-pressed="false">Criadores</button><button type="button" class="filter" data-team="Membros Oficiais" aria-pressed="false">Membros oficiais</button></div><div class="team-grid" id="team-grid"><div class="empty-state">Carregando equipe...</div></div></div><aside class="community-card"><img class="community-emblem" src="/assets/logo.webp" alt="Símbolo da Família Sant's" width="112" height="112"><span class="community-label">NOSSA ORIGEM</span><h3>Uma família.<br>Muitas histórias.</h3><p>Organização, respeito e união são parte do que construímos. Nossa trajetória começou no universo do E.B e segue crescendo com novos projetos.</p><a data-invite class="btn btn-primary" href="https://discord.gg/EfRaFAXgHb" target="_blank" rel="noopener noreferrer">Fazer parte <span aria-hidden="true">↗</span></a><a class="community-eb" href="https://discord.gg/tH3xDb9MHk" target="_blank" rel="noopener noreferrer">Conhecer o E.B do Alpha ↗</a></aside></div>
       </div></section>
+
+      <!-- Portal 3.0: diretório público de membros e hierarquia oficial -->
+      <section class="s3-section" id="membros-portal">
+        <div class="container">
+          <div class="s3-heading"><div><span class="section-kicker">08 / PESSOAS DA FAMÍLIA</span>
+          <h2>Uma comunidade de verdade.</h2><p>Conheça os integrantes da Família, encontre colegas e descubra os perfis de quem constrói esta história.</p></div>
+          <a class="btn btn-outline" href="/membros">Explorar membros ↗</a></div>
+          <div class="s3-member-list" id="s3-member-list"><div class="empty-state">Sincronizando integrantes com o Discord…</div></div>
+          <div class="s3-two-links"><a href="/hierarquia"><span class="s3-link-icon">⚔</span><div><strong>Hierarquia oficial</strong><small>Cargos, distinções e medalhas atualizadas pelo Discord.</small></div><b>↗</b></a>
+          <a href="/conta"><span class="s3-link-icon">✦</span><div><strong>Seu espaço na Família</strong><small>Personalize sua biografia, frase e banner com login Discord.</small></div><b>↗</b></a></div>
+        </div>
+      </section>
+      <section class="s3-event" id="evento-secreto">
+        <div class="container s3-event-grid"><div class="s3-event-copy"><span class="s3-event-chip">PRÓXIMO EVENTO · ARQUIVO CLASSIFICADO</span>
+        <h2>Uma nova energia se aproxima.</h2><p>Um novo evento está sendo preparado para a comunidade. Algumas pistas já começaram a surgir.</p>
+        <span class="s3-event-promoter">PROMOVIDO POR <strong id="s3-promotor">Kael</strong></span>
+        <button id="s3-spoiler" class="s3-spoiler-button" type="button" aria-expanded="false">◈ Há algo escondido aqui…</button>
+        <div id="s3-secret" class="s3-secret" hidden><strong>INFORMAÇÃO RESERVADA</strong><p id="s3-secret-text">Sete sinais. Uma surpresa.</p></div>
+        </div><div class="s3-event-art" id="s3-event-art" aria-label="Prévia do próximo evento"><span class="s3-orb s3-orb-one"></span><span class="s3-orb s3-orb-two"></span><span class="s3-orb s3-orb-three"></span></div></div>
+      </section>
 
       <section class="section container" id="sobre"><div class="about-grid"><div><span class="section-kicker">07 / QUEM SOMOS</span><h2>Nossa história continua sendo escrita.</h2><p class="about-intro">A Família Sant's reúne pessoas que valorizam amizade, responsabilidade e a vontade de construir algo relevante em conjunto.</p><div class="values"><div><span>01</span><strong>Respeito</strong><p>Relações saudáveis e acolhimento.</p></div><div><span>02</span><strong>Organização</strong><p>Compromisso em cada projeto.</p></div><div><span>03</span><strong>União</strong><p>Uma comunidade feita de pessoas.</p></div></div></div><div class="story-panel"><span class="story-top">A TRAJETÓRIA DA FAMÍLIA</span><div id="historia-texto"><p>A história completa será publicada em breve.</p></div><span class="story-end">FAMÍLIA SANT'S / DESDE 2026</span></div></div></section>
 
-      <section class="join-section"><div class="container join-inner"><span class="section-kicker">O PRÓXIMO CAPÍTULO</span><h2>Seu lugar pode ser aqui.</h2><p>Descubra eventos, participe dos jogos, compartilhe ideias e conheça pessoas novas.</p><div><a class="btn btn-light" data-invite href="https://discord.gg/evsYVUsJAk" target="_blank" rel="noopener noreferrer">Entrar no Discord <span aria-hidden="true">↗</span></a><a class="btn btn-quiet" href="#inicio">Voltar ao início ↑</a></div></div></section>
+      <section class="join-section"><div class="container join-inner"><span class="section-kicker">O PRÓXIMO CAPÍTULO</span><h2>Seu lugar pode ser aqui.</h2><p>Descubra eventos, participe dos jogos, compartilhe ideias e conheça pessoas novas.</p><div><a class="btn btn-light" data-invite href="https://discord.gg/EfRaFAXgHb" target="_blank" rel="noopener noreferrer">Entrar no Discord <span aria-hidden="true">↗</span></a><a class="btn btn-quiet" href="#inicio">Voltar ao início ↑</a></div></div></section>
     </main>
-    <footer class="footer"><div class="container footer-layout"><div><a class="brand" href="#inicio"><img src="/assets/logo.webp" alt="" width="42" height="42"><span><strong>SANT'S</strong><small>PORTAL DA COMUNIDADE</small></span></a><p>Comunidade, criatividade e novas experiências.</p></div><div class="footer-links"><div><strong>Explorar</strong><a href="#novidades">Notícias</a><a href="#entretenimento">Entretenimento</a><a href="#conteudos">Conteúdos</a></div><div><strong>Comunidade</strong><a href="#agenda">Eventos</a><a href="#comunidade">Equipe</a><a href="#sobre">Sobre nós</a></div><div><strong>Links</strong><a data-invite href="https://discord.gg/evsYVUsJAk" target="_blank" rel="noopener noreferrer">Discord ↗</a><a href="/painel">Painel administrativo ↗</a></div></div></div><div class="container footer-bottom"><span>© <span id="ano"></span> Família Sant's. Portal independente da comunidade.</span><span>Feito com dedicação e criatividade.</span></div></footer>
+    <footer class="footer"><div class="container footer-layout"><div><a class="brand" href="#inicio"><img src="/assets/logo.webp" alt="" width="42" height="42"><span><strong>SANT'S</strong><small>PORTAL DA COMUNIDADE</small></span></a><p>Comunidade, criatividade e novas experiências.</p></div><div class="footer-links"><div><strong>Explorar</strong><a href="#novidades">Notícias</a><a href="#entretenimento">Entretenimento</a><a href="#conteudos">Conteúdos</a></div><div><strong>Comunidade</strong><a href="#agenda">Eventos</a><a href="/membros">Membros</a><a href="/hierarquia">Hierarquia</a><a href="#comunidade">Equipe</a><a href="#sobre">Sobre nós</a></div><div><strong>Links</strong><a data-invite href="https://discord.gg/EfRaFAXgHb" target="_blank" rel="noopener noreferrer">Discord ↗</a><a href="/conta">Meu perfil ↗</a><a href="/painel">Painel administrativo ↗</a></div></div></div><div class="container footer-bottom"><span>© <span id="ano"></span> Família Sant's. Portal independente da comunidade.</span><span>Feito com dedicação e criatividade.</span></div></footer>
   </div>
   <dialog id="post-dialog" class="post-dialog" aria-labelledby="dialog-title"><div class="dialog-frame"><button class="dialog-close" type="button" id="dialog-close" aria-label="Fechar">×</button><div class="dialog-image" id="dialog-image" hidden></div><div class="dialog-body"><span class="dialog-tag" id="dialog-tag"></span><h2 id="dialog-title"></h2><p class="dialog-meta" id="dialog-meta"></p><div class="dialog-copy" id="dialog-copy"></div><div class="dialog-bottom"><button class="btn btn-primary" type="button" id="dialog-ok">Fechar</button></div></div></div></dialog>
 </body>

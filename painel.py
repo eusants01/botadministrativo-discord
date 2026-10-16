@@ -6,6 +6,7 @@ from pathlib import Path
 import aiohttp, asyncpg, discord, uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from portal_ext import installed_on
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -80,16 +81,40 @@ app.mount("/assets", StaticFiles(directory=HERE / "assets", check_dir=False), na
 
 @app.get("/", response_class=HTMLResponse)
 async def home():
-    return (HERE / "site.html").read_text(encoding="utf-8")
+    return HTMLResponse((HERE / "site.html").read_text(encoding="utf-8"), headers={"Cache-Control": "no-cache"})
+
+
+# Páginas públicas do Portal Sant's 3.0.
+# O site HTML tem cache desativado para não mostrar conteúdo de deploys anteriores.
+@app.get("/membros", response_class=HTMLResponse)
+async def membros_page():
+    return HTMLResponse((HERE / "membros.html").read_text(encoding="utf-8"), headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/perfil", response_class=HTMLResponse)
+async def perfil_page():
+    return HTMLResponse((HERE / "perfil.html").read_text(encoding="utf-8"), headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/conta", response_class=HTMLResponse)
+async def conta_page():
+    return HTMLResponse((HERE / "conta.html").read_text(encoding="utf-8"), headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/hierarquia", response_class=HTMLResponse)
+async def hierarquia_page():
+    return HTMLResponse((HERE / "hierarquia.html").read_text(encoding="utf-8"), headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/painel", response_class=HTMLResponse)
 async def painel_page():
-    return (HERE / "painel.html").read_text(encoding="utf-8")
+    return HTMLResponse((HERE / "painel.html").read_text(encoding="utf-8"), headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/login")
 async def login(req: Request):
+    # Nunca aceitar destino arbitrário: evita redirecionamento aberto após OAuth.
+    req.session["portal_next"] = "/conta" if req.query_params.get("next") == "conta" else "/painel"
     req.session["state"] = s = secrets.token_urlsafe(24)
     q = f"client_id={E['DISCORD_CLIENT_ID']}&redirect_uri={BASE}/callback&response_type=code&scope=identify&state={s}"
     return RedirectResponse("https://discord.com/oauth2/authorize?" + q)
@@ -108,7 +133,7 @@ async def callback(req: Request, code: str = "", state: str = ""):
             raise HTTPException(400, "Não foi possível entrar com o Discord.")
         async with s.get("https://discord.com/api/users/@me", headers={"Authorization": f"Bearer {tok}"}) as r:
             req.session["uid"] = int((await r.json())["id"])
-    return RedirectResponse("/painel")
+    return RedirectResponse(req.session.pop("portal_next", "/painel"))
 
 
 @app.get("/logout")
@@ -199,6 +224,30 @@ async def start_painel(client: discord.Client):
         pool = await asyncpg.create_pool(E["DATABASE_URL"])
     await pool.execute(SQL + SQL2)
     await semear()
+
+    # Importante: registrar as rotas ANTES de iniciar o servidor web.
+    # A inicialização de perfis aguarda o Discord ficar pronto em task separada.
+    # Não aguarde bot.wait_until_ready() dentro de setup_hook(): causa deadlock.
+    portal_init, _portal_sync = installed_on(
+        app,
+        get_bot=lambda: bot,
+        get_pool=lambda: pool,
+        guild_id=GUILD_ID,
+        get_admin=usuario,
+        audit_fn=registrar,
+        guard_write=_csrf,
+        creator_role_id=EXTRAS["Criadores"],
+        staff_ids=tuple(role_id for _, role_id in CARGOS.values()),
+    )
+
+    async def preparar_portal():
+        try:
+            await portal_init()
+        except Exception:
+            import logging
+            logging.getLogger("sants.portal").exception("Não foi possível preparar perfis e hierarquia")
+
+    asyncio.create_task(preparar_portal(), name="preparar_portal_3")
     cfg = uvicorn.Config(app, host="0.0.0.0", port=int(E.get("PORT", 8000)), log_level="warning",
                          proxy_headers=True, forwarded_allow_ips="*")
     asyncio.create_task(uvicorn.Server(cfg).serve())
@@ -231,7 +280,7 @@ async def publico():
                      "titulo": FUND.get(m.id) or ("Dono do servidor" if m.id == g.owner_id else cargo(m)[1]),
                      "avatar": m.display_avatar.replace(size=128).url}
                     for m in g.members if not m.bot and cargo(m)[0]), key=lambda x: (-x["nivel"], x["nome"].lower()))
-    return {"membros": g.member_count, "convite": E.get("INVITE_URL", "https://discord.gg/evsYVUsJAk"), "staff": staff,
+    return {"membros": g.member_count, "convite": E.get("INVITE_URL", "https://discord.gg/EfRaFAXgHb"), "staff": staff,
             "posts": [_post(r) for r in rows], "historia": h or "",
             "grupos": grupos(g), "cassino": await top_cassino(g),
             "cassino_url": f"https://discord.com/channels/{GUILD_ID}/{CASSINO_CH}"}
@@ -342,7 +391,7 @@ def grupos(g):
     for nome, rid in EXTRAS.items():
         r = g.get_role(rid)
         todos = [m for m in vivos if r and r in m.roles]
-        gr = _grupo(nome, r, [m for m in todos if not cargo(m)[0]], "comum", limite=60)
+        gr = _grupo(nome, r, todos, "comum", limite=60)
         gr["total"] = len(todos)
         out.append(gr)
     return [x for x in out if x["total"]]

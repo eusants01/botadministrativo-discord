@@ -43,12 +43,14 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--cy)}
 @media(max-width:860px){#app{padding-left:0;padding-bottom:84px}.tabs{top:auto;right:0;width:auto;height:68px;flex-direction:row;padding:6px;border-right:0;border-top:1px solid rgba(95,212,255,.3);overflow:auto hidden;gap:2px}.tabs::before{display:none}.tabs .btn{flex-direction:column;gap:0;justify-content:center;min-width:78px;font-size:.62rem;padding:4px 6px;min-height:54px}.tabs .btn::before{width:auto}#msg{bottom:84px}.w{padding:12px}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
+<link rel="stylesheet" href="/assets/portal-admin.css?v=3.1">
+<script defer src="/assets/portal-admin.js?v=3.1"></script>
 </head>
 <body><div class="w">
 <div id="out" class="login hide"><img src="/assets/logo.webp" width="150" alt=""><h1>Painel da Administração</h1><p>Área restrita à equipe administrativa da Família Sant's. Entre com o seu Discord.</p><a class="btn p" href="/login">Entrar com Discord</a></div>
 <div id="app" class="hide">
 <header><div class="hd"><img src="/assets/logo.webp" alt=""><div><h1>Painel · Família Sant's</h1><small id="who"></small></div></div><span><a class="btn" href="/">Ver site</a> <a class="btn" href="/logout">Sair</a></span></header>
-<div class="tabs"><button class="btn on" data-t="v">Visão geral</button><button class="btn" data-t="m">Membros</button><button class="btn" data-t="a" id="tAviso">Aviso</button><button class="btn" data-t="h">Histórico</button><button class="btn hide" data-t="p" id="tPost">Publicar</button><button class="btn hide" data-t="y" id="tHist">História</button><button class="btn" data-t="l">Legislação</button></div>
+<div class="tabs"><button class="btn on" data-t="v">Visão geral</button><button class="btn" data-t="m">Membros</button><button class="btn" data-t="a" id="tAviso">Aviso</button><button class="btn" data-t="h">Histórico</button><button class="btn hide" data-t="p" id="tPost">Publicar</button><button class="btn hide" data-t="y" id="tHist">História</button><button class="btn" data-t="l">Legislação</button><button class="btn hide" data-t="r" id="tRoles">Hierarquia visual</button><button class="btn hide" data-t="b" id="tBrand">Banners & evento</button><button class="btn hide" data-t="o" id="tProfiles">Perfis públicos</button></div>
 
 <div id="v"><div class="hello"><h2 id="vh"></h2><p>Resumo da Família e atalhos do dia a dia.</p></div>
 <div class="stat"><div><b id="vm">–</b><span>Membros</span></div><div><b id="vs">–</b><span>Na administração</span></div><div><b id="vp">–</b><span>Publicações no site</span></div><div><b id="vr">–</b><span>Sorteios ativos</span></div></div>
@@ -80,6 +82,32 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--cy)}
 <div class="box" style="border-color:var(--red)"><b style="color:var(--red)">Proibido pedir promoção</b><small style="color:var(--mute)">Promoção não se pede: a direção decide. Pedir, insinuar, cobrar, comparar-se ou pressionar leva a advertência, perda de consideração ou remoção.</small></div>
 <div class="box"><b>Princípios</b><small style="color:var(--mute)">Respeito, imparcialidade, responsabilidade, transparência, hierarquia e bom senso. O desconhecimento da legislação não isenta ninguém de responsabilidade.</small></div></div>
 <div id="h" class="hide"></div>
+<section id="r" class="hide admin-s3"><h2>Hierarquia oficial</h2><p>Personalize as descrições, categorias e ícones dos cargos reais do Discord. Nenhuma alteração concede permissões ou cargos no servidor.</p>
+<div class="s3-form-grid"><div class="box"><h3>Editar cargo</h3>
+<label>Cargo do Discord<select id="s3-role-id"><option value="">Escolha um cargo…</option></select></label>
+<label>Categoria<select id="s3-role-cat"><option value="administrativo">Administrativo</option><option value="exclusivo">Exclusivo</option><option value="heroina">Heroínas</option><option value="campeao">Campeões</option><option value="medalha">Medalhas</option><option value="outro">Outros</option></select></label>
+<label>Símbolo ou emoji<input id="s3-role-icon" maxlength="10" value="✦"></label>
+<label>Descrição<textarea id="s3-role-desc" rows="4" maxlength="300" placeholder="Descreva a função ou como conquistar o cargo"></textarea></label>
+<label>Ordem de exibição<input id="s3-role-order" type="number" min="0" max="9999" value="100"></label>
+<label class="s3-check"><input id="s3-role-visible" type="checkbox" checked> Exibir publicamente</label>
+<button id="s3-save-role" type="button" class="btn p">Salvar na hierarquia</button></div>
+<div class="box"><h3>Cargos cadastrados</h3><div class="s3-admin-scroll" id="s3-role-list"><p>Abra esta seção para carregar o catálogo.</p></div></div></div></section>
+<section id="b" class="hide admin-s3"><h2>Identidade visual e evento</h2><p>Gerencie banners, textos do teaser e o spoiler do próximo evento. Banners aceitam URL HTTPS ou arquivo em /assets/.</p>
+<div class="box s3-brand-form"><div class="s3-field-grid">
+<label>Banner da página inicial<input id="s3-brand-hero_banner" placeholder="/assets/portal-capa.webp"></label>
+<label>Banner dos membros<input id="s3-brand-membros_banner" placeholder="/assets/banner.jpg"></label>
+<label>Banner da hierarquia<input id="s3-brand-hierarquia_banner" placeholder="/assets/banner.jpg"></label>
+<label>Banner do evento<input id="s3-brand-evento_banner" placeholder="/assets/evento-teaser.webp"></label>
+<label>Título do próximo evento<input id="s3-brand-evento_titulo" maxlength="300"></label>
+<label>Subtítulo do evento<input id="s3-brand-evento_subtitulo" maxlength="300"></label>
+<label>Organizador<input id="s3-brand-evento_promotor" maxlength="100" placeholder="Kael"></label>
+<label>Texto do spoiler<input id="s3-brand-spoiler_texto" maxlength="300"></label>
+</div><label class="s3-check"><input id="s3-brand-spoiler_ativo" type="checkbox" checked> Mostrar o botão secreto de spoiler</label>
+<button id="s3-save-brand" class="btn p" type="button">Salvar identidade visual</button></div></section>
+<section id="o" class="hide admin-s3"><h2>Moderação dos perfis</h2><p>Encontre perfis de integrantes e controle a visibilidade pública quando necessário.</p>
+<div class="box"><label>Buscar membro<input id="s3-profile-query" type="search" maxlength="80" placeholder="Nome ou usuário no Discord"></label>
+<div id="s3-profile-results" class="s3-admin-scroll"><p>Pesquise para encontrar um perfil.</p></div></div></section>
+
 </div></div>
 <div id="msg" role="status"></div>
 <script>
@@ -105,7 +133,7 @@ $('#no').onclick=function(){$('#f').classList.add('hide');alvo=null};
 $('#go').onclick=async function(){var a=$('#fa').value;if(!alvo||!confirm(NOMES[a]+' em '+alvo.nome+'?'))return;
 try{var r=await api('/api/action',{acao:a,alvo:alvo.id,minutos:$('#fmin').value,cargo:$('#fc').value,motivo:$('#fmo').value});say(r.ok,1);$('#fmo').value='';$('#f').classList.add('hide');list()}catch(e){say(e.m)}};
 $('#sa').onclick=async function(){if(!confirm('Enviar este aviso?'))return;try{var r=await api('/api/action',{acao:'aviso',texto:$('#at').value});say(r.ok,1);$('#at').value=''}catch(e){say(e.m)}};
-document.querySelectorAll('.tabs .btn').forEach(function(b){b.onclick=function(){document.querySelectorAll('.tabs .btn').forEach(function(x){x.classList.toggle('on',x==b)});['v','m','a','h','p','y','l'].forEach(function(k){$('#'+k).classList.toggle('hide',k!=b.dataset.t)});if(b.dataset.t=='v')overview();if(b.dataset.t=='h')hist();if(b.dataset.t=='p')posts();if(b.dataset.t=='y')histor()}});
+document.querySelectorAll('.tabs .btn').forEach(function(b){b.onclick=function(){document.querySelectorAll('.tabs .btn').forEach(function(x){x.classList.toggle('on',x==b)});['v','m','a','h','p','y','l','r','b','o'].forEach(function(k){$('#'+k).classList.toggle('hide',k!=b.dataset.t)});if(b.dataset.t=='v')overview();if(b.dataset.t=='h')hist();if(b.dataset.t=='p')posts();if(b.dataset.t=='y')histor()}});
 async function hist(){var H=$('#h');try{var r=await api('/api/audit');H.replaceChildren();if(!r.length)H.append(el('p','','Nenhuma ação registrada ainda.'));
 r.forEach(function(x){var d=el('div','log');d.append(el('b','',x.ator+' · '+x.acao+(x.alvo?' → '+x.alvo:'')),el('br'),el('small','',new Date(x.ts).toLocaleString('pt-BR')+(x.detalhe?' · '+x.detalhe:'')));H.append(d)})}catch(e){say(e.m)}}
 function cnt(e,n){var t0=performance.now();(function f(t){var k=Math.min(1,(t-t0)/900);e.textContent=Math.round(n*(1-Math.pow(1-k,3)));if(k<1)requestAnimationFrame(f)})(t0)}
