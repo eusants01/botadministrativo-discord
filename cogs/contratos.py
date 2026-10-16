@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
+from urllib.parse import urlsplit
 from datetime import datetime, timedelta, timezone
 
 import discord
@@ -26,7 +28,7 @@ DUO_ETAPAS = 4
 DUO_MAX_ERROS = 2
 DUO_CONVITE_MINUTOS = 2
 DUO_JOGO_MINUTOS = 20
-BANNER_MESA = ""  # URL https://... opcional, não afeta a lógica
+BANNER_MESA = os.getenv("CONTRATOS_BANNER_URL", "").strip()  # URL HTTPS padrão opcional
 
 # O limite das missões do Cassino é gerenciado pelo próprio Cassino 2.2.
 # Todas as provas abaixo são gratuitas. Não há débito na carteira.
@@ -186,6 +188,33 @@ CREATE INDEX IF NOT EXISTS idx_pactos_dupla_participante_pacto
     ON sants_pactos_dupla_participantes(pacto_id);
 """
 
+# Configurações e referências dos painéis criados nesta versão.
+# Não modifica, apaga ou substitui as tabelas de contratos, cassino ou carteiras.
+SQL_PAINEL = """
+CREATE TABLE IF NOT EXISTS sants_mesa_config (
+    guild_id BIGINT PRIMARY KEY,
+    banner_url TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS sants_mesa_paineis (
+    guild_id BIGINT NOT NULL,
+    channel_id BIGINT NOT NULL,
+    message_id BIGINT NOT NULL,
+    criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY(guild_id, message_id)
+);
+"""
+
+
+def validar_banner(url: str) -> bool:
+    """Apenas URLs HTTPS públicas, curtas, com destino identificável."""
+    try:
+        u = urlsplit(url.strip())
+        return (len(url) <= 1800 and u.scheme == "https" and bool(u.hostname)
+                and not u.username and not u.password and not any(c.isspace() for c in url))
+    except ValueError:
+        return False
+
+
 ETAPAS_DUPLA = (
     ("🕯️ O Tinteiro", "O Diabo exige que uma alma dê o primeiro passo."),
     ("🎲 A Mesa de King Dice", "A segunda alma encara o mestre dos dados."),
@@ -300,7 +329,23 @@ def base_embed(titulo: str, descricao: str, *, cor: int = COR) -> discord.Embed:
     return e
 
 
-class PainelMesa(discord.ui.View):
+class MesaView(discord.ui.View):
+    """Exibe erro amigável caso um botão falhe, sem deixar a interação pendente."""
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception, item):
+        LOG.error("Falha em botão da Mesa do Diabo (%s)", getattr(item, 'custom_id', '?'),
+                  exc_info=(type(error), error, error.__traceback__))
+        try:
+            mensagem = "❌ O Diabo perdeu este contrato por um instante. Tente novamente; se persistir, avise a staff."
+            if interaction.response.is_done():
+                await interaction.followup.send(content=mensagem, ephemeral=True)
+            else:
+                await interaction.response.send_message(content=mensagem, ephemeral=True)
+        except discord.HTTPException:
+            LOG.exception("Não foi possível entregar o aviso de erro da Mesa do Diabo")
+
+
+class PainelMesa(MesaView):
     """Nova mesa limpa, permanente e distinta dos IDs da versão Deluxe."""
     def __init__(self, cog):
         super().__init__(timeout=None)
@@ -337,7 +382,7 @@ class PainelMesa(discord.ui.View):
         await self.cog.regras_mesa(it)
 
 
-class MenuRecompensas(discord.ui.View):
+class MenuRecompensas(MesaView):
     def __init__(self, cog):
         super().__init__(timeout=180)
         self.cog = cog
@@ -351,7 +396,7 @@ class MenuRecompensas(discord.ui.View):
         await self.cog.cobrar_final(it)
 
 
-class EscolherParceiro(discord.ui.View):
+class EscolherParceiro(MesaView):
     """UserSelect devolve usuário; confirmação dos dois acontece pelo convite público."""
     def __init__(self, cog, criador_id: int):
         super().__init__(timeout=180)
@@ -404,7 +449,7 @@ class BotaoDupla(discord.ui.DynamicItem[discord.ui.Button],
 
 
 def view_dupla(id_: int, estado: str) -> discord.ui.View:
-    v = discord.ui.View(timeout=None)
+    v = MesaView(timeout=None)
     if estado == "convite":
         v.add_item(BotaoDupla("aceitar", id_))
         v.add_item(BotaoDupla("recusar", id_))
@@ -414,7 +459,7 @@ def view_dupla(id_: int, estado: str) -> discord.ui.View:
     v.add_item(BotaoDupla("status", id_))
     return v
 
-class PainelContratos(discord.ui.View):
+class PainelContratos(MesaView):
     """Persistente, válido após reinício; nenhum progresso guardado na View."""
 
     def __init__(self, cog):
@@ -452,7 +497,7 @@ class PainelContratos(discord.ui.View):
         await self.cog.ver_clausulas(it)
 
 
-class PainelLegado(discord.ui.View):
+class PainelLegado(MesaView):
     """Mantém vivos os botões dos painéis publicados na primeira versão."""
 
     def __init__(self, cog):
@@ -480,7 +525,7 @@ class PainelLegado(discord.ui.View):
         await self.cog.meu_grimorio(it)
 
 
-class EscolhaRotas(discord.ui.View):
+class EscolhaRotas(MesaView):
     def __init__(self, cog, uid: int):
         super().__init__(timeout=180)
         self.cog, self.uid = cog, uid
@@ -495,7 +540,7 @@ class EscolhaRotas(discord.ui.View):
             self.add_item(b)
 
 
-class Respostas(discord.ui.View):
+class Respostas(MesaView):
     def __init__(self, cog, uid: int, dia, rota: str, etapa: int, tentativa: int, opcoes: tuple[str, ...]):
         super().__init__(timeout=600)
         self.cog, self.uid, self.dia, self.rota, self.etapa, self.tentativa = cog, uid, dia, rota, etapa, tentativa
@@ -526,6 +571,7 @@ class ContratosDiabo20(commands.Cog):
         await extras.inicializar_extras(self.pool)
         await self.pool.execute(SQL)
         await self.pool.execute(SQL_DUPLAS)
+        await self.pool.execute(SQL_PAINEL)
         self.bot.add_dynamic_items(BotaoDupla)
         self.bot.add_view(PainelMesa(self))
         self.bot.add_view(PainelContratos(self))
@@ -570,24 +616,65 @@ class ContratosDiabo20(commands.Cog):
             """, uid, dia)
         return dia, aventura, lado, legado
 
-    def _painel_publico(self):
+    def _painel_publico(self, banner_url: str = "") -> discord.Embed:
         e = base_embed(
             "😈 A MESA DO DIABO",
             "*'Heh-heh... um nome ou duas almas? Escolha o seu acordo.'*\n\n"
-            "📜 **Pacto solo** — enfrente os desafios do Diabo.\n"
-            "🤝 **Pacto em dupla** — convide alguém e enfrentem quatro provas juntos.\n"
-            "📖 **Grimório** — consulte seu progresso, vitórias e recompensas.\n\n"
-            "*Assine por sua conta e risco... mas suas moedas estão seguras.*",
+            "📜 **Pacto solo** — desafie o Diabo.\n"
+            "🤝 **Pacto em dupla** — assine junto de outro jogador.\n"
+            "📖 **Grimório** — seus pactos e recompensas.\n\n"
+            "*Uma assinatura. Uma chance. A mesa espera por você...*",
             cor=COR,
         )
-        if BANNER_MESA.startswith("https://"):
-            e.set_image(url=BANNER_MESA)
+        if banner_url and validar_banner(banner_url):
+            e.set_image(url=banner_url)
         return e
 
-    async def _enviar(self, it, *, embed=None, texto=None, view=None):
-        # O followup permite tratar cliques demorados após defer, evita interação expirada.
-        await it.followup.send(content=texto, embed=embed, view=view, ephemeral=True,
-                               allowed_mentions=discord.AllowedMentions.none())
+    async def _banner_servidor(self, guild_id: int) -> str:
+        registro = await self.pool.fetchrow(
+            "SELECT banner_url FROM sants_mesa_config WHERE guild_id=$1", guild_id)
+        # Ausência de registro: fallback para variável de ambiente.
+        # Registro de string vazia: banner desabilitado explicitamente.
+        return registro["banner_url"] if registro is not None else BANNER_MESA
+
+    async def _atualizar_paineis(self, guild_id: int, banner_url: str) -> tuple[int, int]:
+        registros = await self.pool.fetch(
+            "SELECT channel_id, message_id FROM sants_mesa_paineis WHERE guild_id=$1", guild_id)
+        atualizados = falhas = 0
+        for registro in registros:
+            canal = self.bot.get_channel(registro["channel_id"])
+            if canal is None:
+                try:
+                    canal = await self.bot.fetch_channel(registro["channel_id"])
+                except discord.HTTPException:
+                    falhas += 1
+                    continue
+            try:
+                await canal.get_partial_message(registro["message_id"]).edit(
+                    embed=self._painel_publico(banner_url), view=PainelMesa(self),
+                    allowed_mentions=discord.AllowedMentions.none())
+                atualizados += 1
+            except discord.NotFound:
+                await self.pool.execute(
+                    "DELETE FROM sants_mesa_paineis WHERE guild_id=$1 AND message_id=$2",
+                    guild_id, registro["message_id"])
+            except discord.HTTPException:
+                falhas += 1
+                LOG.exception("Não foi possível atualizar painel %s", registro["message_id"])
+        return atualizados, falhas
+
+    async def _enviar(self, it: discord.Interaction, *, embed=None, texto=None, view=None):
+        """Responde a interação sem passar view=None (incompatível com algumas versões)."""
+        parametros = {"ephemeral": True, "allowed_mentions": discord.AllowedMentions.none()}
+        if texto is not None:
+            parametros["content"] = texto
+        if embed is not None:
+            parametros["embed"] = embed
+        if view is not None:
+            parametros["view"] = view
+        if it.response.is_done():
+            return await it.followup.send(**parametros)
+        return await it.response.send_message(**parametros)
 
     async def abrir_escolha(self, it):
         await it.response.defer(ephemeral=True, thinking=True)
@@ -1119,7 +1206,7 @@ class ContratosDiabo20(commands.Cog):
                 f"**❓ {enunciado}**\n\n"
                 f"💀 Erros: **{p['erros']}/{DUO_MAX_ERROS + 1}**\n"
                 f"*A resposta é definitiva. Uma escolha por etapa.*")
-        v = discord.ui.View(timeout=None)
+        v = MesaView(timeout=None)
         for i, opcao in enumerate(opcoes):
             v.add_item(BotaoDupla("resp", p["id"], etapa, p["tentativa"], i,
                                  rotulo=f"{chr(65+i)} · {opcao}"[:80]))
@@ -1261,8 +1348,48 @@ class ContratosDiabo20(commands.Cog):
     @commands.has_permissions(manage_guild=True)
     async def cmd_painel(self, ctx):
         """Publica o painel interativo permanente (staff)."""
-        await ctx.send(embed=self._painel_publico(), view=PainelMesa(self),
-                       allowed_mentions=discord.AllowedMentions.none())
+        banner_url = await self._banner_servidor(ctx.guild.id)
+        mensagem = await ctx.send(embed=self._painel_publico(banner_url), view=PainelMesa(self),
+                                  allowed_mentions=discord.AllowedMentions.none())
+        try:
+            await self.pool.execute("""
+                INSERT INTO sants_mesa_paineis(guild_id,channel_id,message_id)
+                VALUES($1,$2,$3) ON CONFLICT(guild_id,message_id) DO NOTHING
+            """, ctx.guild.id, ctx.channel.id, mensagem.id)
+        except Exception:
+            LOG.exception("Painel publicado, mas não foi possível registrar a mensagem para atualizações")
+
+    @commands.command(name="bannercontratos", aliases=["bannermesa"])
+    @commands.guild_only()
+    @commands.has_permissions(manage_guild=True)
+    async def cmd_banner(self, ctx, *, url: str | None = None):
+        """!bannercontratos <URL_HTTPS> | remover | status."""
+        if url is None or url.lower().strip() in ("status", "ver"):
+            atual = await self._banner_servidor(ctx.guild.id)
+            if atual and validar_banner(atual):
+                return await ctx.reply(f"🖼️ Banner atual da Mesa do Diabo: {atual}",
+                                       mention_author=False, allowed_mentions=discord.AllowedMentions.none())
+            return await ctx.reply("📜 O painel está sem banner. Configure com `!bannercontratos https://...`.",
+                                   mention_author=False)
+        url = url.strip().strip("<>")
+        if url.lower() in ("remover", "limpar", "off", "nenhum"):
+            url = ""
+        elif not validar_banner(url):
+            return await ctx.reply("❌ Envie uma URL HTTPS válida para uma imagem. "
+                                   "Exemplo: `!bannercontratos https://exemplo.com/banner.png`",
+                                   mention_author=False)
+        await self.pool.execute("""
+            INSERT INTO sants_mesa_config(guild_id,banner_url) VALUES($1,$2)
+            ON CONFLICT(guild_id) DO UPDATE SET banner_url=EXCLUDED.banner_url
+        """, ctx.guild.id, url)
+        atualizados, falhas = await self._atualizar_paineis(ctx.guild.id, url)
+        texto = ("✅ Banner configurado!" if url else "✅ Banner removido!")
+        texto += f" **{atualizados}** painel(is) atualizado(s)."
+        if falhas:
+            texto += f" ⚠️ {falhas} painel(is) não puderam ser editados; confira minhas permissões."
+        if not atualizados:
+            texto += " Se o painel antigo não foi registrado, publique um novo com `!painelcontratos`."
+        await ctx.reply(texto, mention_author=False)
 
     @commands.command(name="meuscontratos", aliases=["grimorio"])
     @commands.guild_only()
@@ -1289,6 +1416,8 @@ class ContratosDiabo20(commands.Cog):
     async def cmd_ajuda(self, ctx):
         await ctx.reply(embed=base_embed("😈 COMANDOS DO DIABO",
             "`!painelcontratos` — publica o painel (staff).\n"
+            "`!bannercontratos <URL>` — instala ou troca banner (staff).\n"
+            "`!bannercontratos remover` — remove o banner (staff).\n"
             "`!meuscontratos` — histórico por DM.\n"
             "`!rankingcontratos` — ranking semanal.\n"
             "`!pacto @membro` — enviar convite de pacto em dupla.\n"
