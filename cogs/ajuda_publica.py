@@ -55,34 +55,36 @@ OPCOES = [
     discord.SelectOption(label='Notificações', value='notificacoes', emoji='🔔', description='Cargos de avisos'),
     discord.SelectOption(label='Convites', value='convites', emoji='📨', description='Estatísticas e ranking'),
 ]
-def criar_embed(pagina='inicio'):
+def criar_painel_v2(pagina: str = 'inicio', com_menu: bool = True) -> discord.ui.LayoutView:
+    """Painel nativo Components V2, sem embed legado."""
+    view = discord.ui.LayoutView(timeout=None if com_menu else 180)
     if pagina == 'inicio':
-        embed = discord.Embed(
-            title='<a:animated_Settings:1556187476177981440> Central de Ajuda',
-            description=(
-                "Bem-vindo à central de informações da **Família Sant's**.\n\n"
-                'Selecione uma categoria no menu abaixo para consultar os recursos e comandos disponíveis.\n\n'
-                '**Categorias disponíveis**\n'
-                '> `🪙` Economia • Sant’s Coins\n'
-                '> `🎰` Cassino do Diabo • Cuphead\n'
-                '> `🔨` Leilões\n'
-                '> `🎟️` Atendimento\n'
-                '> `🎁` Sorteios\n'
-                '> `🔔` Notificações\n'
-                '> `📨` Convites\n\n'
-                '*Selecione uma categoria abaixo. As instruções serão exibidas apenas para você.*' 
-            ),
-            color=COR,
+        texto = (
+            "# 📖 Central de Ajuda\n"
+            "Bem-vindo à central da **Família Sant's**.\n\n"
+            "Selecione uma categoria para conhecer os sistemas disponíveis.\n"
+            "- 🪙 Economia e Sant's Coins\n"
+            "- 🎰 Cassino do Diabo\n"
+            "- 🔨 Leilões\n"
+            "- 🎟️ Tickets\n"
+            "- 🎁 Sorteios\n"
+            "- 🔔 Notificações\n"
+            "- 📨 Convites"
         )
-        if BANNER_URL.startswith(('https://', 'http://')):
-            embed.set_image(url=BANNER_URL)
     else:
         titulo, campos = SECOES.get(pagina, SECOES['economia'])
-        embed = discord.Embed(title=titulo, color=COR)
-        for nome, valor in campos:
-            embed.add_field(name=nome, value=valor, inline=False)
-    embed.set_footer(text=RODAPE)
-    return embed
+        texto = '# ' + titulo + '\n\n' + '\n\n'.join(
+            f'**{nome}**\n{valor}' for nome, valor in campos
+        )
+    partes = [discord.ui.TextDisplay(texto)]
+    if pagina == 'inicio' and BANNER_URL.startswith(('https://', 'http://')):
+        partes.insert(0, discord.ui.MediaGallery(discord.ui.MediaGalleryItem(media=BANNER_URL)))
+    partes.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
+    partes.append(discord.ui.TextDisplay('-# ' + RODAPE))
+    if com_menu:
+        partes.append(discord.ui.ActionRow(MenuAjuda()))
+    view.add_item(discord.ui.Container(*partes, accent_colour=discord.Colour(COR)))
+    return view
 
 
 class MenuAjuda(discord.ui.Select):
@@ -97,16 +99,11 @@ class MenuAjuda(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.send_message(
-            embed=criar_embed(self.values[0]),
+            view=criar_painel_v2(self.values[0], com_menu=False),
             ephemeral=True,
             allowed_mentions=discord.AllowedMentions.none(),
         )
 
-
-class PainelAjuda(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-        self.add_item(MenuAjuda())
 
 
 class AjudaPublica(commands.Cog):
@@ -114,20 +111,20 @@ class AjudaPublica(commands.Cog):
         self.bot = bot
 
     async def cog_load(self):
-        self.bot.add_view(PainelAjuda())
+        self.bot.add_view(criar_painel_v2())
         LOG.info('Painel público de ajuda registrado como view persistente')
 
     @commands.command(name='ajuda', aliases=['comandos', 'helpme'])
     @commands.guild_only()
     async def ajuda(self, ctx):
-        await ctx.send(embed=criar_embed(), view=PainelAjuda(),
+        await ctx.send(view=criar_painel_v2(),
                        allowed_mentions=discord.AllowedMentions.none())
 
     @commands.command(name='publicarajuda')
     @commands.guild_only()
     @commands.has_guild_permissions(manage_guild=True)
     async def publicar_ajuda(self, ctx):
-        await ctx.send(embed=criar_embed(), view=PainelAjuda(),
+        await ctx.send(view=criar_painel_v2(),
                        allowed_mentions=discord.AllowedMentions.none())
         try:
             await ctx.message.delete()
