@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 from painel import start_painel
 from utils.components_v2 import install_components_v2
+from utils.monitoring import install_monitor
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -67,6 +68,10 @@ async def on_command_error(ctx, error):
 
 
 async def setup_hook():
+    if not getattr(bot, "_sants_monitor_installed", False):
+        bot._sants_monitor_installed = True
+        bot._sants_monitor = install_monitor(asyncio.get_running_loop())
+
     url = os.getenv('DATABASE_URL')
     if not url:
         logger.error('❌ DATABASE_URL não encontrada no ambiente.')
