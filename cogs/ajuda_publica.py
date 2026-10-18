@@ -62,7 +62,7 @@ def criar_painel_v2(pagina: str = 'inicio', com_menu: bool = True) -> discord.ui
         texto = (
             "# <a:mugmanlookingforwhoasked:1559778111212494979> Central de Ajuda\n"
             "Bem-vindo à central da **Família Sant's**.\n\n"
-            "Selecione uma categoria para conhecer os sistemas disponíveis ereceber a ajuda necessária.\n"
+            "Selecione uma categoria que deseja consultar:\n"
             "> `🪙` Economia e Sant's Coins\n"
             "> `🎰` Cassino do Diabo\n"
             "> `🔨` Leilões\n"
