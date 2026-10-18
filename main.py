@@ -66,18 +66,6 @@ async def on_command_error(ctx, error):
         await ctx.send('❌ Ocorreu um erro ao executar o comando.')
 
 
-@bot.tree.error
-async def on_app_command_error(interaction, error):
-    logger.error('Erro no comando /: %r', error, exc_info=error)
-    try:
-        if interaction.response.is_done():
-            await interaction.followup.send('❌ Ocorreu um erro no comando.', ephemeral=True)
-        else:
-            await interaction.response.send_message('❌ Ocorreu um erro no comando.', ephemeral=True)
-    except discord.HTTPException:
-        logger.exception('Não foi possível informar o erro ao usuário.')
-
-
 async def setup_hook():
     url = os.getenv('DATABASE_URL')
     if not url:
@@ -104,14 +92,9 @@ async def setup_hook():
 
     logger.info('📦 Extensões carregadas: %s', list(bot.extensions))
     logger.info('🔎 Comandos !: %s', [c.qualified_name for c in bot.walk_commands()])
-    logger.info('🔎 Comandos / globais locais: %s', [c.name for c in bot.tree.get_commands()])
 
-    try:
-        sincronizados = await bot.tree.sync()
-        logger.info('✅ %d comandos / globais sincronizados: %s',
-                    len(sincronizados), [c.name for c in sincronizados])
-    except Exception:
-        logger.exception('❌ Erro ao sincronizar comandos / globais')
+    # Slash commands desativados — o bot usa apenas prefixo !
+    # (tree.sync removido para não publicar comandos / no Discord)
 
     if not mudar_status.is_running():
         mudar_status.start()

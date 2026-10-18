@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 
 import aiohttp
 import discord
-from discord import app_commands
 from discord.ext import commands
 
 # ╔══════════════════════════════════════════════════════════════╗
@@ -546,46 +545,7 @@ class PingsCog(commands.Cog, name="Pings"):
         except discord.HTTPException:
             pass
 
-    @app_commands.command(
-        name="painel_notificacoes",
-        description="🔔 Envia o painel de notificações neste canal.",
-    )
-    @app_commands.guild_only()
-    async def painel_slash(self, interaction: discord.Interaction):
-        if not eh_staff(interaction.user):
-            return await interaction.response.send_message(
-                "❌ Apenas a staff pode usar este comando.", ephemeral=True
-            )
-
-        usaveis, problemas = cargos_usaveis(interaction.guild)
-        if not usaveis:
-            embed = embed_base(
-                "⚠️ Ajuste antes de usar o painel",
-                "\n".join(f"• {p}" for p in problemas),
-                cor=COR_ERRO,
-            )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-
-        kwargs = {}
-        arquivo = banner_arquivo()
-        if arquivo:
-            kwargs["file"] = arquivo
-
-        await interaction.response.send_message(
-            embed=self.embed_painel(interaction.guild),
-            view=PainelPingsView(),
-            **kwargs,
-        )
-        msg = await interaction.original_response()
-        await self._registrar_painel(interaction.guild.id, interaction.channel_id, msg.id)
-
-        if problemas:
-            aviso = embed_base(
-                "⚠️ Atenção",
-                "\n".join(f"• {p}" for p in problemas),
-                cor=COR_ERRO,
-            )
-            await interaction.followup.send(embed=aviso, ephemeral=True)
+    # Comando slash desativado — use apenas !painelpings (prefixo !)
 
     @commands.command(name="atualizarpings")
     @apenas_staff()

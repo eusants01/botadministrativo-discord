@@ -259,25 +259,43 @@ def _layout_view(
     text = '\n\n'.join(part for part in text_parts if part)
     items: list[Any] = [discord.ui.TextDisplay(chunk) for chunk in _split_text(text)]
 
+    media_items: list[Any] = []
     for embed in embeds:
         media = []
-        if embed.image.url:
+        if embed.image and embed.image.url:
             media.append(discord.ui.MediaGalleryItem(
                 media=embed.image.url, description='Imagem'
             ))
-        if embed.thumbnail.url:
+        if embed.thumbnail and embed.thumbnail.url:
             media.append(discord.ui.MediaGalleryItem(
                 media=embed.thumbnail.url, description='Miniatura'
             ))
         if media:
-            items.append(discord.ui.MediaGallery(*media))
+            media_items.append(discord.ui.MediaGallery(*media))
 
+    if media_items:
+        if items:
+            try:
+                items.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
+            except Exception:
+                pass
+        items.extend(media_items)
+
+    action_rows: list[Any] = []
     if converted is not None:
         for item in converted.children:
             item._view = None
             row = discord.ui.ActionRow()
             row.add_item(item)
-            items.append(row)
+            action_rows.append(row)
+
+    if action_rows:
+        if items:
+            try:
+                items.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
+            except Exception:
+                pass
+        items.extend(action_rows)
 
     accent = next((embed.color for embed in embeds if embed.color), None)
     for start in range(0, len(items), 10):
