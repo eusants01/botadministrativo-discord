@@ -78,7 +78,7 @@ def criar_painel_v2(pagina: str = 'inicio', com_menu: bool = True) -> discord.ui
         )
     partes = [discord.ui.TextDisplay(texto)]
     if pagina == 'inicio' and BANNER_URL.startswith(('https://', 'http://')):
-        partes.insert(0, discord.ui.MediaGallery(discord.ui.MediaGalleryItem(media=BANNER_URL)))
+        partes.insert(0, discord.ui.MediaGallery(discord.MediaGalleryItem(media=BANNER_URL)))
     partes.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
     partes.append(discord.ui.TextDisplay('-# ' + RODAPE))
     if com_menu:

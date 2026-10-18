@@ -263,11 +263,11 @@ def _layout_view(
     for embed in embeds:
         media = []
         if embed.image and embed.image.url:
-            media.append(discord.ui.MediaGalleryItem(
+            media.append(discord.MediaGalleryItem(
                 media=embed.image.url, description='Imagem'
             ))
         if embed.thumbnail and embed.thumbnail.url:
-            media.append(discord.ui.MediaGalleryItem(
+            media.append(discord.MediaGalleryItem(
                 media=embed.thumbnail.url, description='Miniatura'
             ))
         if media:
