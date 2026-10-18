@@ -415,3 +415,4 @@ def install_components_v2(bot: Any) -> None:
     bot.add_dynamic_items = add_dynamic_items
     _INSTALLED = True
     
+    
