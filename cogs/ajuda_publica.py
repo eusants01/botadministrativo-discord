@@ -60,16 +60,16 @@ def criar_painel_v2(pagina: str = 'inicio', com_menu: bool = True) -> discord.ui
     view = discord.ui.LayoutView(timeout=None if com_menu else 180)
     if pagina == 'inicio':
         texto = (
-            "# 📖 Central de Ajuda\n"
+            "# <a:mugmanlookingforwhoasked:1559778111212494979> Central de Ajuda\n"
             "Bem-vindo à central da **Família Sant's**.\n\n"
-            "Selecione uma categoria para conhecer os sistemas disponíveis.\n"
-            "- 🪙 Economia e Sant's Coins\n"
-            "- 🎰 Cassino do Diabo\n"
-            "- 🔨 Leilões\n"
-            "- 🎟️ Tickets\n"
-            "- 🎁 Sorteios\n"
-            "- 🔔 Notificações\n"
-            "- 📨 Convites"
+            "Selecione uma categoria para conhecer os sistemas disponíveis ereceber a ajuda necessária.\n"
+            "> `🪙` Economia e Sant's Coins\n"
+            "> `🎰` Cassino do Diabo\n"
+            "> `🔨` Leilões\n"
+            "> `🎟️` Tickets\n"
+            "> `🎁` Sorteios\n"
+            "> `🔔` Notificações\n"
+            "> `📨` Convites"
         )
     else:
         titulo, campos = SECOES.get(pagina, SECOES['economia'])
