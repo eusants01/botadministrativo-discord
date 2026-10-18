@@ -105,68 +105,109 @@ class KingDiceModal(discord.ui.Modal, title='👑 Mesa do King Dice'):
         await self.cog.jogar(interaction, 'kingdice', aposta, str(etapas))
 
 
-class CassinoView(discord.ui.View):
+class CassinoView(discord.ui.LayoutView):
+    """Painel público V2; custom_ids preservados para mensagens existentes."""
     def __init__(self, cog):
         super().__init__(timeout=None)
         self.cog = cog
+        mesa = discord.ui.Select(
+            placeholder='🎲 Escolha sua mesa', custom_id='sants:cassino2:mesa',
+            options=[
+                discord.SelectOption(label='Cara ou Coroa', value='cara', emoji='🪙', description='50% de chance • prêmio 2×'),
+                discord.SelectOption(label='Dados', value='dados', emoji='🎲', description='Acerte o número • prêmio 5×'),
+                discord.SelectOption(label='Roleta', value='roleta', emoji='🎡', description='Vermelho, preto ou verde'),
+                discord.SelectOption(label='Mesa do King Dice', value='kingdice', emoji='👑', description='Escolha 1, 2 ou 3 desafios'),
+                discord.SelectOption(label='Contratos do Diabo', value='contratos', emoji='📜', description='Missões gratuitas diárias'),
+                discord.SelectOption(label='Cartas do Destino', value='cartas', emoji='🃏', description='Uma carta grátis por dia'),
+            ])
+        mesa.callback = self.mesa
+        carteira = discord.ui.Button(label='Carteira', emoji='🪙', style=discord.ButtonStyle.secondary, custom_id='sants:cassino2:saldo')
+        carteira.callback = self.carteira
+        perfil = discord.ui.Button(label='Meu perfil', emoji='📊', style=discord.ButtonStyle.secondary, custom_id='sants:cassino2:perfil')
+        perfil.callback = self.perfil
+        ranking = discord.ui.Button(label='Ranking semanal', emoji='🏆', style=discord.ButtonStyle.secondary, custom_id='sants:cassino2:ranking')
+        ranking.callback = self.ranking
+        componentes = [
+            discord.ui.TextDisplay('## 🎰 CASSINO DO DIABO\n**BEM-VINDO À MESA DO DESTINO**'),
+            discord.ui.Separator(),
+            discord.ui.TextDisplay('🎲 **Jogos:** Cara ou Coroa • Dados • Roleta • King Dice\n📜 **Extras:** Contratos do Diabo • Cartas do Destino'),
+            discord.ui.TextDisplay(f'🪙 **Apostas:** {fmt(MIN_APOSTA)} a {fmt(MAX_APOSTA)}\n⏳ Intervalo de 5 segundos entre partidas.\n*Moedas virtuais da Família Sant\'s.*'),
+        ]
+        if BANNER.startswith(('https://', 'http://')):
+            componentes.insert(1, discord.ui.MediaGallery(discord.MediaGalleryItem(media=BANNER)))
+        componentes.extend([
+            discord.ui.Separator(),
+            discord.ui.ActionRow(mesa),
+            discord.ui.ActionRow(carteira, perfil, ranking),
+            discord.ui.TextDisplay('-# Família Sant\'s • Cassino do Diabo'),
+        ])
+        self.add_item(discord.ui.Container(*componentes, accent_colour=discord.Colour(COR)))
 
-    @discord.ui.select(placeholder='🎲 Escolha sua mesa', custom_id='sants:cassino2:mesa', options=[
-        discord.SelectOption(label='Cara ou Coroa', value='cara', emoji='🪙', description='50% de chance • prêmio 2×'),
-        discord.SelectOption(label='Dados', value='dados', emoji='🎲', description='Acerte o número • prêmio 5×'),
-        discord.SelectOption(label='Roleta', value='roleta', emoji='🎡', description='Vermelho, preto ou verde'),
-        discord.SelectOption(label='Mesa do King Dice', value='kingdice', emoji='👑', description='Escolha 1, 2 ou 3 desafios'),
-        discord.SelectOption(label='Contratos do Diabo', value='contratos', emoji='📜', description='Missões gratuitas diárias'),
-        discord.SelectOption(label='Cartas do Destino', value='cartas', emoji='🃏', description='Uma carta grátis por dia'),
-    ])
-    async def mesa(self, interaction, select):
-        jogo = select.values[0]
+    async def mesa(self, interaction):
+        jogo = interaction.data['values'][0]
         if jogo == 'contratos':
             return await self.cog.mostrar_contratos(interaction)
         if jogo == 'cartas':
             return await self.cog.mostrar_cartas(interaction)
         await interaction.response.send_modal(KingDiceModal(self.cog) if jogo == 'kingdice' else ApostaModal(self.cog, jogo))
 
-    @discord.ui.button(label='Carteira', emoji='🪙', style=discord.ButtonStyle.secondary, custom_id='sants:cassino2:saldo', row=1)
-    async def carteira(self, interaction, button):
+    async def carteira(self, interaction):
         saldo = await db.obter_saldo(interaction.user.id)
         await interaction.response.send_message(f'🪙 Sua carteira: **{fmt(saldo)}**', ephemeral=True)
 
-    @discord.ui.button(label='Meu perfil', emoji='📊', style=discord.ButtonStyle.secondary, custom_id='sants:cassino2:perfil', row=1)
-    async def perfil(self, interaction, button):
-        s = await partidas.estatisticas_cassino(interaction.user.id)
+    async def perfil(self, interaction):
+        st = await partidas.estatisticas_cassino(interaction.user.id)
         await interaction.response.send_message(
-            f'📊 **Seu histórico no cassino**\n> Partidas: **{s["partidas"]}**\n'
-            f'> Vitórias: **{s["vitorias"]}**\n> Derrotas: **{s["derrotas"]}**\n'
-            f'> Resultado líquido: **{fmt(s["lucro"])}**', ephemeral=True)
+            f'📊 **Seu histórico no cassino**\n> Partidas: **{st["partidas"]}**\n'
+            f'> Vitórias: **{st["vitorias"]}**\n> Derrotas: **{st["derrotas"]}**\n'
+            f'> Resultado líquido: **{fmt(st["lucro"])}**', ephemeral=True)
 
-    @discord.ui.button(label='Ranking semanal', emoji='🏆', style=discord.ButtonStyle.secondary, custom_id='sants:cassino2:ranking', row=1)
-    async def ranking(self, interaction, button):
+    async def ranking(self, interaction):
         rows = await partidas.ranking_cassino(10)
         texto = '\n'.join(f'`{i}.` <@{r["user_id"]}> — {fmt(r["lucro"])}' for i, r in enumerate(rows, 1)) or 'Nenhuma partida nesta semana.'
         await interaction.response.send_message('🏆 **Ranking semanal por lucro líquido**\n' + texto, ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
 
 
-
-class ContratoView(discord.ui.View):
+class ContratoView(discord.ui.LayoutView):
     def __init__(self, cog):
         super().__init__(timeout=180)
-        self.cog = cog
+        btn = discord.ui.Button(label='Concluir visita (+40 SC)', emoji='📜', style=discord.ButtonStyle.success)
+        async def callback(interaction):
+            await cog.coletar_visita(interaction)
+        btn.callback = callback
+        self.add_item(discord.ui.Container(discord.ui.ActionRow(btn), accent_colour=discord.Colour(COR)))
 
-    @discord.ui.button(label='Concluir visita (+40 SC)', emoji='📜', style=discord.ButtonStyle.success)
-    async def coletar(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.cog.coletar_visita(interaction)
 
-
-class CartasView(discord.ui.View):
+class CartasView(discord.ui.LayoutView):
     def __init__(self, cog):
         super().__init__(timeout=180)
-        self.cog = cog
+        botoes = []
         for numero in (1, 2, 3):
             botao = discord.ui.Button(label=f'Carta {numero}', emoji='🂠', style=discord.ButtonStyle.primary)
             async def callback(interaction, n=numero):
-                await self.cog.revelar_carta(interaction, n)
+                await cog.revelar_carta(interaction, n)
             botao.callback = callback
-            self.add_item(botao)
+            botoes.append(botao)
+        self.add_item(discord.ui.Container(discord.ui.ActionRow(*botoes), accent_colour=discord.Colour(COR)))
+
+
+def painel_resultado_v2(jogo, escolha, sorteio, aposta, premio, saldo, numero):
+    venceu = premio > 0
+    view = discord.ui.LayoutView(timeout=180)
+    texto = (f'## {"🏆 O DIABO PAGOU!" if venceu else "🎭 A CASA VENCEU"}\n'
+             f'**{jogo}** · Rodada `{numero[:8]}`\n'
+             f'**Escolha:** {escolha}\n**Resultado:** {sorteio}\n'
+             f'**Aposta:** {fmt(aposta)}\n**Prêmio bruto:** {fmt(premio)}\n'
+             f'**Resultado líquido:** {"+" if premio-aposta >= 0 else ""}{fmt(premio-aposta)}\n'
+             f'**Saldo:** {fmt(saldo)}')
+    view.add_item(discord.ui.Container(discord.ui.TextDisplay(texto), accent_colour=discord.Colour(0x26996C if venceu else COR)))
+    return view
+
+
+def painel_extras_v2(titulo, descricao, botoes):
+    view = botoes
+    view.add_item(discord.ui.TextDisplay(f'## {titulo}\n{descricao}'))
+    return view
 
 
 class Cassino(commands.Cog):
@@ -200,7 +241,7 @@ class Cassino(commands.Cog):
                     '> `🔒` A missão da carta é creditada automaticamente ao revelar uma carta.\n'
                     '> `🕛` Reinício diário às 00:00 UTC.'
                 ), color=COR)
-            await interaction.followup.send(embed=embed, view=ContratoView(self), ephemeral=True)
+            await interaction.followup.send(view=painel_extras_v2('📜 CONTRATOS DO DIABO', embed.description, ContratoView(self)), ephemeral=True)
         except Exception:
             LOG.exception('Falha ao consultar contratos')
             await interaction.followup.send('❌ Não foi possível consultar os contratos agora.', ephemeral=True)
@@ -221,7 +262,7 @@ class Cassino(commands.Cog):
                 '> `20%` — 50 SC\n> `5%` — 100 SC\n\n'
                 '*As três cartas possuem as mesmas probabilidades. Uma tentativa por dia (UTC).*'
             ), color=COR)
-            await interaction.followup.send(embed=embed, view=CartasView(self), ephemeral=True)
+            await interaction.followup.send(view=painel_extras_v2('🃏 CARTAS DO DESTINO', embed.description, CartasView(self)), ephemeral=True)
         except Exception:
             LOG.exception('Falha ao abrir cartas')
             await interaction.followup.send('❌ Não foi possível abrir as cartas agora.', ephemeral=True)
@@ -308,13 +349,13 @@ class Cassino(commands.Cog):
                 LOG.exception('Falha ao registrar partida %s', numero)
                 return await interaction.followup.send('❌ Não foi possível confirmar a partida. Confira seu extrato antes de tentar novamente.', ephemeral=True)
             exibicao = f'{escolha} desafio(s)' if jogo == 'kingdice' else escolha
-            await interaction.followup.send(embed=resultado_embed(titulo, exibicao, sorteio, aposta, premio, saldo, numero), ephemeral=True)
+            await interaction.followup.send(view=painel_resultado_v2(titulo, exibicao, sorteio, aposta, premio, saldo, numero), ephemeral=True)
 
     @commands.command(name='painelcassino')
     @commands.guild_only()
     @commands.has_guild_permissions(manage_guild=True)
     async def painel_cassino(self, ctx):
-        await ctx.send(embed=painel_embed(), view=CassinoView(self), allowed_mentions=discord.AllowedMentions.none())
+        await ctx.send(view=CassinoView(self), allowed_mentions=discord.AllowedMentions.none())
         try:
             await ctx.message.delete()
         except (discord.Forbidden, discord.HTTPException):
