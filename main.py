@@ -9,6 +9,7 @@ from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
 from painel import start_painel
+from utils.components_v2 import install_components_v2
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -21,6 +22,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 bot = commands.Bot(command_prefix='!', intents=intents)
+install_components_v2(bot)
 
 status_list = [
     "Sant's Family 👑",
