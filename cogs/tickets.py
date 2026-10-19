@@ -60,7 +60,7 @@ Escolha no menu abaixo uma categoria que deseja receber o atendimento necessári
 **Escolha a sua Categoria**
 > `☎️` **Denúncias** — Reportar jogadores ou comportamentos.
 > `🎖️` **Solicitar Medalhas** — Peça uma medalha com comprovação.
-> `🪖` **Cargo no E.B** — Peça cargo em uma divisão.
+> `🪖` **Solicitar Cargo no E.B** — Peça cargo em uma divisão (CGEx, AFEx...).
 > `💼` **Solicitar Parcerias** — Propostas de parceria entre servidores.
 > `💬` **Outros Assuntos** — Qualquer outra dúvida ou pedido.
 
@@ -1427,45 +1427,6 @@ class EscolhaView(discord.ui.View):
         self.add_item(EscolhaSelect(chave))
 
 
-def embed_meus_tickets(guild: discord.Guild, user: discord.abc.User) -> discord.Embed:
-    embed = discord.Embed(
-        title="📂 Meus Tickets",
-        description=f"Histórico de atendimentos de {user.mention}.",
-        color=COR_AZUL,
-    )
-    abertos = [(c, t) for c, t in listar_tickets(guild) if t.get("owner") == user.id]
-    if abertos:
-        linhas = []
-        for canal, t in abertos:
-            cat = CATEGORIAS.get(t.get("cat", ""), {})
-            atendente = f"<@{t['claim']}>" if t.get("claim") else "aguardando atendente"
-            linhas.append(
-                f"{cat.get('emoji', '🎫')} {canal.mention} • "
-                f"`{protocolo_de(canal.created_at, t['num'])}` • {atendente}"
-            )
-        embed.add_field(name="🟢 Em andamento", value="\n".join(linhas), inline=False)
-
-    historico = [h for h in _ler_json(F_HISTORICO, []) if h.get("owner") == user.id]
-    if historico:
-        linhas = []
-        for h in reversed(historico[-5:]):
-            cat = CATEGORIAS.get(h.get("cat", ""), {})
-            dec = {"aprovado": " • ✅ aprovado", "recusado": " • ❌ recusado"}.get(
-                h.get("decisao"), ""
-            )
-            proto = h.get("protocolo") or f"#{h.get('num', 0):04d}"
-            linhas.append(
-                f"{cat.get('emoji', '🎫')} `{proto}` • {cat.get('nome', '—')} • "
-                f"<t:{h.get('fechado_ts', 0)}:d>{dec}"
-            )
-        embed.add_field(name="📁 Encerrados (últimos 5)", value="\n".join(linhas), inline=False)
-
-    if not abertos and not historico:
-        embed.description = "Você ainda não abriu nenhum ticket."
-    embed.set_footer(text=NOME_SERVIDOR)
-    return embed
-
-
 class TicketSelect(discord.ui.Select):
     def __init__(self):
         options = [
@@ -1530,22 +1491,6 @@ class TicketSelect(discord.ui.Select):
         await interaction.response.defer(ephemeral=True)
         await self._resetar(interaction)
         await criar_ticket(interaction, chave, [])
-
-
-class BotaoMeusTickets(discord.ui.Button):
-    def __init__(self):
-        super().__init__(
-            label="Meus Tickets",
-            emoji="📂",
-            style=discord.ButtonStyle.secondary,
-            custom_id="sants_meus_tickets",
-        )
-
-    async def callback(self, interaction: discord.Interaction):
-        await interaction.response.send_message(
-            embed=embed_meus_tickets(interaction.guild, interaction.user),
-            ephemeral=True,
-        )
 
 
 class TicketView(discord.ui.View):
