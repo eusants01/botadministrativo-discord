@@ -20,7 +20,10 @@ def main():
     sha = env.get('SHA', '')
     link = env.get('SERVER_URL', 'https://github.com') + '/' + repo + '/commit/' + sha
     passed = env.get('CHECK_RESULT') == 'success'
-    message = env.get('COMMIT_MESSAGE', 'Sem descrição').splitlines()[0][:350]
+    message = (
+    (os.environ.get("COMMIT_MESSAGE") or "").strip().splitlines()
+    or ["Atualização manual do sistema"]
+)[0][:350]
     blocks = [
         {'type': 10, 'content': '## ' + ('✅ Commit verificado' if passed else '🚨 Verificação de commit reprovada')},
         {'type': 10, 'content': '**Família Sant’s • Registro de Desenvolvimento**'},
