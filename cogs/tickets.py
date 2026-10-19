@@ -578,12 +578,6 @@ def listar_tickets(guild: discord.Guild) -> list[tuple[discord.TextChannel, dict
             out.append((c, t))
     return out
 
-
-# ════════════════════════════════════════════════════════════════
-#                              AUXILIARES
-# ════════════════════════════════════════════════════════════════
-
-
 def eh_staff(membro) -> bool:
     """Staff = quem tem a permissão Administrador (em qualquer cargo, ou o dono
     do servidor) OU algum dos cargos de CARGOS_STAFF."""
@@ -746,11 +740,6 @@ def posicao_na_fila(guild: discord.Guild, canal: discord.TextChannel) -> int:
     return pos
 
 
-# ════════════════════════════════════════════════════════════════
-#                       CARD DO TICKET (mensagem principal)
-# ════════════════════════════════════════════════════════════════
-
-
 def montar_card(guild: discord.Guild, canal, t: dict) -> discord.Embed:
     cat = CATEGORIAS.get(t["cat"], {})
     p_emoji, p_nome = PRIORIDADES.get(t.get("prio", "normal"), PRIORIDADES["normal"])
@@ -891,11 +880,6 @@ async def atualizar_card(canal: discord.TextChannel) -> bool:
         return False
 
 
-# ════════════════════════════════════════════════════════════════
-#                               TRANSCRIPT
-# ════════════════════════════════════════════════════════════════
-
-
 async def gerar_transcript_html(canal: discord.TextChannel, t: dict) -> tuple[str, int]:
     linhas = []
     total = 0
@@ -945,11 +929,6 @@ Categoria: {html.escape(cat)} · Mensagens: {total} · Gerado em {agora()}</div>
 {''.join(linhas)}
 </body></html>"""
     return pagina, total
-
-
-# ════════════════════════════════════════════════════════════════
-#                          FECHAMENTO DO TICKET
-# ════════════════════════════════════════════════════════════════
 
 
 async def fechar_ticket(
@@ -1124,11 +1103,6 @@ async def fechar_ticket(
             remover_estado(canal.id)
 
 
-# ════════════════════════════════════════════════════════════════
-#                     AVALIAÇÃO (DM) — BOTÕES PERSISTENTES
-# ════════════════════════════════════════════════════════════════
-
-
 class ComentarioModal(discord.ui.Modal):
     comentario = discord.ui.TextInput(
         label="Quer deixar um comentário? (opcional)",
@@ -1194,6 +1168,7 @@ class ComentarioModal(discord.ui.Modal):
                 await canal.send(embed=embed)
             except discord.HTTPException:
                 pass
+            
 
         agradecimento = discord.Embed(
             title="💙 Obrigado pela sua avaliação!",

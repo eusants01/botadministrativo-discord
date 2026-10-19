@@ -1,29 +1,26 @@
-"""Expresso Fantasma — versão completa: cinco etapas, chefes e recompensas.
-
-Discord.py 2.6+ / Components V2. Uma viagem ativa por servidor.
-Recompensas de Sant's Coins com registro único por partida.
+"""Expresso Fantasma: salas independentes, decisões V2 e PostgreSQL.
+Substitui somente cogs/expresso.py; requer discord.py 2.6+.
 """
 from __future__ import annotations
-
 import asyncio
+import json
 import logging
 import os
 import random
-from typing import Any
-
+import secrets
+import string
 import discord
 from discord.ext import commands
+from utils import cassino_db
 
 LOG = logging.getLogger(__name__)
 COR = 0x8B0000
-MAX_PASSAGEIROS = 10
-MIN_PASSAGEIROS = 2
-VIDA_INICIAL = 100
-PREMIO_VITORIA = 500
-PREMIO_DERROTA = 0
+MIN_JOGADORES = 2
+MAX_JOGADORES = 10
+MAX_VIDA = 700
+PREMIO = 500
 BANNER = os.getenv('EXPRESSO_BANNER_URL', '').strip()
 
-# Etapas da viagem, incluindo os dois confrontos finais.
 VAGOES = (
     {
         'nome': '🚉 Estação dos Mortos',
@@ -73,355 +70,365 @@ VAGOES = (
 )
 
 SQL = """
-CREATE TABLE IF NOT EXISTS expresso_viagens (
-    guild_id BIGINT PRIMARY KEY,
-    channel_id BIGINT NOT NULL,
-    message_id BIGINT,
-    status TEXT NOT NULL DEFAULT 'embarque',
-    passageiros BIGINT[] NOT NULL DEFAULT '{}',
-    iniciado_por BIGINT,
-    atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+CREATE TABLE IF NOT EXISTS expresso_salas (
+  guild_id BIGINT NOT NULL,
+  codigo VARCHAR(12) NOT NULL,
+  host_id BIGINT NOT NULL,
+  channel_id BIGINT NOT NULL,
+  message_id BIGINT,
+  status TEXT NOT NULL DEFAULT 'embarque',
+  hp_max INTEGER NOT NULL,
+  limite INTEGER NOT NULL,
+  passageiros BIGINT[] NOT NULL DEFAULT '{}',
+  vagao INTEGER NOT NULL DEFAULT 0,
+  vidas JSONB NOT NULL DEFAULT '{}'::jsonb,
+  escolhas JSONB NOT NULL DEFAULT '{}'::jsonb,
+  relatos JSONB NOT NULL DEFAULT '[]'::jsonb,
+  premio_entregue BOOLEAN NOT NULL DEFAULT FALSE,
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY(guild_id, codigo)
 );
-ALTER TABLE expresso_viagens ADD COLUMN IF NOT EXISTS vagao INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE expresso_viagens ADD COLUMN IF NOT EXISTS vidas JSONB NOT NULL DEFAULT '{}'::jsonb;
-ALTER TABLE expresso_viagens ADD COLUMN IF NOT EXISTS escolhas JSONB NOT NULL DEFAULT '{}'::jsonb;
-ALTER TABLE expresso_viagens ADD COLUMN IF NOT EXISTS relatos JSONB NOT NULL DEFAULT '[]'::jsonb;
-ALTER TABLE expresso_viagens ADD COLUMN IF NOT EXISTS partida INTEGER NOT NULL DEFAULT 1;
-CREATE TABLE IF NOT EXISTS expresso_premios (
-    guild_id BIGINT NOT NULL,
-    partida INTEGER NOT NULL,
-    user_id BIGINT NOT NULL,
-    valor INTEGER NOT NULL,
-    PRIMARY KEY (guild_id, partida, user_id)
+CREATE TABLE IF NOT EXISTS expresso_salas_premios (
+  guild_id BIGINT NOT NULL,
+  codigo VARCHAR(12) NOT NULL,
+  user_id BIGINT NOT NULL,
+  valor INTEGER NOT NULL,
+  PRIMARY KEY(guild_id, codigo, user_id)
 );
 """
 
+def as_json(value, default):
+    if value is None: return default
+    if isinstance(value, str):
+        try: return json.loads(value)
+        except (ValueError, TypeError): return default
+    return value
 
-def eh_staff(membro: discord.Member) -> bool:
-    return membro.guild_permissions.manage_guild or membro.guild_permissions.administrator
+def vivos(sala):
+    vidas = as_json(sala.get('vidas'), {})
+    return [uid for uid in sala['passageiros'] if int(vidas.get(str(uid), sala['hp_max'])) > 0]
 
-
-def hp_de(estado: dict, uid: int) -> int:
-    return max(0, int((estado.get('vidas') or {}).get(str(uid), VIDA_INICIAL)))
-
-
-def vivos(estado: dict) -> list[int]:
-    return [uid for uid in estado.get('passageiros', []) if hp_de(estado, uid) > 0]
-
-
-def texto_estado(estado: dict) -> str:
-    status = estado.get('status', 'embarque')
-    passageiros = list(estado.get('passageiros') or [])
+def descricao(sala):
+    jogadores = sala['passageiros']
+    status = sala['status']
     linhas = [
-        '> `🚂` **Bem-vindo ao Expresso Fantasma.**',
-        '> `🔍` Atravesse cinco etapas, enfrente o maquinista e sobreviva ao Diabo.',
-        '> `🎟️` Embarque para participar; cada passageiro começa com **100 HP**.',
-        '> `💀` Chegar a **0 HP** elimina o passageiro da viagem.',
-        '> `🪙` Sobreviventes recebem **500 Sant\'s Coins** ao final.',
-        '',
+      '> `🔍` Sobreviva aos cinco vagões do Expresso Fantasma.',
+      '> `🎟️` Crie uma sala e compartilhe seu código com outros passageiros.',
+      f'> `❤️` Vida configurável de **1 a {MAX_VIDA} HP**.',
+      f'> `🪙` Sobreviventes recebem **{PREMIO} Sant\'s Coins**.',
+      '', f'> `🔑` **Código:** `{sala["codigo"]}`',
+      f'> `👑` **Anfitrião:** <@{sala["host_id"]}>',
+      f'> `📍` **Situação:** {"Embarque" if status == "embarque" else "Em viagem" if status == "viagem" else "Encerrada"}',
+      f'> `👥` **Passageiros:** {len(jogadores)}/{sala["limite"]}',
+      f'> `❤️` **Vida máxima:** {sala["hp_max"]} HP',
     ]
-    if status == 'embarque':
-        linhas += [
-            '### 🚉 Plataforma de embarque',
-            f'> `📍` **Situação:** aguardando partida',
-            f'> `👥` **Passageiros:** {len(passageiros)}/{MAX_PASSAGEIROS} (mínimo {MIN_PASSAGEIROS})',
-            '> `🔒` Somente a administração inicia a viagem.',
-            '',
-            '**Tripulação:** ' + (', '.join(f'<@{uid}>' for uid in passageiros) if passageiros else 'Nenhum passageiro ainda'),
-        ]
+    if status == 'viagem':
+        etapa = VAGOES[min(sala['vagao'], len(VAGOES)-1)]
+        escolhas = as_json(sala['escolhas'], {})
+        ativos = vivos(sala)
+        linhas += ['', f'### {etapa["nome"]}', f'> `📖` {etapa["historia"]}',
+                  f'> `🔍` **Decisões:** {sum(str(u) in escolhas for u in ativos)}/{len(ativos)}',
+                  '**Escolha seu destino:**']
+        linhas += [f'> `{i+1}` {op[0]}' for i,op in enumerate(etapa['opcoes'])]
+    if status != 'embarque':
+        vidas = as_json(sala['vidas'], {})
+        linhas += ['', '**Estado dos passageiros:**']
+        linhas += [f'> `{"💀" if int(vidas.get(str(u), 0)) <= 0 else "❤️"}` <@{u}> — **{vidas.get(str(u), 0)}/{sala["hp_max"]} HP**' for u in jogadores]
     else:
-        sobreviventes = vivos(estado)
-        linhas += [
-            f'### {"🏁 Fim da viagem" if status == "encerrada" else VAGOES[min(max(0, int(estado.get("vagao") or 0)), len(VAGOES)-1)]["nome"]}',
-            f'> `📍` **Situação:** {"encerrada" if status == "encerrada" else "viagem em andamento"}',
-            f'> `🚃` **Etapa:** {min(int(estado.get("vagao") or 0) + 1, len(VAGOES))}/{len(VAGOES)}',
-            f'> `👥` **Sobreviventes:** {len(sobreviventes)}/{len(passageiros)}',
-        ]
-        if status == 'viagem':
-            etapa = VAGOES[min(max(0, int(estado.get('vagao') or 0)), len(VAGOES)-1)]
-            escolhas = estado.get('escolhas') or {}
-            linhas += [
-                '', f'> `📖` {etapa["historia"]}',
-                f'> `🔍` **Decisões:** {sum(str(uid) in escolhas for uid in sobreviventes)}/{len(sobreviventes)}',
-                '', '**Escolha seu destino:**',
-                *[f'> `{i+1}️⃣` {nome}' for i, (nome, _, _) in enumerate(etapa['opcoes'])],
-            ]
-            if sobreviventes and all(str(uid) in escolhas for uid in sobreviventes):
-                linhas.append('> `✅` Todos os sobreviventes decidiram; a administração pode avançar.')
-        else:
-            linhas += ['', '> `🏆` **Vitória!** Os sobreviventes chegaram à estação final.' if sobreviventes and int(estado.get('vagao') or 0) >= len(VAGOES)-1 else '> `💀` A viagem terminou sem alcançar a estação final.']
-        linhas += ['', '**Estado dos passageiros**']
-        for uid in passageiros:
-            hp = hp_de(estado, uid)
-            linhas.append(f'> `{"💀" if hp == 0 else "❤️"}` <@{uid}> — **{hp}/{VIDA_INICIAL} HP**')
-    relatos = estado.get('relatos') or []
-    if relatos:
-        linhas += ['', '**Últimos acontecimentos**', *[f'> `📜` {r}' for r in relatos[-3:]]]
+        linhas += ['', '**Tripulação:** ' + (', '.join(f'<@{u}>' for u in jogadores) or 'Aguardando passageiros')]
+    if status == 'encerrada':
+        linhas += ['', '> `🏁` Viagem encerrada. O anfitrião pode criar uma nova sala.']
+    relatos = as_json(sala['relatos'], [])
+    if relatos: linhas += ['', '**Últimos acontecimentos:**', *[f'> `📜` {r}' for r in relatos[-3:]]]
     return '\n'.join(linhas)[:3900]
 
+class Acao(discord.ui.Button):
+    def __init__(self, cog, acao, nome, estilo, emoji, codigo=None):
+        # IDs fixos no lobby; IDs por sala para evitar colisão entre painéis
+        custom = f'sants:expresso:{acao}' if codigo is None else f'sants:expresso:{codigo}:{acao}'
+        super().__init__(label=nome, emoji=emoji, style=estilo, custom_id=custom)
+        self.cog, self.acao, self.codigo = cog, acao, codigo
 
-class BotaoExpresso(discord.ui.Button):
-    def __init__(self, cog: 'Expresso', acao: str, label: str, style: discord.ButtonStyle, emoji: str, disabled: bool = False):
-        super().__init__(label=label, style=style, emoji=emoji, disabled=disabled, custom_id=f'sants:expresso:{acao}')
-        self.cog = cog
-        self.acao = acao
-
-    async def callback(self, interaction: discord.Interaction):
-        await self.cog.executar(interaction, self.acao)
-
-
-class PainelExpresso(discord.ui.LayoutView):
-    def __init__(self, cog: 'Expresso', estado: dict | None = None):
-        super().__init__(timeout=None)
-        estado = estado or {'status': 'embarque', 'passageiros': []}
-        status = estado.get('status', 'embarque')
-        blocos: list[Any] = []
-        if BANNER.startswith(('https://', 'http://')):
-            blocos.append(discord.ui.MediaGallery(discord.MediaGalleryItem(media=BANNER)))
-        blocos += [discord.ui.TextDisplay('# 🚂 EXPRESSO FANTASMA'), discord.ui.TextDisplay('**FAMÍLIA SANT’S • UMA VIAGEM PELOS TRILHOS DO SUBMUNDO**'), discord.ui.Separator(), discord.ui.TextDisplay(texto_estado(estado)), discord.ui.Separator()]
-        linha = discord.ui.ActionRow()
-        if status == 'embarque':
-            acoes = (
-                ('embarcar', 'Embarcar', discord.ButtonStyle.success, '🎟️', False),
-                ('sair', 'Desembarcar', discord.ButtonStyle.secondary, '🚪', False),
-                ('passageiros', 'Passageiros', discord.ButtonStyle.primary, '👥', False),
-                ('iniciar', 'Iniciar viagem', discord.ButtonStyle.danger, '🚂', False),
-            )
-        elif status == 'viagem':
-            acoes = (
-                ('escolha_0', 'Escolha 1', discord.ButtonStyle.primary, '🎟️', False),
-                ('escolha_1', 'Escolha 2', discord.ButtonStyle.primary, '🛡️', False),
-                ('escolha_2', 'Escolha 3', discord.ButtonStyle.primary, '⚔️', False),
-                ('passageiros', 'Tripulação', discord.ButtonStyle.secondary, '👥', False),
-                ('avancar', 'Próximo vagão', discord.ButtonStyle.danger, '🚂', False),
-            )
-            etapa = VAGOES[min(max(0, int(estado.get('vagao') or 0)), len(VAGOES) - 1)]
-            # As opções já aparecem na descrição, com a formatação do painel.
+    async def callback(self, interaction):
+        if self.codigo is None:
+            await self.cog.lobby_acao(interaction, self.acao)
         else:
-            acoes = (('passageiros', 'Resultado', discord.ButtonStyle.secondary, '🏁', False),)
-        for acao, nome, estilo, emoji, disabled in acoes:
-            linha.add_item(BotaoExpresso(cog, acao, nome, estilo, emoji, disabled))
+            await self.cog.sala_acao(interaction, self.codigo, self.acao)
+
+class Lobby(discord.ui.LayoutView):
+    def __init__(self, cog):
+        super().__init__(timeout=None)
+        blocos = []
+        if BANNER.startswith(('http://','https://')):
+            blocos.append(discord.ui.MediaGallery(discord.MediaGalleryItem(media=BANNER)))
+        blocos.extend([discord.ui.TextDisplay('# 🚂 EXPRESSO FANTASMA'),
+          discord.ui.TextDisplay('> `🔍` **Uma viagem pelos trilhos amaldiçoados.**\n> `🎟️` Crie sua sala ou entre usando um código.\n> `❤️` Configure de 1 a 700 HP por passageiro.\n> `👥` Até 10 jogadores por sala.\n> `🏆` Sobreviva aos cinco vagões para ganhar Sant\'s Coins.'), discord.ui.Separator()])
+        linha = discord.ui.ActionRow()
+        for a,n,e,emoji in [('criar','Criar sala',discord.ButtonStyle.success,'➕'),('entrar','Entrar com código',discord.ButtonStyle.primary,'🎟️'),('salas','Salas abertas',discord.ButtonStyle.secondary,'🚂')]:
+            linha.add_item(Acao(cog,a,n,e,emoji))
         blocos.append(linha)
-        self.add_item(discord.ui.Container(*blocos, accent_colour=discord.Colour(COR)))
+        self.add_item(discord.ui.Container(*blocos,accent_colour=discord.Colour(COR)))
 
-    async def on_error(self, interaction: discord.Interaction, error: Exception, item):
-        LOG.error('Erro no painel do Expresso', exc_info=(type(error), error, error.__traceback__))
-        if not interaction.response.is_done():
-            await interaction.response.send_message('❌ Não foi possível processar a ação.', ephemeral=True)
+class SalaView(discord.ui.LayoutView):
+    def __init__(self, cog, sala):
+        super().__init__(timeout=None)
+        blocos = []
+        if BANNER.startswith(('http://','https://')):
+            blocos.append(discord.ui.MediaGallery(discord.MediaGalleryItem(media=BANNER)))
+        blocos += [discord.ui.TextDisplay(f'# 🚂 SALA {sala["codigo"]}'),discord.ui.TextDisplay(descricao(sala)),discord.ui.Separator()]
+        linha = discord.ui.ActionRow()
+        if sala['status'] == 'embarque':
+            itens = [('entrar','Embarcar',discord.ButtonStyle.success,'🎟️'),('sair','Desembarcar',discord.ButtonStyle.secondary,'🚪'),('iniciar','Iniciar',discord.ButtonStyle.danger,'🚂'),('config','Configurar',discord.ButtonStyle.primary,'⚙️')]
+        elif sala['status'] == 'viagem':
+            itens = [('escolha0','Escolha 1',discord.ButtonStyle.primary,'🎟️'),('escolha1','Escolha 2',discord.ButtonStyle.primary,'🛡️'),('escolha2','Escolha 3',discord.ButtonStyle.primary,'⚔️'),('avancar','Próximo vagão',discord.ButtonStyle.danger,'🚂')]
+        else: itens=[]
+        for a,n,e,emoji in itens:
+            linha.add_item(Acao(cog,a,n,e,emoji,sala['codigo']))
+        if itens: blocos.append(linha)
+        if sala['status'] != 'encerrada':
+            linha2=discord.ui.ActionRow()
+            linha2.add_item(Acao(cog,'tripulacao','Tripulação',discord.ButtonStyle.secondary,'👥',sala['codigo']))
+            linha2.add_item(Acao(cog,'encerrar','Encerrar sala',discord.ButtonStyle.secondary,'🔒',sala['codigo']))
+            blocos.append(linha2)
+        self.add_item(discord.ui.Container(*blocos,accent_colour=discord.Colour(COR)))
 
+class CriarModal(discord.ui.Modal, title='Criar sala — Expresso Fantasma'):
+    vida=discord.ui.TextInput(label='Vida máxima (1 a 700)',placeholder='Ex.: 300',default='300',max_length=3)
+    limite=discord.ui.TextInput(label='Limite de passageiros (2 a 10)',placeholder='Ex.: 5',default='5',max_length=2)
+    def __init__(self,cog): super().__init__(); self.cog=cog
+    async def on_submit(self,interaction):
+        try:
+            vida, limite = int(self.vida.value),int(self.limite.value)
+        except ValueError:
+            return await interaction.response.send_message('❌ Informe números inteiros.',ephemeral=True)
+        if not 1 <= vida <= MAX_VIDA or not MIN_JOGADORES <= limite <= MAX_JOGADORES:
+            return await interaction.response.send_message('❌ Vida de 1 a 700; passageiros de 2 a 10. Zero HP eliminaria todos antes de jogar.',ephemeral=True)
+        await self.cog.criar(interaction,vida,limite)
+
+class EntrarModal(discord.ui.Modal,title='Entrar em uma sala'):
+    codigo=discord.ui.TextInput(label='Código da sala',placeholder='Ex.: EXP-A1B2C3',max_length=12)
+    def __init__(self,cog): super().__init__(); self.cog=cog
+    async def on_submit(self,interaction):
+        await self.cog.entrar_codigo(interaction,str(self.codigo.value).strip().upper())
+
+class ConfigModal(discord.ui.Modal,title='Configurar sua sala'):
+    vida=discord.ui.TextInput(label='Vida máxima (1 a 700)',placeholder='Ex.: 500',max_length=3)
+    limite=discord.ui.TextInput(label='Limite de passageiros (2 a 10)',placeholder='Ex.: 8',max_length=2)
+    def __init__(self,cog,codigo): super().__init__(); self.cog,self.codigo=cog,codigo
+    async def on_submit(self,interaction):
+        try: vida,limite=int(self.vida.value),int(self.limite.value)
+        except ValueError: return await interaction.response.send_message('❌ Use apenas números.',ephemeral=True)
+        await self.cog.configurar(interaction,self.codigo,vida,limite)
 
 class Expresso(commands.Cog):
-    def __init__(self, bot: commands.Bot):
-        self.bot = bot
-        self._locks: dict[int, asyncio.Lock] = {}
+    def __init__(self,bot):
+        self.bot=bot
+        self.locks={}
+
+    def lock(self,gid,codigo):
+        return self.locks.setdefault((gid,codigo),asyncio.Lock())
 
     async def cog_load(self):
-        if not getattr(self.bot, 'pool', None):
-            raise RuntimeError('Expresso requer PostgreSQL (bot.pool).')
+        if getattr(self.bot,'pool',None) is None: raise RuntimeError('Expresso requer PostgreSQL (bot.pool).')
         await self.bot.pool.execute(SQL)
-        self.bot.add_view(PainelExpresso(self))
-        # Todos os custom_ids possíveis devem estar registrados após reiniciar.
-        self.bot.add_view(PainelExpresso(self, {'status': 'viagem', 'passageiros': [], 'vagao': 0}))
-        self.bot.add_view(PainelExpresso(self, {'status': 'encerrada', 'passageiros': []}))
+        self.bot.add_view(Lobby(self))
+        # Restaurar os botões V2 de cada sala ainda ativa após deploy.
+        rows=await self.bot.pool.fetch("SELECT * FROM expresso_salas WHERE status <> 'encerrada' AND message_id IS NOT NULL")
+        for row in rows:
+            sala=dict(row)
+            try: self.bot.add_view(SalaView(self,sala),message_id=sala['message_id'])
+            except Exception: LOG.exception('Falha ao registrar controles da sala %s',sala['codigo'])
 
-    def lock(self, gid: int) -> asyncio.Lock:
-        return self._locks.setdefault(gid, asyncio.Lock())
+    async def obter(self,gid,codigo):
+        row=await self.bot.pool.fetchrow('SELECT * FROM expresso_salas WHERE guild_id=$1 AND codigo=$2',gid,codigo)
+        return dict(row) if row else None
 
-    async def obter(self, gid: int) -> dict | None:
-        r = await self.bot.pool.fetchrow('SELECT * FROM expresso_viagens WHERE guild_id=$1', gid)
-        return dict(r) if r else None
+    async def salvar(self,sala):
+        await self.bot.pool.execute("""UPDATE expresso_salas SET status=$3, passageiros=$4::bigint[], vagao=$5,
+          vidas=$6::jsonb, escolhas=$7::jsonb, relatos=$8::jsonb, hp_max=$9, limite=$10,
+          atualizado_em=NOW() WHERE guild_id=$1 AND codigo=$2""",
+          sala['guild_id'],sala['codigo'],sala['status'],sala['passageiros'],sala['vagao'],
+          json.dumps(as_json(sala['vidas'],{})),json.dumps(as_json(sala['escolhas'],{})),
+          json.dumps(as_json(sala['relatos'],[])),sala['hp_max'],sala['limite'])
 
-    async def salvar(self, gid: int, estado: dict):
-        import json
-        await self.bot.pool.execute('''
-            UPDATE expresso_viagens SET status=$2, passageiros=$3::bigint[], iniciado_por=$4,
-                vagao=$5, vidas=$6::jsonb, escolhas=$7::jsonb, relatos=$8::jsonb,
-                atualizado_em=NOW() WHERE guild_id=$1
-        ''', gid, estado['status'], estado['passageiros'], estado.get('iniciado_por'),
-            int(estado.get('vagao') or 0), json.dumps(estado.get('vidas') or {}),
-            json.dumps(estado.get('escolhas') or {}), json.dumps(estado.get('relatos') or []))
-
-    async def atualizar_painel(self, estado: dict):
-        canal = self.bot.get_channel(estado['channel_id'])
-        if canal is None:
-            try:
-                canal = await self.bot.fetch_channel(estado['channel_id'])
-            except discord.HTTPException:
-                LOG.exception('Canal do Expresso inacessível: %s', estado['channel_id'])
-                return
+    async def atualizar(self,sala):
+        if not sala.get('message_id'): return
         try:
-            msg = await canal.fetch_message(estado['message_id'])
-            await msg.edit(view=PainelExpresso(self, estado), allowed_mentions=discord.AllowedMentions.none())
-        except discord.HTTPException:
-            LOG.exception('Falha ao atualizar painel do Expresso %s', estado['message_id'])
+            canal=self.bot.get_channel(sala['channel_id']) or await self.bot.fetch_channel(sala['channel_id'])
+            msg=await canal.fetch_message(sala['message_id'])
+            await msg.edit(view=SalaView(self,sala),allowed_mentions=discord.AllowedMentions.none())
+        except Exception: LOG.exception('Erro ao atualizar painel da sala %s',sala['codigo'])
 
-    @commands.command(name='expresso', aliases=['painelexpresso'])
+    @commands.command(name='expresso',aliases=['painelexpresso'])
     @commands.guild_only()
     @commands.has_permissions(manage_guild=True)
-    async def painel(self, ctx: commands.Context):
-        gid = ctx.guild.id
-        async with self.lock(gid):
-            anterior = await self.obter(gid)
-            if anterior and anterior['status'] == 'viagem':
-                return await ctx.reply('🚂 Há uma viagem em andamento. Use `!resetarexpresso` somente se quiser cancelá-la.', mention_author=False)
-            passageiros = list(anterior['passageiros']) if anterior and anterior['status'] == 'embarque' else []
-            estado = {'status': 'embarque', 'passageiros': passageiros}
-            msg = await ctx.send(view=PainelExpresso(self, estado), allowed_mentions=discord.AllowedMentions.none())
-            await self.bot.pool.execute('''
-                INSERT INTO expresso_viagens (guild_id, channel_id, message_id, status, passageiros, iniciado_por, vagao, vidas, escolhas, relatos)
-                VALUES ($1,$2,$3,'embarque',$4::bigint[],NULL,0,'{}'::jsonb,'{}'::jsonb,'[]'::jsonb)
-                ON CONFLICT (guild_id) DO UPDATE SET channel_id=$2, message_id=$3,
-                status='embarque', passageiros=$4::bigint[], iniciado_por=NULL, vagao=0,
-                vidas='{}'::jsonb, escolhas='{}'::jsonb, relatos='[]'::jsonb, partida=expresso_viagens.partida+1, atualizado_em=NOW()
-            ''', gid, ctx.channel.id, msg.id, passageiros)
-            if anterior and anterior['message_id']:
-                antigo_canal = self.bot.get_channel(anterior['channel_id'])
-                if antigo_canal:
-                    try:
-                        antigo = await antigo_canal.fetch_message(anterior['message_id'])
-                        await antigo.edit(view=PainelExpresso(self, {'status': 'encerrada', 'passageiros': passageiros}))
-                    except discord.HTTPException:
-                        LOG.warning('Não foi possível desativar painel anterior do Expresso')
+    async def painel(self,ctx):
+        await ctx.send(view=Lobby(self),allowed_mentions=discord.AllowedMentions.none())
 
-    @commands.command(name='resetarexpresso')
-    @commands.guild_only()
-    @commands.has_permissions(manage_guild=True)
-    async def resetar(self, ctx: commands.Context):
-        gid = ctx.guild.id
-        async with self.lock(gid):
-            estado = await self.obter(gid)
-            if not estado:
-                return await ctx.reply('❌ Publique o painel com `!expresso` primeiro.', mention_author=False)
-            estado.update(status='embarque', passageiros=[], iniciado_por=None, vagao=0, vidas={}, escolhas={}, relatos=[])
-            await self.bot.pool.execute('UPDATE expresso_viagens SET partida=partida+1 WHERE guild_id=$1', gid)
-            await self.salvar(gid, estado)
-            await self.atualizar_painel(estado)
-        await ctx.reply('🚉 Embarque reiniciado; vidas e decisões anteriores foram apagadas.', mention_author=False)
+    async def lobby_acao(self,interaction,acao):
+        if acao=='criar': return await interaction.response.send_modal(CriarModal(self))
+        if acao=='entrar': return await interaction.response.send_modal(EntrarModal(self))
+        if acao=='salas':
+            rows=await self.bot.pool.fetch("SELECT codigo,host_id,cardinality(passageiros) AS n,limite FROM expresso_salas WHERE guild_id=$1 AND status='embarque' ORDER BY criado_em DESC LIMIT 15",interaction.guild_id)
+            msg='\n'.join(f'> `🚂` **{r["codigo"]}** — <@{r["host_id"]}> • {r["n"]}/{r["limite"]}' for r in rows) or 'Nenhuma sala aguardando embarque.'
+            return await interaction.response.send_message('**Salas abertas**\n'+msg,ephemeral=True)
+        await interaction.response.send_message('❌ Ação desconhecida.',ephemeral=True)
 
-    async def premiar(self, gid: int, estado: dict) -> int:
-        """Premia sobreviventes uma única vez por partida, em transação atômica."""
-        if estado.get('status') != 'encerrada' or int(estado.get('vagao') or 0) < len(VAGOES)-1:
-            return 0
-        from utils import cassino_db
-        # A tabela compartilhada da economia já é criada pelo cog de Economia.
-        total = 0
+    async def criar(self,interaction,vida,limite):
+        await interaction.response.defer(ephemeral=True,thinking=True)
+        gid,uid=interaction.guild_id,interaction.user.id
+        for _ in range(8):
+            codigo='EXP-'+''.join(secrets.choice(string.ascii_uppercase+string.digits) for _ in range(6))
+            exists=await self.obter(gid,codigo)
+            if not exists: break
+        else: return await interaction.followup.send('❌ Não foi possível gerar um código.',ephemeral=True)
+        sala={'guild_id':gid,'codigo':codigo,'host_id':uid,'channel_id':interaction.channel_id,'message_id':None,
+          'status':'embarque','hp_max':vida,'limite':limite,'passageiros':[uid],'vagao':0,'vidas':{},'escolhas':{},'relatos':[]}
+        await self.bot.pool.execute("""INSERT INTO expresso_salas(guild_id,codigo,host_id,channel_id,hp_max,limite,passageiros)
+            VALUES($1,$2,$3,$4,$5,$6,$7::bigint[])""",gid,codigo,uid,interaction.channel_id,vida,limite,[uid])
+        try:
+            msg=await interaction.channel.send(view=SalaView(self,sala),allowed_mentions=discord.AllowedMentions.none())
+            sala['message_id']=msg.id
+            await self.bot.pool.execute('UPDATE expresso_salas SET message_id=$3 WHERE guild_id=$1 AND codigo=$2',gid,codigo,msg.id)
+            self.bot.add_view(SalaView(self,sala),message_id=msg.id)
+        except Exception:
+            LOG.exception('Erro ao publicar sala %s',codigo)
+            return await interaction.followup.send('❌ Sala registrada, mas não foi possível publicar o painel. Avise a administração.',ephemeral=True)
+        await interaction.followup.send(f'🎟️ Sala criada! Código **`{codigo}`**. Compartilhe com os amigos.',ephemeral=True)
+
+    async def entrar_codigo(self,interaction,codigo):
+        await interaction.response.defer(ephemeral=True,thinking=True)
+        async with self.lock(interaction.guild_id,codigo):
+            sala=await self.obter(interaction.guild_id,codigo)
+            if not sala or sala['status']!='embarque': return await interaction.followup.send('❌ Sala não encontrada ou embarque encerrado.',ephemeral=True)
+            if interaction.user.id in sala['passageiros']: return await interaction.followup.send('🎟️ Você já está nessa sala.',ephemeral=True)
+            if len(sala['passageiros'])>=sala['limite']: return await interaction.followup.send('❌ Sala lotada.',ephemeral=True)
+            sala['passageiros'].append(interaction.user.id)
+            await self.salvar(sala)
+            await self.atualizar(sala)
+        await interaction.followup.send(f'🎟️ Embarque confirmado na sala **`{codigo}`**!',ephemeral=True)
+
+    async def configurar(self,interaction,codigo,vida,limite):
+        if not 1<=vida<=MAX_VIDA or not MIN_JOGADORES<=limite<=MAX_JOGADORES:
+            return await interaction.response.send_message('❌ Vida entre 1 e 700; limite entre 2 e 10.',ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        async with self.lock(interaction.guild_id,codigo):
+            sala=await self.obter(interaction.guild_id,codigo)
+            if not sala or sala['status']!='embarque' or sala['host_id']!=interaction.user.id:
+                return await interaction.followup.send('❌ Somente o anfitrião pode configurar antes da partida.',ephemeral=True)
+            if limite<len(sala['passageiros']):
+                return await interaction.followup.send('❌ O limite não pode ser menor que o número de passageiros atuais.',ephemeral=True)
+            sala.update(hp_max=vida,limite=limite)
+            await self.salvar(sala)
+            await self.atualizar(sala)
+        await interaction.followup.send('⚙️ Configurações atualizadas.',ephemeral=True)
+
+    async def premiar(self,sala):
+        if sala['status']!='encerrada' or sala['vagao'] < len(VAGOES)-1: return 0
+        total=0
         async with self.bot.pool.acquire() as conn:
             async with conn.transaction():
-                for uid in vivos(estado):
-                    inserted = await conn.fetchval("""
-                        INSERT INTO expresso_premios(guild_id,partida,user_id,valor)
-                        VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING user_id
-                    """, gid, int(estado.get('partida') or 1), uid, PREMIO_VITORIA)
-                    if inserted is None:
-                        continue
-                    await cassino_db.garantir_carteira(uid, conn)
-                    await conn.execute("""
-                        UPDATE sants_carteiras SET saldo=saldo+$2, atualizado_em=NOW()
-                        WHERE user_id=$1
-                    """, uid, PREMIO_VITORIA)
-                    await conn.execute("""
-                        INSERT INTO sants_transacoes(user_id,tipo,quantia,descricao)
-                        VALUES($1,'expresso',$2,$3)
-                    """, uid, PREMIO_VITORIA, f'Expresso Fantasma • servidor {gid} • partida {estado.get("partida", 1)}')
-                    total += 1
+                for uid in vivos(sala):
+                    ok=await conn.fetchval("""INSERT INTO expresso_salas_premios(guild_id,codigo,user_id,valor)
+                      VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING user_id""",sala['guild_id'],sala['codigo'],uid,PREMIO)
+                    if ok is None: continue
+                    await cassino_db.garantir_carteira(uid,conn)
+                    await conn.execute('UPDATE sants_carteiras SET saldo=saldo+$2, atualizado_em=NOW() WHERE user_id=$1',uid,PREMIO)
+                    await conn.execute("""INSERT INTO sants_transacoes(user_id,tipo,quantia,descricao)
+                      VALUES($1,'expresso',$2,$3)""",uid,PREMIO,f'Expresso Fantasma • sala {sala["codigo"]}')
+                    total+=1
         return total
 
     @commands.command(name='premioexpresso')
     @commands.guild_only()
     @commands.has_permissions(manage_guild=True)
-    async def recuperar_premio(self, ctx: commands.Context):
-        estado = await self.obter(ctx.guild.id)
-        if not estado or estado['status'] != 'encerrada':
-            return await ctx.reply('❌ Nenhuma viagem encerrada para conferir.', mention_author=False)
-        total = await self.premiar(ctx.guild.id, estado)
-        await ctx.reply(f'🪙 Conferência concluída. {total} recompensa(s) pendente(s) creditada(s).', mention_author=False)
+    async def recuperar_premio(self,ctx,codigo:str):
+        sala=await self.obter(ctx.guild.id,codigo.upper())
+        if not sala or sala['status']!='encerrada': return await ctx.reply('❌ Sala encerrada não encontrada.',mention_author=False)
+        total=await self.premiar(sala)
+        await ctx.reply(f'🪙 {total} recompensa(s) recuperada(s).',mention_author=False)
 
-    async def executar(self, interaction: discord.Interaction, acao: str):
-        if not interaction.guild or not isinstance(interaction.user, discord.Member):
-            return await interaction.response.send_message('❌ Disponível somente no servidor.', ephemeral=True)
-        gid = interaction.guild.id
-        async with self.lock(gid):
-            estado = await self.obter(gid)
-            if not estado or estado['message_id'] != interaction.message.id:
-                return await interaction.response.send_message('⚠️ Painel antigo. Utilize o painel mais recente.', ephemeral=True)
-            passageiros = list(estado['passageiros'])
-            uid = interaction.user.id
-            if acao == 'passageiros':
-                nomes = '\n'.join(f'{i}. <@{pid}> — {hp_de(estado, pid)} HP' for i, pid in enumerate(passageiros, 1)) or 'Ninguém embarcou.'
-                return await interaction.response.send_message(f'👥 **Tripulação ({len(passageiros)}/{MAX_PASSAGEIROS})**\n{nomes}', ephemeral=True)
-            if estado['status'] == 'embarque':
-                if acao == 'embarcar':
-                    if uid in passageiros:
-                        return await interaction.response.send_message('🎟️ Você já está a bordo.', ephemeral=True)
-                    if len(passageiros) >= MAX_PASSAGEIROS:
-                        return await interaction.response.send_message('❌ O Expresso está lotado.', ephemeral=True)
-                    passageiros.append(uid)
-                    resposta = '🎟️ Passagem confirmada! Você embarcou.'
-                elif acao == 'sair':
-                    if uid not in passageiros:
-                        return await interaction.response.send_message('❌ Você não está a bordo.', ephemeral=True)
-                    passageiros.remove(uid)
-                    resposta = '🚪 Você desembarcou.'
-                elif acao == 'iniciar':
-                    if not eh_staff(interaction.user):
-                        return await interaction.response.send_message('🔒 Apenas a administração pode iniciar.', ephemeral=True)
-                    if len(passageiros) < MIN_PASSAGEIROS:
-                        return await interaction.response.send_message(f'❌ São necessários {MIN_PASSAGEIROS} passageiros.', ephemeral=True)
-                    estado.update(status='viagem', vagao=0, vidas={str(pid): VIDA_INICIAL for pid in passageiros}, escolhas={}, relatos=[], iniciado_por=uid)
-                    resposta = '🔥 A locomotiva partiu! O primeiro vagão está aberto para decisões.'
-                else:
-                    return await interaction.response.send_message('❌ Ação indisponível durante o embarque.', ephemeral=True)
-                estado['passageiros'] = passageiros
-            elif estado['status'] == 'viagem':
-                if acao.startswith('escolha_'):
-                    if uid not in passageiros or hp_de(estado, uid) == 0:
-                        return await interaction.response.send_message('💀 Apenas passageiros vivos podem decidir.', ephemeral=True)
-                    escolhas = dict(estado.get('escolhas') or {})
-                    if str(uid) in escolhas:
-                        return await interaction.response.send_message('⏳ Você já decidiu neste vagão.', ephemeral=True)
-                    try:
-                        indice = int(acao.split('_', 1)[1])
-                        opcao = VAGOES[int(estado['vagao'])]['opcoes'][indice]
-                    except (ValueError, IndexError, KeyError):
-                        return await interaction.response.send_message('❌ Escolha inválida.', ephemeral=True)
-                    dano = random.SystemRandom().randint(*opcao[2])
-                    vidas = dict(estado.get('vidas') or {})
-                    vidas[str(uid)] = max(0, hp_de(estado, uid) - dano)
-                    escolhas[str(uid)] = indice
-                    estado['vidas'] = vidas
-                    estado['escolhas'] = escolhas
-                    estado['relatos'] = (list(estado.get('relatos') or []) + [f'<@{uid}> escolheu {opcao[0]} e perdeu {dano} HP.'])[-8:]
-                    resposta = f'{opcao[1]} **{opcao[0]}** — você perdeu **{dano} HP**. Restam **{vidas[str(uid)]} HP**.'
-                elif acao == 'avancar':
-                    if not eh_staff(interaction.user):
-                        return await interaction.response.send_message('🔒 Apenas a administração pode avançar.', ephemeral=True)
-                    ativos = vivos(estado)
-                    escolhas = estado.get('escolhas') or {}
-                    if ativos and any(str(pid) not in escolhas for pid in ativos):
-                        return await interaction.response.send_message('⏳ Aguarde todos os passageiros vivos escolherem.', ephemeral=True)
-                    if not ativos or int(estado['vagao']) >= len(VAGOES) - 1:
-                        estado['status'] = 'encerrada'
-                        resposta = '🏁 A viagem terminou! Veja os sobreviventes no painel.'
+    async def sala_acao(self,interaction,codigo,acao):
+        # Modais exigem uma resposta inicial, antes de qualquer defer.
+        if acao == 'config':
+            sala = await self.obter(interaction.guild_id, codigo)
+            if not sala or sala['status'] != 'embarque' or sala['host_id'] != interaction.user.id:
+                return await interaction.response.send_message('🔒 Apenas o anfitrião configura a sala antes da viagem.', ephemeral=True)
+            return await interaction.response.send_modal(ConfigModal(self, codigo))
+        await interaction.response.defer(ephemeral=True)
+        gid,uid=interaction.guild_id,interaction.user.id
+        async with self.lock(gid,codigo):
+            sala=await self.obter(gid,codigo)
+            if not sala or sala['message_id']!=interaction.message.id:
+                return await interaction.followup.send('⚠️ Painel desatualizado ou sala inexistente.',ephemeral=True)
+            if acao=='tripulacao':
+                vidas=as_json(sala['vidas'],{})
+                nomes='\n'.join(f'{i}. <@{p}> — {vidas.get(str(p),sala["hp_max"])} HP' for i,p in enumerate(sala['passageiros'],1)) or 'Nenhum passageiro.'
+                return await interaction.followup.send('👥 **Tripulação**\n'+nomes,ephemeral=True)
+            if acao=='encerrar':
+                if uid!=sala['host_id'] and not interaction.user.guild_permissions.manage_guild:
+                    return await interaction.followup.send('🔒 Somente anfitrião ou administração.',ephemeral=True)
+                sala['status']='encerrada'; resposta='🔒 Sala encerrada.'
+            elif sala['status']=='embarque':
+                if acao=='entrar':
+                    if uid in sala['passageiros']: return await interaction.followup.send('🎟️ Você já embarcou.',ephemeral=True)
+                    if len(sala['passageiros'])>=sala['limite']: return await interaction.followup.send('❌ Sala lotada.',ephemeral=True)
+                    sala['passageiros'].append(uid); resposta='🎟️ Você embarcou!'
+                elif acao=='sair':
+                    if uid==sala['host_id']: return await interaction.followup.send('👑 O anfitrião deve encerrar a sala para sair.',ephemeral=True)
+                    if uid not in sala['passageiros']: return await interaction.followup.send('❌ Você não embarcou.',ephemeral=True)
+                    sala['passageiros'].remove(uid); resposta='🚪 Você desembarcou.'
+                elif acao=='iniciar':
+                    if uid!=sala['host_id']: return await interaction.followup.send('🔒 Somente o anfitrião inicia a viagem.',ephemeral=True)
+                    if len(sala['passageiros'])<MIN_JOGADORES: return await interaction.followup.send('❌ São necessários pelo menos dois passageiros.',ephemeral=True)
+                    sala.update(status='viagem',vagao=0,vidas={str(u):sala['hp_max'] for u in sala['passageiros']},escolhas={},relatos=[])
+                    resposta='🚂 A locomotiva partiu!'
+                else: return await interaction.followup.send('❌ Ação inválida.',ephemeral=True)
+            elif sala['status']=='viagem':
+                if acao.startswith('escolha'):
+                    if uid not in vivos(sala): return await interaction.followup.send('💀 Apenas passageiros vivos podem escolher.',ephemeral=True)
+                    escolhas=as_json(sala['escolhas'],{})
+                    if str(uid) in escolhas: return await interaction.followup.send('⏳ Você já escolheu neste vagão.',ephemeral=True)
+                    try: opcao=VAGOES[sala['vagao']]['opcoes'][int(acao[-1])]
+                    except (ValueError,IndexError): return await interaction.followup.send('❌ Escolha inválida.',ephemeral=True)
+                    dano=random.SystemRandom().randint(*opcao[2]); vidas=as_json(sala['vidas'],{})
+                    vidas[str(uid)]=max(0,int(vidas[str(uid)])-dano)
+                    escolhas[str(uid)]=int(acao[-1]); sala['vidas']=vidas;sala['escolhas']=escolhas
+                    sala['relatos']=(as_json(sala['relatos'],[])+[f'<@{uid}> escolheu {opcao[0]} e perdeu {dano} HP.'])[-8:]
+                    resposta=f'{opcao[1]} **{opcao[0]}** — dano de {dano} HP. Restam {vidas[str(uid)]} HP.'
+                elif acao=='avancar':
+                    if uid!=sala['host_id']: return await interaction.followup.send('🔒 Somente o anfitrião avança.',ephemeral=True)
+                    ativos=vivos(sala); escolhas=as_json(sala['escolhas'],{})
+                    if ativos and any(str(p) not in escolhas for p in ativos):
+                        return await interaction.followup.send('⏳ Aguarde as escolhas dos passageiros vivos.',ephemeral=True)
+                    if not ativos or sala['vagao']>=len(VAGOES)-1:
+                        sala['status']='encerrada';resposta='🏁 A viagem terminou!'
                     else:
-                        estado['vagao'] = int(estado['vagao']) + 1
-                        estado['escolhas'] = {}
-                        estado['relatos'] = []
-                        resposta = f'🚂 Próxima parada: **{VAGOES[estado["vagao"]]["nome"]}**.'
-                else:
-                    return await interaction.response.send_message('❌ Ação indisponível durante a viagem.', ephemeral=True)
-            else:
-                return await interaction.response.send_message('🏁 Esta viagem terminou. Aguarde a próxima.', ephemeral=True)
-            await self.salvar(gid, estado)
-            await interaction.response.send_message(resposta, ephemeral=True)
-            if estado['status'] == 'encerrada':
-                try:
-                    premiados = await self.premiar(gid, estado)
-                    if premiados:
-                        LOG.info('Expresso %s: %s sobreviventes premiados', gid, premiados)
-                except Exception:
-                    LOG.exception('Falha ao premiar Expresso %s; use !premioexpresso para tentar novamente', gid)
-            await self.atualizar_painel(estado)
+                        sala['vagao']+=1;sala['escolhas']={};sala['relatos']=[]
+                        resposta=f'🚂 Próxima parada: {VAGOES[sala["vagao"]]["nome"]}.'
+                else: return await interaction.followup.send('❌ Ação indisponível.',ephemeral=True)
+            else: return await interaction.followup.send('🏁 Esta sala já foi encerrada.',ephemeral=True)
+            await self.salvar(sala)
+            await self.atualizar(sala)
+        await interaction.followup.send(resposta,ephemeral=True)
+        if sala['status']=='encerrada' and acao=='avancar':
+            try: await self.premiar(sala)
+            except Exception: LOG.exception('Falha ao premiar sala %s',codigo)
 
+    @commands.command(name='configexpresso')
+    @commands.guild_only()
+    async def config_comando(self,ctx,codigo:str,vida:int,limite:int):
+        if not 1<=vida<=MAX_VIDA or not MIN_JOGADORES<=limite<=MAX_JOGADORES:
+            return await ctx.reply('❌ Vida de 1 a 700; passageiros de 2 a 10.',mention_author=False)
+        codigo=codigo.upper()
+        async with self.lock(ctx.guild.id,codigo):
+            sala=await self.obter(ctx.guild.id,codigo)
+            if not sala or sala['status']!='embarque' or sala['host_id']!=ctx.author.id:
+                return await ctx.reply('❌ Sala inexistente, iniciada ou você não é anfitrião.',mention_author=False)
+            if limite<len(sala['passageiros']): return await ctx.reply('❌ Limite menor que a tripulação atual.',mention_author=False)
+            sala.update(hp_max=vida,limite=limite)
+            await self.salvar(sala);await self.atualizar(sala)
+        await ctx.reply('⚙️ Configurações atualizadas.',mention_author=False)
 
-async def setup(bot: commands.Bot):
+async def setup(bot):
     await bot.add_cog(Expresso(bot))
