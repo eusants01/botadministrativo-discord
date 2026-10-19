@@ -22,9 +22,8 @@ LOG = logging.getLogger("sants.tickets")
 NOME_SERVIDOR = "Família Sant's"
 FUSO = ZoneInfo("America/Sao_Paulo")
 
-# Tudo em azul, combinando com o banner
-COR_AZUL = 0x1A3C8C
-COR_AZUL_CLARO = 0x4A90E2
+COR_AZUL = 0x8B0000       
+COR_AZUL_CLARO = 0xDC2626  
 
 CARGOS_STAFF = [
     1553832098404499516,
@@ -46,21 +45,18 @@ ALERTA_SEM_ATENDENTE_MINUTOS = 5
 
 INATIVIDADE_AVISO_HORAS = 0
 INATIVIDADE_FECHAR_APOS_AVISO_HORAS = 0
-
-# Fecha o ticket sozinho X minutos depois de Aprovar/Recusar. 0 = desligado.
 FECHAR_APOS_DECISAO_MIN = 0
 
-BANNER_PRINCIPAL = "https://i.imgur.com/UC3W9D7.png"
+BANNER_PRINCIPAL = "https://i.imgur.com/WBvZWPp.png"
 
-# Texto do painel público (edite à vontade e rode !painelticket de novo)
 PAINEL_DESCRICAO = """\
-# <a:sino:1555469607341654047> **Central de Atendimento**
+# <a:animated_Requests_Messages_Red:1561617026823233566> **Central de Atendimento**
 Escolha no menu abaixo uma categoria que deseja receber o atendimento necessário.
 
 **Escolha a sua Categoria**
 > `☎️` **Denúncias** — Reportar jogadores ou comportamentos.
 > `🎖️` **Solicitar Medalhas** — Peça uma medalha com comprovação.
-> `🪖` **Solicitar Cargo no E.B** — Peça cargo em uma divisão (CGEx, AFEx...).
+> `🪖` **Cargo do E.B** — Peça cargo em uma divisão ou organização.
 > `💼` **Solicitar Parcerias** — Propostas de parceria entre servidores.
 > `💬` **Outros Assuntos** — Qualquer outra dúvida ou pedido.
 
@@ -70,6 +66,7 @@ Escolha no menu abaixo uma categoria que deseja receber o atendimento necessári
 
 **Avisos**
 > `⚠️` O uso abusivo desnecessário acarretará em punição.
+> `⚠️` Esteja ciente de nossas [regras](https://discord.com/channels/1553803921514963075/1553829609160835342) e evite punições.
 """
 
 PRIORIDADES = {
@@ -79,8 +76,6 @@ PRIORIDADES = {
     "urgente": ("🔴", "Urgente"),
 }
 
-# Respostas prontas que a staff envia com um clique (botão "Respostas")
-# chave: (nome no menu, emoji, texto). Use {usuario} para mencionar quem abriu.
 RESPOSTAS_PRONTAS = {
     "recebido": (
         "Recebido",
@@ -126,7 +121,7 @@ CATEGORIAS = {
         "emoji": "<:denuncias:1560383906551697649>",
         "descricao": "Reportar jogadores ou comportamentos",
         "cor": COR_AZUL,
-        "banner": "",
+        "banner": "https://i.imgur.com/Jlo7zv8.png",
         "mensagem": """Olá, {usuario}.
 Sua denúncia será tratada com **sigilo e seriedade**.
 
@@ -184,7 +179,7 @@ Sua denúncia será tratada com **sigilo e seriedade**.
         "emoji": "<:medalhas:1560384481783718289>",
         "descricao": "Peça uma medalha com comprovação",
         "cor": COR_AZUL,
-        "banner": "",
+        "banner": "https://i.imgur.com/Ri4mViU.png",
         "mensagem": """Olá, {usuario}! 🎖️
 Recebemos o seu pedido de medalha.
 
@@ -233,7 +228,7 @@ Recebemos o seu pedido de medalha.
         "emoji": "<:download1:1560384545642127480>",
         "descricao": "Peça cargo em uma divisão do E.B",
         "cor": COR_AZUL,
-        "banner": "",
+        "banner": "https://i.imgur.com/Z85fQG6.png",
         "mensagem": """Olá, {usuario}! 🪖
 Recebemos o seu pedido de cargo no **E.B**.
 
@@ -245,7 +240,7 @@ Recebemos o seu pedido de cargo no **E.B**.
 **Aviso**
 > `⚠️` Informe o seu nome/ID corretamente para a equipe te localizar no E.B.
 """,
-        # EDITE com as divisões do E.B (nome, descrição, emoji). Máximo de 25.
+       
         "escolha": {
             "label": "Divisão",
             "placeholder": "Em qual divisão/organização você quer o cargo?",
@@ -289,9 +284,7 @@ Recebemos o seu pedido de cargo no **E.B**.
         ],
         "decisao": True,
         "cargo_ao_aprovar": None,
-        # IDs de cargos que podem abrir esta categoria ([] = qualquer pessoa)
         "cargos_permitidos": [],
-        # IDs de cargos marcados quando o ticket é aberto (além da staff)
         "cargos_ping": [],
         "categoria_discord_id": None,
     },
@@ -300,7 +293,7 @@ Recebemos o seu pedido de cargo no **E.B**.
         "emoji": "<:parcerias:1560384427316617328>",
         "descricao": "Propostas de parceria entre servidores",
         "cor": COR_AZUL,
-        "banner": "",
+        "banner": "https://i.imgur.com/9RJo2in.png",
         "mensagem": """Olá, {usuario}! 🤝
 Que bom ter interesse em uma parceria com a **Família Sant's**.
 
@@ -356,7 +349,7 @@ Que bom ter interesse em uma parceria com a **Família Sant's**.
         "emoji": "<:outros:1560384516164558909>",
         "descricao": "Qualquer outra dúvida ou pedido",
         "cor": COR_AZUL,
-        "banner": "",
+        "banner": "https://i.imgur.com/iEssdVe.png",
         "mensagem": """Olá, {usuario}! 👋
 Seja bem-vindo ao atendimento da **Família Sant's**.
 
@@ -386,10 +379,6 @@ Seja bem-vindo ao atendimento da **Família Sant's**.
     },
 }
 
-# ╔══════════════════════════════════════════════════════════════╗
-# ║              DAQUI PARA BAIXO NÃO PRECISA MEXER              ║
-# ╚══════════════════════════════════════════════════════════════╝
-
 PASTA_DADOS = "dados_tickets"
 os.makedirs(PASTA_DADOS, exist_ok=True)
 F_CONTADOR = os.path.join(PASTA_DADOS, "contador.json")
@@ -398,7 +387,6 @@ F_HISTORICO = os.path.join(PASTA_DADOS, "historico.json")
 F_AVALIACOES = os.path.join(PASTA_DADOS, "avaliacoes.json")
 F_BLOQUEIOS = os.path.join(PASTA_DADOS, "bloqueados.json")
 
-# Migra arquivos da versão anterior, se existirem
 for _antigo, _novo in (
     ("tickets_contador.json", F_CONTADOR),
     ("tickets_avaliacoes.json", F_AVALIACOES),
@@ -409,15 +397,6 @@ for _antigo, _novo in (
 CANAIS_FECHANDO: set[int] = set()
 CRIANDO: set[int] = set()
 COOLDOWN_CHAMAR: dict[int, float] = {}
-
-
-# ════════════════════════════════════════════════════════════════
-#           ARMAZENAMENTO (PostgreSQL com cache + arquivo de reserva)
-# ════════════════════════════════════════════════════════════════
-#
-# Os dados dos tickets (contador, abertos, histórico, avaliações, bloqueios) ficam
-# no PostgreSQL quando bot.pool existe. Assim nada se perde quando o Railway reinicia
-# ou faz um novo deploy. As funções abaixo continuam síncronas para o resto do código.
 
 SQL_KV = """
 CREATE TABLE IF NOT EXISTS tickets_kv (
