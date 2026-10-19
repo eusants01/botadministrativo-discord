@@ -1,7 +1,7 @@
-"""Expresso Fantasma — Fase 2: vagões, escolhas, vida e progresso persistente.
+"""Expresso Fantasma — versão completa: cinco etapas, chefes e recompensas.
 
 Discord.py 2.6+ / Components V2. Uma viagem ativa por servidor.
-Não altera a economia nem concede moedas nesta fase.
+Recompensas de Sant's Coins com registro único por partida.
 """
 from __future__ import annotations
 
@@ -19,9 +19,11 @@ COR = 0x8B0000
 MAX_PASSAGEIROS = 10
 MIN_PASSAGEIROS = 2
 VIDA_INICIAL = 100
+PREMIO_VITORIA = 500
+PREMIO_DERROTA = 0
 BANNER = os.getenv('EXPRESSO_BANNER_URL', '').strip()
 
-# Os três primeiros vagões; chefes e recompensas serão adicionados depois.
+# Etapas da viagem, incluindo os dois confrontos finais.
 VAGOES = (
     {
         'nome': '🚉 Estação dos Mortos',
@@ -50,6 +52,24 @@ VAGOES = (
             ('Pedir clemência', '🙏', (8, 24)),
         ),
     },
+    {
+        'nome': '🚂 Locomotiva Fantasma',
+        'historia': 'O maquinista espectral bloqueia a passagem e convoca seus servos.',
+        'opcoes': (
+            ('Atacar o maquinista', '⚔️', (12, 28)),
+            ('Proteger os passageiros', '🛡️', (5, 18)),
+            ('Destruir a caldeira', '💥', (8, 24)),
+        ),
+    },
+    {
+        'nome': '😈 Estação do Diabo',
+        'historia': 'O Diabo aparece na plataforma final. Esta é a última decisão da viagem.',
+        'opcoes': (
+            ('Enfrentar o Diabo', '⚔️', (15, 34)),
+            ('Resistir à tentação', '🛡️', (8, 25)),
+            ('Quebrar o contrato', '📜', (10, 29)),
+        ),
+    },
 )
 
 SQL = """
@@ -66,6 +86,14 @@ ALTER TABLE expresso_viagens ADD COLUMN IF NOT EXISTS vagao INTEGER NOT NULL DEF
 ALTER TABLE expresso_viagens ADD COLUMN IF NOT EXISTS vidas JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE expresso_viagens ADD COLUMN IF NOT EXISTS escolhas JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE expresso_viagens ADD COLUMN IF NOT EXISTS relatos JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE expresso_viagens ADD COLUMN IF NOT EXISTS partida INTEGER NOT NULL DEFAULT 1;
+CREATE TABLE IF NOT EXISTS expresso_premios (
+    guild_id BIGINT NOT NULL,
+    partida INTEGER NOT NULL,
+    user_id BIGINT NOT NULL,
+    valor INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, partida, user_id)
+);
 """
 
 
@@ -84,39 +112,52 @@ def vivos(estado: dict) -> list[int]:
 def texto_estado(estado: dict) -> str:
     status = estado.get('status', 'embarque')
     passageiros = list(estado.get('passageiros') or [])
-    if status == 'embarque':
-        fase = '🚉 Embarque aberto'
-    elif status == 'viagem':
-        fase = f'🚂 Vagão {int(estado.get("vagao") or 0) + 1}/{len(VAGOES)}'
-    else:
-        fase = '🏁 Viagem encerrada'
     linhas = [
-        '**Uma passagem para os trilhos do submundo.**',
-        'O Diabo observa cada passageiro que ousa embarcar.',
+        '> `🚂` **Bem-vindo ao Expresso Fantasma.**',
+        '> `🔍` Atravesse cinco etapas, enfrente o maquinista e sobreviva ao Diabo.',
+        '> `🎟️` Embarque para participar; cada passageiro começa com **100 HP**.',
+        '> `💀` Chegar a **0 HP** elimina o passageiro da viagem.',
+        '> `🪙` Sobreviventes recebem **500 Sant\'s Coins** ao final.',
         '',
-        f'**Situação:** {fase}',
-        f'**Passageiros:** {len(passageiros)}/{MAX_PASSAGEIROS}',
     ]
     if status == 'embarque':
-        linhas.append('**Tripulação:** ' + (', '.join(f'<@{uid}>' for uid in passageiros) if passageiros else 'Nenhum passageiro ainda'))
+        linhas += [
+            '### 🚉 Plataforma de embarque',
+            f'> `📍` **Situação:** aguardando partida',
+            f'> `👥` **Passageiros:** {len(passageiros)}/{MAX_PASSAGEIROS} (mínimo {MIN_PASSAGEIROS})',
+            '> `🔒` Somente a administração inicia a viagem.',
+            '',
+            '**Tripulação:** ' + (', '.join(f'<@{uid}>' for uid in passageiros) if passageiros else 'Nenhum passageiro ainda'),
+        ]
     else:
-        linhas.append(f'**Sobreviventes:** {len(vivos(estado))}/{len(passageiros)}')
-        for uid in passageiros:
-            vida = hp_de(estado, uid)
-            linhas.append(f'{"💀" if vida == 0 else "❤️"} <@{uid}> — **{vida}/{VIDA_INICIAL} HP**')
+        sobreviventes = vivos(estado)
+        linhas += [
+            f'### {"🏁 Fim da viagem" if status == "encerrada" else VAGOES[min(max(0, int(estado.get("vagao") or 0)), len(VAGOES)-1)]["nome"]}',
+            f'> `📍` **Situação:** {"encerrada" if status == "encerrada" else "viagem em andamento"}',
+            f'> `🚃` **Etapa:** {min(int(estado.get("vagao") or 0) + 1, len(VAGOES))}/{len(VAGOES)}',
+            f'> `👥` **Sobreviventes:** {len(sobreviventes)}/{len(passageiros)}',
+        ]
         if status == 'viagem':
-            etapa = VAGOES[min(max(0, int(estado.get('vagao') or 0)), len(VAGOES) - 1)]
-            linhas += ['', f'### {etapa["nome"]}', etapa['historia']]
+            etapa = VAGOES[min(max(0, int(estado.get('vagao') or 0)), len(VAGOES)-1)]
             escolhas = estado.get('escolhas') or {}
-            linhas.append(f'**Decisões:** {sum(str(uid) in escolhas for uid in vivos(estado))}/{len(vivos(estado))}')
-            if vivos(estado) and all(str(uid) in escolhas for uid in vivos(estado)):
-                linhas.append('✅ Todos decidiram! A administração pode avançar.')
+            linhas += [
+                '', f'> `📖` {etapa["historia"]}',
+                f'> `🔍` **Decisões:** {sum(str(uid) in escolhas for uid in sobreviventes)}/{len(sobreviventes)}',
+                '', '**Escolha seu destino:**',
+                *[f'> `{i+1}️⃣` {nome}' for i, (nome, _, _) in enumerate(etapa['opcoes'])],
+            ]
+            if sobreviventes and all(str(uid) in escolhas for uid in sobreviventes):
+                linhas.append('> `✅` Todos os sobreviventes decidiram; a administração pode avançar.')
+        else:
+            linhas += ['', '> `🏆` **Vitória!** Os sobreviventes chegaram à estação final.' if sobreviventes and int(estado.get('vagao') or 0) >= len(VAGOES)-1 else '> `💀` A viagem terminou sem alcançar a estação final.']
+        linhas += ['', '**Estado dos passageiros**']
+        for uid in passageiros:
+            hp = hp_de(estado, uid)
+            linhas.append(f'> `{"💀" if hp == 0 else "❤️"}` <@{uid}> — **{hp}/{VIDA_INICIAL} HP**')
     relatos = estado.get('relatos') or []
     if relatos:
-        linhas += ['', '**Últimos acontecimentos**', *[f'• {r}' for r in relatos[-3:]]]
-    if status == 'encerrada':
-        linhas += ['', '*Fim da Fase 2: os chefes e prêmios chegarão em uma próxima atualização.*']
-    return '\n'.join(linhas)[:3800]
+        linhas += ['', '**Últimos acontecimentos**', *[f'> `📜` {r}' for r in relatos[-3:]]]
+    return '\n'.join(linhas)[:3900]
 
 
 class BotaoExpresso(discord.ui.Button):
@@ -137,7 +178,7 @@ class PainelExpresso(discord.ui.LayoutView):
         blocos: list[Any] = []
         if BANNER.startswith(('https://', 'http://')):
             blocos.append(discord.ui.MediaGallery(discord.MediaGalleryItem(media=BANNER)))
-        blocos += [discord.ui.TextDisplay('# 🚂 EXPRESSO FANTASMA'), discord.ui.TextDisplay(texto_estado(estado)), discord.ui.Separator()]
+        blocos += [discord.ui.TextDisplay('# 🚂 EXPRESSO FANTASMA'), discord.ui.TextDisplay('**FAMÍLIA SANT’S • UMA VIAGEM PELOS TRILHOS DO SUBMUNDO**'), discord.ui.Separator(), discord.ui.TextDisplay(texto_estado(estado)), discord.ui.Separator()]
         linha = discord.ui.ActionRow()
         if status == 'embarque':
             acoes = (
@@ -155,7 +196,7 @@ class PainelExpresso(discord.ui.LayoutView):
                 ('avancar', 'Próximo vagão', discord.ButtonStyle.danger, '🚂', False),
             )
             etapa = VAGOES[min(max(0, int(estado.get('vagao') or 0)), len(VAGOES) - 1)]
-            blocos.append(discord.ui.TextDisplay('\n'.join(f'**{i + 1}.** {nome}' for i, (nome, _, _) in enumerate(etapa['opcoes']))))
+            # As opções já aparecem na descrição, com a formatação do painel.
         else:
             acoes = (('passageiros', 'Resultado', discord.ButtonStyle.secondary, '🏁', False),)
         for acao, nome, estilo, emoji, disabled in acoes:
@@ -231,7 +272,7 @@ class Expresso(commands.Cog):
                 VALUES ($1,$2,$3,'embarque',$4::bigint[],NULL,0,'{}'::jsonb,'{}'::jsonb,'[]'::jsonb)
                 ON CONFLICT (guild_id) DO UPDATE SET channel_id=$2, message_id=$3,
                 status='embarque', passageiros=$4::bigint[], iniciado_por=NULL, vagao=0,
-                vidas='{}'::jsonb, escolhas='{}'::jsonb, relatos='[]'::jsonb, atualizado_em=NOW()
+                vidas='{}'::jsonb, escolhas='{}'::jsonb, relatos='[]'::jsonb, partida=expresso_viagens.partida+1, atualizado_em=NOW()
             ''', gid, ctx.channel.id, msg.id, passageiros)
             if anterior and anterior['message_id']:
                 antigo_canal = self.bot.get_channel(anterior['channel_id'])
@@ -252,9 +293,48 @@ class Expresso(commands.Cog):
             if not estado:
                 return await ctx.reply('❌ Publique o painel com `!expresso` primeiro.', mention_author=False)
             estado.update(status='embarque', passageiros=[], iniciado_por=None, vagao=0, vidas={}, escolhas={}, relatos=[])
+            await self.bot.pool.execute('UPDATE expresso_viagens SET partida=partida+1 WHERE guild_id=$1', gid)
             await self.salvar(gid, estado)
             await self.atualizar_painel(estado)
         await ctx.reply('🚉 Embarque reiniciado; vidas e decisões anteriores foram apagadas.', mention_author=False)
+
+    async def premiar(self, gid: int, estado: dict) -> int:
+        """Premia sobreviventes uma única vez por partida, em transação atômica."""
+        if estado.get('status') != 'encerrada' or int(estado.get('vagao') or 0) < len(VAGOES)-1:
+            return 0
+        from utils import cassino_db
+        # A tabela compartilhada da economia já é criada pelo cog de Economia.
+        total = 0
+        async with self.bot.pool.acquire() as conn:
+            async with conn.transaction():
+                for uid in vivos(estado):
+                    inserted = await conn.fetchval("""
+                        INSERT INTO expresso_premios(guild_id,partida,user_id,valor)
+                        VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING user_id
+                    """, gid, int(estado.get('partida') or 1), uid, PREMIO_VITORIA)
+                    if inserted is None:
+                        continue
+                    await cassino_db.garantir_carteira(uid, conn)
+                    await conn.execute("""
+                        UPDATE sants_carteiras SET saldo=saldo+$2, atualizado_em=NOW()
+                        WHERE user_id=$1
+                    """, uid, PREMIO_VITORIA)
+                    await conn.execute("""
+                        INSERT INTO sants_transacoes(user_id,tipo,quantia,descricao)
+                        VALUES($1,'expresso',$2,$3)
+                    """, uid, PREMIO_VITORIA, f'Expresso Fantasma • servidor {gid} • partida {estado.get("partida", 1)}')
+                    total += 1
+        return total
+
+    @commands.command(name='premioexpresso')
+    @commands.guild_only()
+    @commands.has_permissions(manage_guild=True)
+    async def recuperar_premio(self, ctx: commands.Context):
+        estado = await self.obter(ctx.guild.id)
+        if not estado or estado['status'] != 'encerrada':
+            return await ctx.reply('❌ Nenhuma viagem encerrada para conferir.', mention_author=False)
+        total = await self.premiar(ctx.guild.id, estado)
+        await ctx.reply(f'🪙 Conferência concluída. {total} recompensa(s) pendente(s) creditada(s).', mention_author=False)
 
     async def executar(self, interaction: discord.Interaction, acao: str):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
@@ -333,6 +413,13 @@ class Expresso(commands.Cog):
                 return await interaction.response.send_message('🏁 Esta viagem terminou. Aguarde a próxima.', ephemeral=True)
             await self.salvar(gid, estado)
             await interaction.response.send_message(resposta, ephemeral=True)
+            if estado['status'] == 'encerrada':
+                try:
+                    premiados = await self.premiar(gid, estado)
+                    if premiados:
+                        LOG.info('Expresso %s: %s sobreviventes premiados', gid, premiados)
+                except Exception:
+                    LOG.exception('Falha ao premiar Expresso %s; use !premioexpresso para tentar novamente', gid)
             await self.atualizar_painel(estado)
 
 
