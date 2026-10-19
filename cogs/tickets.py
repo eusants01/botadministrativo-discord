@@ -5,6 +5,7 @@ import copy
 import html
 import io
 import json
+import logging
 import os
 import re
 import time
@@ -12,8 +13,11 @@ import unicodedata
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
+
 import discord
 from discord.ext import commands, tasks
+
+LOG = logging.getLogger("sants.tickets")
 
 NOME_SERVIDOR = "Família Sant's"
 FUSO = ZoneInfo("America/Sao_Paulo")
@@ -824,23 +828,88 @@ def montar_card(guild: discord.Guild, canal, t: dict) -> discord.Embed:
     return embed
 
 
-async def atualizar_card(canal: discord.TextChannel):
-    t = ler_ticket(canal)
-    if not t or not t.get("card_id"):
-        return
+def criar_card_v2(canal: discord.TextChannel, t: dict) -> discord.ui.LayoutView:
+    """Card e botões nativos V2, sem embeds e sem conversor global."""
     cat = CATEGORIAS.get(t.get("cat", ""), {})
+    controles = TicketControls(
+        assumido=bool(t.get("claim")),
+        decisao=bool(cat.get("decisao")),
+        decidido=bool(t.get("decisao")),
+    )
+    embed = montar_card(canal.guild, canal, t)
+    texto = embed.description or "Atendimento em andamento."
+    layout = TicketCardV2(controles)
+    partes = [discord.ui.TextDisplay(parte) for parte in dividir_texto_card(texto)]
+    if banner_valido(cat.get("banner")):
+        partes.insert(0, discord.ui.MediaGallery(discord.MediaGalleryItem(media=cat["banner"])))
+    partes.append(discord.ui.Separator())
+    botoes = list(controles.children)
+    for i in range(0, len(botoes), 5):
+        linha = discord.ui.ActionRow()
+        for botao in botoes[i:i + 5]:
+            botao._view = None
+            linha.add_item(botao)
+        partes.append(linha)
+    partes.append(discord.ui.TextDisplay(f"-# {NOME_SERVIDOR} • Central de Atendimento"))
+    layout.add_item(discord.ui.Container(*partes, accent_colour=discord.Colour(COR_AZUL)))
+    return layout
+
+
+def dividir_texto_card(texto: str, limite: int = 3500) -> list[str]:
+    partes = []
+    while len(texto) > limite:
+        corte = texto.rfind("\n", 0, limite)
+        if corte < limite // 2:
+            corte = limite
+        partes.append(texto[:corte])
+        texto = texto[corte:].lstrip()
+    if texto:
+        partes.append(texto)
+    return partes
+
+
+class TicketCardV2(discord.ui.LayoutView):
+    """Ações preservadas no próprio LayoutView persistente."""
+
+    def __init__(self, controles: "TicketControls"):
+        super().__init__(timeout=None)
+        self.controles = controles
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return await self.controles.interaction_check(interaction)
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception, item):
+        LOG.error("Erro no botão V2 de ticket", exc_info=(type(error), error, error.__traceback__))
+        if not interaction.response.is_done():
+            await interaction.response.send_message("❌ Falha ao executar ação. Avise a equipe.", ephemeral=True)
+
+
+async def atualizar_card(canal: discord.TextChannel) -> bool:
+    """Atualiza V2 sem recriar cartão ou perder os botões."""
+    t = ler_ticket(canal)
+    if not t:
+        return False
+    view = criar_card_v2(canal, t)
+    card_id = t.get("card_id")
+    if card_id:
+        try:
+            msg = await canal.fetch_message(int(card_id))
+            if msg.flags.value & (1 << 15):
+                await msg.edit(view=view, allowed_mentions=discord.AllowedMentions.none())
+                return True
+            LOG.warning("Cartão antigo %s não é V2; publicando substituto", card_id)
+        except discord.NotFound:
+            LOG.warning("Cartão %s removido; criando outro", card_id)
+        except discord.HTTPException:
+            LOG.exception("Falha ao editar cartão V2 no canal %s", canal.id)
+            return False
     try:
-        msg = await canal.fetch_message(t["card_id"])
-        await msg.edit(
-            embed=montar_card(canal.guild, canal, t),
-            view=TicketControls(
-                assumido=bool(t.get("claim")),
-                decisao=bool(cat.get("decisao")),
-                decidido=bool(t.get("decisao")),
-            ),
-        )
+        novo = await canal.send(view=view, allowed_mentions=discord.AllowedMentions.none())
+        salvar_estado(canal.id, card_id=novo.id)
+        return True
     except discord.HTTPException:
-        pass
+        LOG.exception("Falha ao publicar cartão V2 no canal %s", canal.id)
+        return False
 
 
 # ════════════════════════════════════════════════════════════════
@@ -1319,13 +1388,12 @@ async def _criar_ticket(
     await interaction.followup.send(embed=confirmacao, ephemeral=True)
 
     pings = " ".join(f"<@&{r}>" for r in cargos_para_notificar(chave))
-    card = await canal.send(
+    await canal.send(
         content=f"{user.mention} {pings}".strip(),
-        embed=montar_card(guild, canal, ler_ticket(canal)),
-        view=TicketControls(decisao=bool(cat.get("decisao"))),
         allowed_mentions=discord.AllowedMentions(users=True, roles=True),
     )
-    salvar_estado(canal.id, card_id=card.id)
+    if not await atualizar_card(canal):
+        LOG.error("Ticket criado mas cartão V2 não publicado: canal %s", canal.id)
     # (Sem log de abertura no canal de logs: só uma mensagem, ao fechar.)
 
 
@@ -1457,11 +1525,9 @@ class TicketSelect(discord.ui.Select):
         )
 
     async def _resetar(self, interaction: discord.Interaction):
-        # Reseta o menu para a opção poder ser escolhida de novo
-        try:
-            await interaction.message.edit(view=TicketView())
-        except discord.HTTPException:
-            pass
+        # Selects voltam ao placeholder automaticamente após a interação.
+        # Editar a mensagem pública aqui quebrava painéis Componentes V2.
+        return
 
     async def callback(self, interaction: discord.Interaction):
         chave = self.values[0]
@@ -1523,11 +1589,18 @@ class BotaoMeusTickets(discord.ui.Button):
         )
 
 
-class TicketView(discord.ui.View):
+class TicketView(discord.ui.LayoutView):
+    """Painel público persistente em Componentes V2 nativos."""
+
     def __init__(self):
         super().__init__(timeout=None)
-        self.add_item(TicketSelect())
-        self.add_item(BotaoMeusTickets())
+        elementos = [discord.ui.TextDisplay(PAINEL_DESCRICAO)]
+        if banner_valido(BANNER_PRINCIPAL):
+            elementos.insert(0, discord.ui.MediaGallery(discord.MediaGalleryItem(media=BANNER_PRINCIPAL)))
+        elementos.append(discord.ui.Separator())
+        elementos.append(discord.ui.ActionRow(TicketSelect()))
+        elementos.append(discord.ui.TextDisplay('-# Família Sant\'s • Atendimento oficial'))
+        self.add_item(discord.ui.Container(*elementos, accent_colour=discord.Colour(COR_AZUL)))
 
 
 # ════════════════════════════════════════════════════════════════
@@ -1732,6 +1805,8 @@ class TicketControls(discord.ui.View):
                 "❌ Apenas a equipe pode assumir tickets.", ephemeral=True
             )
         t = ler_ticket(interaction.channel)
+        if not t:
+            return await interaction.response.send_message("Ticket não encontrado no registro.", ephemeral=True)
         if t.get("claim"):
             return await interaction.response.send_message(
                 f"⚠️ Este ticket já foi assumido por <@{t['claim']}>.\n"
@@ -1767,6 +1842,8 @@ class TicketControls(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         t = ler_ticket(interaction.channel)
+        if not t:
+            return await interaction.response.send_message("Ticket não encontrado no registro.", ephemeral=True)
         eh_dono = t.get("owner") == interaction.user.id
         if not (eh_dono or eh_staff(interaction.user)):
             return await interaction.response.send_message(
@@ -2540,10 +2617,19 @@ class TicketsCog(commands.Cog):
     async def cog_load(self):
         await carregar_armazenamento(self.bot)
         self.bot.add_view(TicketView())
-        self.bot.add_view(TicketControls(decisao=True))
         self.bot.add_view(PainelStaffView())
         self.bot.add_dynamic_items(BotaoNota)
         self.monitorar.start()
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        for guild in self.bot.guilds:
+            for canal, estado in listar_tickets(guild):
+                if estado.get("card_id"):
+                    try:
+                        self.bot.add_view(criar_card_v2(canal, estado), message_id=int(estado["card_id"]))
+                    except Exception:
+                        LOG.exception("Falha ao restaurar botões do ticket %s", canal.id)
 
     async def cog_unload(self):
         self.monitorar.cancel()
@@ -2664,15 +2750,11 @@ class TicketsCog(commands.Cog):
     @apenas_staff()
     async def painelticket(self, ctx: commands.Context):
         """Cria o painel público de tickets no canal atual."""
-        embed = discord.Embed(description=PAINEL_DESCRICAO, color=COR_AZUL)
-        if banner_valido(BANNER_PRINCIPAL):
-            embed.set_image(url=BANNER_PRINCIPAL)
-
         try:
             await ctx.message.delete()
         except discord.HTTPException:
             pass
-        await ctx.send(embed=embed, view=TicketView())
+        await ctx.send(view=TicketView(), allowed_mentions=discord.AllowedMentions.none())
 
     @commands.command(name="painelstaff")
     @apenas_staff()
@@ -2713,6 +2795,7 @@ class TicketsCog(commands.Cog):
             description=(
                 f"`{p}painelticket` — cria o painel público\n"
                 f"`{p}painelstaff` — cria o painel da equipe\n"
+                f"`{p}recuperarticket` — restaura os botões do ticket\n"
                 f"`{p}configticket` — verifica a configuração\n"
                 f"`{p}avaliacoes` — ranking de avaliações\n"
                 f"`{p}bloquear @membro [motivo]` — impede de abrir tickets\n"
@@ -2730,6 +2813,20 @@ class TicketsCog(commands.Cog):
     # ── Comandos dentro do ticket ───────────────────────────────
     def _eh_ticket(self, ctx: commands.Context) -> bool:
         return bool(ler_ticket(ctx.channel))
+
+    @commands.command(name="recuperarticket")
+    @apenas_staff()
+    async def recuperarticket(self, ctx: commands.Context):
+        """Restaura os botões do ticket quando o painel sumir."""
+        if not self._eh_ticket(ctx):
+            return await ctx.send("❌ Use dentro de um ticket.", delete_after=8)
+        t = ler_ticket(ctx.channel)
+        # Atualiza o painel existente, ou publica um novo se tiver sido apagado.
+        if await atualizar_card(ctx.channel):
+            await ctx.send("✅ Painel de gerenciamento restaurado. Os botões estão disponíveis novamente.")
+        else:
+            salvar_estado(ctx.channel.id, card_id=t.get("card_id"))
+            await ctx.send("❌ Não foi possível restaurar. Consulte os logs do Railway.")
 
     @commands.command(name="fechar")
     @apenas_staff()
