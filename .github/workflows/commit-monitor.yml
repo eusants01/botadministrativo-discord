@@ -27,11 +27,13 @@ jobs:
           BRANCH: ${{ github.ref_name }}
           ACTOR: ${{ github.actor }}
           SERVER_URL: ${{ github.server_url }}
+          RUN_ID: ${{ github.run_id }}
+          COMPARE_URL: ${{ github.event.compare }}
           CHECK_RESULT: ${{ steps.check.outcome }}
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          HEAD_COMMIT_JSON: ${{ toJSON(github.event.head_commit) }}
+          COMMITS_JSON: ${{ toJSON(github.event.commits) }}
         run: python scripts/notify_commit.py
       - name: Reprovar workflow se houver erro
         if: steps.check.outcome == 'failure'
         run: exit 1
-
-        
