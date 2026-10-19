@@ -60,7 +60,7 @@ Escolha no menu abaixo uma categoria que deseja receber o atendimento necessári
 **Escolha a sua Categoria**
 > `☎️` **Denúncias** — Reportar jogadores ou comportamentos.
 > `🎖️` **Solicitar Medalhas** — Peça uma medalha com comprovação.
-> `🪖` **Solicitar Cargo no E.B** — Peça cargo em uma divisão (CGEx, AFEx...).
+> `🪖` **Cargo no E.B** — Peça cargo em uma divisão.
 > `💼` **Solicitar Parcerias** — Propostas de parceria entre servidores.
 > `💬` **Outros Assuntos** — Qualquer outra dúvida ou pedido.
 
@@ -2890,3 +2890,4 @@ class TicketsCog(commands.Cog):
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(TicketsCog(bot))
+    
