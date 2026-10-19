@@ -5,7 +5,6 @@ import copy
 import html
 import io
 import json
-import logging
 import os
 import re
 import time
@@ -13,11 +12,8 @@ import unicodedata
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-
 import discord
 from discord.ext import commands, tasks
-
-LOG = logging.getLogger("sants.tickets")
 
 NOME_SERVIDOR = "Família Sant's"
 FUSO = ZoneInfo("America/Sao_Paulo")
@@ -829,45 +825,22 @@ def montar_card(guild: discord.Guild, canal, t: dict) -> discord.Embed:
 
 
 async def atualizar_card(canal: discord.TextChannel):
-    """Atualiza o cartão legado sem esconder falhas do Discord.
-
-    Nunca remove controles em caso de falha. Se a mensagem tiver sido
-    excluída, cria outra e grava o novo identificador no armazenamento.
-    """
     t = ler_ticket(canal)
-    if not t:
-        return False
+    if not t or not t.get("card_id"):
+        return
     cat = CATEGORIAS.get(t.get("cat", ""), {})
-    view = TicketControls(
-        assumido=bool(t.get("claim")),
-        decisao=bool(cat.get("decisao")),
-        decidido=bool(t.get("decisao")),
-    )
-    card_id = t.get("card_id")
-    if card_id:
-        try:
-            msg = await canal.fetch_message(int(card_id))
-            # Mensagens V2 não aceitam embed/view na edição. Recriamos um
-            # cartão de controles separado sem modificar o painel original.
-            if not (msg.flags.value & (1 << 15)):
-                await msg.edit(embed=montar_card(canal.guild, canal, t), view=view)
-                return True
-            LOG.warning("Cartão %s usa V2; criando controles separados", card_id)
-        except discord.NotFound:
-            LOG.warning("Cartão do ticket %s foi excluído; recuperando", canal.id)
-        except discord.HTTPException:
-            LOG.exception("Falha ao atualizar cartão do ticket %s", canal.id)
-            return False
     try:
-        novo = await canal.send(
-            embed=montar_card(canal.guild, canal, t), view=view,
-            allowed_mentions=discord.AllowedMentions.none(),
+        msg = await canal.fetch_message(t["card_id"])
+        await msg.edit(
+            embed=montar_card(canal.guild, canal, t),
+            view=TicketControls(
+                assumido=bool(t.get("claim")),
+                decisao=bool(cat.get("decisao")),
+                decidido=bool(t.get("decisao")),
+            ),
         )
-        salvar_estado(canal.id, card_id=novo.id)
-        return True
     except discord.HTTPException:
-        LOG.exception("Não foi possível restaurar controles do ticket %s", canal.id)
-        return False
+        pass
 
 
 # ════════════════════════════════════════════════════════════════
@@ -1427,6 +1400,45 @@ class EscolhaView(discord.ui.View):
         self.add_item(EscolhaSelect(chave))
 
 
+def embed_meus_tickets(guild: discord.Guild, user: discord.abc.User) -> discord.Embed:
+    embed = discord.Embed(
+        title="📂 Meus Tickets",
+        description=f"Histórico de atendimentos de {user.mention}.",
+        color=COR_AZUL,
+    )
+    abertos = [(c, t) for c, t in listar_tickets(guild) if t.get("owner") == user.id]
+    if abertos:
+        linhas = []
+        for canal, t in abertos:
+            cat = CATEGORIAS.get(t.get("cat", ""), {})
+            atendente = f"<@{t['claim']}>" if t.get("claim") else "aguardando atendente"
+            linhas.append(
+                f"{cat.get('emoji', '🎫')} {canal.mention} • "
+                f"`{protocolo_de(canal.created_at, t['num'])}` • {atendente}"
+            )
+        embed.add_field(name="🟢 Em andamento", value="\n".join(linhas), inline=False)
+
+    historico = [h for h in _ler_json(F_HISTORICO, []) if h.get("owner") == user.id]
+    if historico:
+        linhas = []
+        for h in reversed(historico[-5:]):
+            cat = CATEGORIAS.get(h.get("cat", ""), {})
+            dec = {"aprovado": " • ✅ aprovado", "recusado": " • ❌ recusado"}.get(
+                h.get("decisao"), ""
+            )
+            proto = h.get("protocolo") or f"#{h.get('num', 0):04d}"
+            linhas.append(
+                f"{cat.get('emoji', '🎫')} `{proto}` • {cat.get('nome', '—')} • "
+                f"<t:{h.get('fechado_ts', 0)}:d>{dec}"
+            )
+        embed.add_field(name="📁 Encerrados (últimos 5)", value="\n".join(linhas), inline=False)
+
+    if not abertos and not historico:
+        embed.description = "Você ainda não abriu nenhum ticket."
+    embed.set_footer(text=NOME_SERVIDOR)
+    return embed
+
+
 class TicketSelect(discord.ui.Select):
     def __init__(self):
         options = [
@@ -1445,9 +1457,11 @@ class TicketSelect(discord.ui.Select):
         )
 
     async def _resetar(self, interaction: discord.Interaction):
-        # Selects voltam ao placeholder automaticamente após a interação.
-        # Editar a mensagem pública aqui quebrava painéis Componentes V2.
-        return
+        # Reseta o menu para a opção poder ser escolhida de novo
+        try:
+            await interaction.message.edit(view=TicketView())
+        except discord.HTTPException:
+            pass
 
     async def callback(self, interaction: discord.Interaction):
         chave = self.values[0]
@@ -1493,10 +1507,27 @@ class TicketSelect(discord.ui.Select):
         await criar_ticket(interaction, chave, [])
 
 
+class BotaoMeusTickets(discord.ui.Button):
+    def __init__(self):
+        super().__init__(
+            label="Meus Tickets",
+            emoji="📂",
+            style=discord.ButtonStyle.secondary,
+            custom_id="sants_meus_tickets",
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.send_message(
+            embed=embed_meus_tickets(interaction.guild, interaction.user),
+            ephemeral=True,
+        )
+
+
 class TicketView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
         self.add_item(TicketSelect())
+        self.add_item(BotaoMeusTickets())
 
 
 # ════════════════════════════════════════════════════════════════
@@ -1701,8 +1732,6 @@ class TicketControls(discord.ui.View):
                 "❌ Apenas a equipe pode assumir tickets.", ephemeral=True
             )
         t = ler_ticket(interaction.channel)
-        if not t:
-            return await interaction.response.send_message("Ticket não encontrado no registro.", ephemeral=True)
         if t.get("claim"):
             return await interaction.response.send_message(
                 f"⚠️ Este ticket já foi assumido por <@{t['claim']}>.\n"
@@ -1738,8 +1767,6 @@ class TicketControls(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         t = ler_ticket(interaction.channel)
-        if not t:
-            return await interaction.response.send_message("Ticket não encontrado no registro.", ephemeral=True)
         eh_dono = t.get("owner") == interaction.user.id
         if not (eh_dono or eh_staff(interaction.user)):
             return await interaction.response.send_message(
@@ -2686,7 +2713,6 @@ class TicketsCog(commands.Cog):
             description=(
                 f"`{p}painelticket` — cria o painel público\n"
                 f"`{p}painelstaff` — cria o painel da equipe\n"
-                f"`{p}recuperarticket` — restaura os botões do ticket\n"
                 f"`{p}configticket` — verifica a configuração\n"
                 f"`{p}avaliacoes` — ranking de avaliações\n"
                 f"`{p}bloquear @membro [motivo]` — impede de abrir tickets\n"
@@ -2704,21 +2730,6 @@ class TicketsCog(commands.Cog):
     # ── Comandos dentro do ticket ───────────────────────────────
     def _eh_ticket(self, ctx: commands.Context) -> bool:
         return bool(ler_ticket(ctx.channel))
-
-    @commands.command(name="recuperarticket")
-    @apenas_staff()
-    async def recuperarticket(self, ctx: commands.Context):
-        """Restaura os botões do ticket quando o painel sumir."""
-        if not self._eh_ticket(ctx):
-            return await ctx.send("❌ Use dentro de um ticket.", delete_after=8)
-        t = ler_ticket(ctx.channel)
-        # Força um novo painel de botões, sem excluir o cartão antigo.
-        salvar_estado(ctx.channel.id, card_id=None)
-        if await atualizar_card(ctx.channel):
-            await ctx.send("✅ Painel de gerenciamento restaurado. Os botões estão disponíveis novamente.")
-        else:
-            salvar_estado(ctx.channel.id, card_id=t.get("card_id"))
-            await ctx.send("❌ Não foi possível restaurar. Consulte os logs do Railway.")
 
     @commands.command(name="fechar")
     @apenas_staff()
@@ -2835,4 +2846,3 @@ class TicketsCog(commands.Cog):
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(TicketsCog(bot))
-    
