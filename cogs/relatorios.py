@@ -6,6 +6,7 @@ import logging
 import os
 import re
 from collections import Counter
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -73,53 +74,57 @@ def component_text(items):
     return result
 
 
-def report_message(report, start, end, *, ping=False, preview=False):
-    """Resumo legível no chat; evidências completas permanecem no anexo."""
-    groups = {'updates': [], 'deploys': [], 'errors': [], 'web': [], 'next': []}
-    context = ''
+def report_message(report, start, end, *, ping=False, preview=False, role_id=None):
+    groups = {'updates': [], 'deploys': [], 'errors': [], 'next': []}
     for line in report.splitlines():
-        if line.startswith('## GitHub —') or line.startswith('## Railway —'):
-            context = line.removeprefix('## ')
-        elif line.startswith('## '):
-            context = ''
-        if line.startswith('Áreas alteradas') or re.match(r'^\d+ commits', line):
-            groups['updates'].append((context + ': ' if context else '') + line)
-        elif line.startswith(('GitHub Actions', 'Deploys criados', 'Último deploy')):
-            groups['deploys'].append((context + ': ' if context else '') + line)
-        elif line.startswith('Teste HTTP'):
-            groups['web'].append(line)
+        if re.match(r'^\d+ commits', line):
+            groups['updates'].append(line)
+        elif line.startswith('Áreas alteradas'):
+            groups['updates'].extend(re.findall(r"'([^']+)':", line))
+        elif line.startswith(('GitHub Actions', 'Deploys criados')):
+            if re.search(r'\b[1-9]\d* (com falha|interrompidos por falha|tempo esgotado|exigem ação)', line):
+                groups['errors'].append('Há falhas nas verificações ou nos deploys; confira o anexo.')
+            groups['deploys'].append(line.replace('GitHub Actions (CI, não comprova deploy Railway)', 'CI').replace('Deploys criados no período, com status atual', 'Railway'))
         elif line.startswith('- P'):
             groups['next'].append(line[2:])
-        elif any(word in line.lower() for word in ('indisponível', 'indisponíveis', 'não configurad', 'não foram verificados', 'linhas suspeitas', 'cobertura parcial', 'coleta parcial')):
-            groups['errors'].append((context + ': ' if context else '') + line)
-    def excerpt(key, fallback, limit=470):
-        text = ' • '.join(groups[key]) or fallback
-        text = clean(text).replace('\n', ' ')
+        elif any(word in line.lower() for word in ('indisponível', 'indisponíveis', 'não configurad', 'linhas suspeitas', 'cobertura parcial')):
+            groups['errors'].append(line.strip())
+    def short(key, fallback, limit=180):
+        text = clean(' • '.join(dict.fromkeys(groups[key])) or fallback).replace('\n', ' ')
         return text if len(text) <= limit else text[:limit-1] + '…'
-    prefix = '@everyone\n' if ping else ''
-    title = 'PRÉVIA DO RELATÓRIO' if preview else 'RELATÓRIO DIÁRIO'
-    return (
-        prefix + f"## 📊 {title} | FAMÍLIA SANT’S\n"
-        + f"> `🗓️` **Período:** {start.astimezone(TZ):%d/%m %H:%M} até {end.astimezone(TZ):%d/%m %H:%M} • Brasília\n\n"
-        + "Alta Gestão, este é o acompanhamento do nosso bot e do painel web, com os registros disponíveis e as próximas prioridades.\n\n"
-        + "> `🛠️` **FUNCIONALIDADES E ATUALIZAÇÕES**\n> "
-        + excerpt('updates', 'Alterações não confirmadas nas fontes consultadas. Confira a cobertura no anexo.') + '\n\n'
-        + "> `🚀` **DEPLOYS E VERIFICAÇÕES**\n> "
-        + excerpt('deploys', 'Não há resultados confirmados para exibir. Consulte as fontes e limitações no anexo.') + '\n\n'
-        + "> `⚠️` **ERROS E PONTOS DE ATENÇÃO**\n> "
-        + excerpt('errors', 'Nenhum alerta destacado na coleta. Isso não garante ausência de falhas.') + '\n\n'
-        + "> `🌐` **PAINEL WEB**\n> "
-        + excerpt('web', 'Sem resultado confirmado do teste HTTP nesta coleta.', 250) + '\n\n'
-        + "> `🎯` **PRIORIDADES E SUGESTÕES**\n> "
-        + excerpt('next', 'Revisar o relatório completo e validar as funcionalidades alteradas.', 500) + '\n\n'
-        + "> `📎` **RELATÓRIO COMPLETO**\n> O arquivo anexado reúne commits, status, registros e links para investigação. Aprovação no GitHub Actions não comprova sucesso no Railway.\n\n"
-        + '-# Família Sant’s • Acompanhamento técnico • Sugestões para avaliação da gestão.'
-    )
+    mention = f'<@&{role_id}>\n' if ping and role_id else ''
+    title = 'PRÉVIA TÉCNICA' if preview else 'RELATÓRIO TÉCNICO'
+    return (mention + f"## {title}\n"
+        + f"-# {start.astimezone(TZ):%d/%m %H:%M} → {end.astimezone(TZ):%d/%m %H:%M} • Brasília\n\n"
+        + "> `🛠️` **Atualizações**\n> " + short('updates', 'Sem alterações confirmadas na coleta.') + '\n\n'
+        + "> `🚀` **Deploys e verificações**\n> " + short('deploys', 'Sem resultados disponíveis.') + '\n\n'
+        + "> `⚠️` **Atenção**\n> " + short('errors', 'Nenhum alerta destacado; detalhes no anexo.') + '\n\n'
+        + "> `🎯` **Próximo passo**\n> " + short('next', 'Validar as funcionalidades atualizadas.', 150) + '\n\n'
+        + '-# 📎 Detalhes e fontes no anexo. CI e deploy são verificações diferentes.')
+
+
+def report_media(text, filename, *, prefix='RELATORIO'):
+    view = discord.ui.LayoutView(timeout=None)
+    files = []
+    banner_url = os.getenv(prefix + '_BANNER_URL', '').strip()
+    banner = Path(__file__).resolve().parent.parent / 'assets' / 'relatorios-cuphead.png'
+    if banner_url.startswith('https://'):
+        view.add_item(discord.ui.MediaGallery(discord.MediaGalleryItem(media=banner_url)))
+    elif banner.is_file():
+        files.append(discord.File(banner, filename='banner-relatorios.png'))
+        view.add_item(discord.ui.MediaGallery(discord.MediaGalleryItem(media='attachment://banner-relatorios.png')))
+    view.add_item(discord.ui.TextDisplay(text))
+    view.add_item(discord.ui.File('attachment://' + filename))
+    return view, files
 
 
 class Relatorios(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot, *, prefix='RELATORIO', default_channel='1561964628207210516', builder=None, formatter=None):
         self.bot = bot
+        self.prefix = prefix
+        self.default_channel = default_channel
+        self.builder = builder or self.build
+        self.formatter = formatter or report_message
         self.lock = asyncio.Lock()
         self.ready_db = False
 
@@ -139,11 +144,13 @@ class Relatorios(commands.Cog):
         return pool
 
     async def destination(self):
-        cid = int(os.getenv('RELATORIO_CANAL_ID', '1553834996488339547'))
+        cid = int(os.getenv(self.prefix + '_CANAL_ID', self.default_channel))
         gid = int(os.getenv('GUILD_ID', '0'))
+        if not cid:
+            raise ValueError('Configure ' + self.prefix + '_CANAL_ID antes de enviar o relatório.')
         channel = self.bot.get_channel(cid) or await self.bot.fetch_channel(cid)
         if not isinstance(channel, discord.TextChannel) or channel.guild.id != gid:
-            raise ValueError('RELATORIO_CANAL_ID deve ser um canal de texto do GUILD_ID.')
+            raise ValueError(self.prefix + '_CANAL_ID deve ser um canal de texto do GUILD_ID.')
         perms = channel.permissions_for(channel.guild.me)
         if not all((perms.view_channel, perms.send_messages, perms.attach_files, perms.read_message_history)):
             raise ValueError('Faltam permissões: Ver canal, Enviar mensagens, Anexar arquivos ou Ler histórico.')
@@ -367,7 +374,7 @@ class Relatorios(commands.Cog):
 
     async def preview(self, channel, end=None):
         end = end or datetime.now(UTC)
-        return await self.build(end - timedelta(days=1), end, channel)
+        return await self.builder(end - timedelta(days=1), end, channel)
 
     async def publish(self, channel, start, end):
         pool = await self.database()
@@ -381,23 +388,23 @@ class Relatorios(commands.Cog):
                 row = await con.fetchrow('SELECT * FROM sants_relatorio_envios WHERE canal_id=$1 AND dia=$2', channel.id, day)
                 if row and row['estado'] in ('enviado', 'incerto'):
                     return
-                report = row['conteudo'] if row else await self.build(start, end, channel)
+                report = row['conteudo'] if row else await self.builder(start, end, channel)
                 if not row:
                     await con.execute("INSERT INTO sants_relatorio_envios VALUES($1,$2,'preparado',$3,NULL)", channel.id, day, report)
-                # Marcar antes da chamada externa: falhas ambíguas não causam novo @everyone.
+                # Marcar antes da chamada externa: falhas ambíguas não causam nova marcação do cargo.
                 await con.execute("UPDATE sants_relatorio_envios SET estado='incerto' WHERE canal_id=$1 AND dia=$2", channel.id, day)
-                can_ping = channel.permissions_for(channel.guild.me).mention_everyone
-                note = '' if can_ping else '\nO bot não tem permissão para marcar @everyone.'
+                role_id = int(os.getenv(self.prefix + '_CARGO_ID', '1560385636819796059'))
+                role = channel.guild.get_role(role_id)
+                can_ping = bool(role and not role.is_default() and (role.mentionable or channel.permissions_for(channel.guild.me).mention_everyone))
+                note = '' if can_ping else '\n-# Cargo não encontrado ou sem permissão para mencioná-lo.'
                 digest = hashlib.sha256(report.encode()).hexdigest()[:10]
-                view = discord.ui.LayoutView()
-                view.add_item(discord.ui.TextDisplay(
-                    report_message(report, start, end, ping=can_ping)
-                    + note + f'\n-# Registro {day}/{digest}'))
-                view.add_item(discord.ui.File(f'attachment://relatorio-sants-{day}.txt'))
+                filename = f'{self.prefix.lower()}-sants-{day}.txt'
+                view, files = report_media(self.formatter(report, start, end, ping=can_ping, role_id=role_id)
+                    + note + f'\n-# Registro {day}/{digest}', filename, prefix=self.prefix)
+                files.append(discord.File(io.BytesIO(report.encode('utf-8')), filename=filename))
                 try:
-                    message = await channel.send(view=view,
-                        file=discord.File(io.BytesIO(report.encode('utf-8')), filename=f'relatorio-sants-{day}.txt'),
-                        allowed_mentions=discord.AllowedMentions(everyone=can_ping, users=False, roles=False, replied_user=False))
+                    message = await channel.send(view=view, files=files,
+                        allowed_mentions=discord.AllowedMentions(everyone=False, users=False, roles=[role] if can_ping else [], replied_user=False))
                 except (discord.Forbidden, discord.NotFound):
                     # Rejeição conhecida: nenhuma mensagem criada, permite nova tentativa após corrigir permissões.
                     await con.execute("UPDATE sants_relatorio_envios SET estado='preparado' WHERE canal_id=$1 AND dia=$2", channel.id, day)
@@ -442,12 +449,10 @@ class Relatorios(commands.Cog):
                 end = datetime.now(UTC)
                 await ctx.send('> `📊` **Preparando o relatório...** Consultando as fontes configuradas.', allowed_mentions=discord.AllowedMentions.none())
                 report = await self.preview(channel, end=end)
-                view = discord.ui.LayoutView()
-                view.add_item(discord.ui.TextDisplay(report_message(report, end - timedelta(days=1), end, preview=True)))
-                view.add_item(discord.ui.File('attachment://previa-relatorio-sants.txt'))
-                await channel.send(view=view,
-                    file=discord.File(io.BytesIO(report.encode()), filename='previa-relatorio-sants.txt'),
-                    allowed_mentions=discord.AllowedMentions.none())
+                filename = 'previa-relatorio-sants.txt'
+                view, files = report_media(self.formatter(report, end - timedelta(days=1), end, preview=True), filename, prefix=self.prefix)
+                files.append(discord.File(io.BytesIO(report.encode()), filename=filename))
+                await channel.send(view=view, files=files, allowed_mentions=discord.AllowedMentions.none())
         except (ValueError, discord.Forbidden, discord.NotFound) as exc:
             await ctx.send('> `⚠️` **Não foi possível preparar o relatório.**\n> ' + clean(str(exc))[:1000], allowed_mentions=discord.AllowedMentions.none())
         except Exception:
