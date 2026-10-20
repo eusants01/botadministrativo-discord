@@ -1,15 +1,16 @@
 """Atividade administrativa por membro atual da staff; fontes de leitura."""
 import asyncio
-import io
+import json
 import logging
 import os
-from collections import Counter
+from collections import Counter, defaultdict, deque
 from datetime import datetime, timedelta
 
 import discord
 from discord.ext import commands, tasks
 
-from cogs.relatorios import Relatorios, TZ, UTC, clean, window, report_media
+from utils.relatorios_ui import save_snapshot, public_panel, register, staff_data
+from cogs.relatorios import Relatorios, TZ, UTC, clean, window
 
 LOG = logging.getLogger('sants.relatorios_admin')
 LABELS = {
@@ -28,19 +29,24 @@ def admin_message(report, start, end, *, ping=False, preview=False, role_id=None
     rows = report.splitlines()
     summary = next((r[7:] for r in rows if r.startswith('RESUMO:')), 'Coleta incompleta.')
     alerts = [r[7:] for r in rows if r.startswith('ALERTA:')]
-    staff = [r[6:] for r in rows if r.startswith('STAFF:')]
-    # O anexo mantém todos os membros; no chat, apenas os principais números.
-    glance = '\n'.join('> ' + s[:180] for s in staff[:5]) or '> Sem membros confirmados na coleta.'
-    if len(staff) > 5:
-        glance += f'\n> +{len(staff)-5} membros no relatório completo.'
-    attention = clean(' • '.join(alerts) or 'Revise as ações e os registros completos no anexo.')[:240]
+    data = staff_data(report)
+    members = data.get('members', [])
+    coverage = data.get('coverage', {})
+    if members:
+        def total(key, source):
+            value = sum(m[key] for m in members)
+            status = coverage.get(source, 'completa')
+            return str(value) if status == 'completa' else (f'{value}+ (parcial)' if value else 'não confirmado')
+        observed = sum(bool(m['panel'] or m['audit'] or m['messages']) for m in members)
+        summary = (f"{len(members)} no cargo • {observed} com registros • {len(members)-observed} sem registros na cobertura\n"
+                   f"Painel: {total('panel', 'painel')} • Auditoria: {total('audit', 'auditoria')} • Mensagens: {total('messages', 'mensagens')}")
+    attention = clean(' • '.join(alerts) or 'Consulte a ficha de cada membro pelos botões abaixo.')[:240]
     return ((f'<@&{role_id}>\n' if ping and role_id else '')
         + ('## PRÉVIA ADMINISTRATIVA\n' if preview else '## RELATÓRIO ADMINISTRATIVO\n')
         + f'-# {start.astimezone(TZ):%d/%m %H:%M} → {end.astimezone(TZ):%d/%m %H:%M} • Brasília\n\n'
         + '> `🛡️` **Visão geral**\n> ' + clean(summary)[:240] + '\n\n'
-        + '> `👥` **Atividade da staff**\n' + glance + '\n\n'
         + '> `⚠️` **Atenção**\n> ' + attention + '\n\n'
-        + '-# 📎 Ações individuais e cobertura no anexo. Mensagens não medem desempenho.')
+        + '-# Consulte todos os membros e suas ações nos botões. Mensagens não medem desempenho.')
 
 
 def activity_channels(guild, destination_id):
@@ -71,6 +77,7 @@ class RelatoriosAdmin(commands.Cog):
                                  builder=self.build, formatter=admin_message)
 
     async def cog_load(self):
+        register(self.bot)
         self.tick.start()
 
     def cog_unload(self):
@@ -94,13 +101,19 @@ class RelatoriosAdmin(commands.Cog):
         messages = Counter()
         last = {}
         details = {uid: [] for uid in staff}
+        recent_messages = defaultdict(lambda: deque(maxlen=5))
         alerts = []
+        coverage = {'painel': 'completa', 'auditoria': 'completa', 'mensagens': 'completa'}
+        action_types = {uid: Counter() for uid in staff}
         def remember(uid, ts, detail):
             if uid not in staff:
                 return
             if uid not in last or ts > last[uid]:
                 last[uid] = ts
-            details[uid].append(detail)
+            if detail.startswith('Mensagem |'):
+                recent_messages[uid].append(detail)
+            else:
+                details[uid].append(detail)
         if not staff:
             alerts.append('Nenhum membro humano encontrado no cargo selecionado.')
         pool = getattr(self.bot, 'pool', None)
@@ -110,16 +123,20 @@ class RelatoriosAdmin(commands.Cog):
                     WHERE ts >= $1 AND ts < $2 AND ator_id = ANY($3::bigint[])
                     ORDER BY ts LIMIT 5001''', start, end, list(staff))
                 if len(records) > 5000:
+                    coverage['painel'] = 'parcial'
                     alerts.append('Painel: limite de 5.000 registros; cobertura parcial.')
                 for row in records[:5000]:
                     uid = row['ator_id']
                     panel[uid] += 1
                     label = LABELS.get(row['acao'], row['acao'])
+                    action_types[uid]['Painel: ' + label] += 1
                     remember(uid, row['ts'], f"Painel | {row['ts'].astimezone(TZ):%d/%m %H:%M} | {label} | alvo {row['alvo_id'] or 'não informado'}")
             except Exception:
                 LOG.warning('Leitura de auditoria do painel indisponível.', exc_info=True)
-                alerts.append('Auditoria do painel indisponível; não interpretar como zero ações.')
+                coverage['painel'] = 'parcial' if sum(panel.values()) else 'indisponível'
+                alerts.append('Auditoria do painel ' + coverage['painel'] + '; não interpretar contagens como totais confirmados.')
         elif not pool:
+            coverage['painel'] = 'indisponível'
             alerts.append('Banco indisponível: auditoria do painel não consultada.')
         if guild.me.guild_permissions.view_audit_log:
             try:
@@ -127,6 +144,7 @@ class RelatoriosAdmin(commands.Cog):
                 async for entry in guild.audit_logs(limit=5001, after=start, before=end, oldest_first=True):
                     count += 1
                     if count > 5000:
+                        coverage['auditoria'] = 'parcial'
                         alerts.append('Discord: limite de 5.000 entradas; cobertura parcial.')
                         break
                     uid = entry.user_id
@@ -134,19 +152,24 @@ class RelatoriosAdmin(commands.Cog):
                     if uid not in staff:
                         continue
                     audits[uid] += 1
-                    name = entry.action.name
+                    name = getattr(entry.action, 'name', str(entry.action))
                     label = LABELS.get(name, name.replace('_', ' '))
+                    action_types[uid]['Discord: ' + label] += 1
                     target = getattr(entry.target, 'id', None)
                     remember(uid, entry.created_at, f'Discord | {entry.created_at.astimezone(TZ):%d/%m %H:%M} | {label} | alvo {target or "não informado"}')
             except Exception:
                 LOG.warning('Leitura do registro de auditoria Discord indisponível.', exc_info=True)
-                alerts.append('Auditoria do Discord indisponível; não interpretar como zero ações.')
+                coverage['auditoria'] = 'parcial' if sum(audits.values()) else 'indisponível'
+                alerts.append('Auditoria do Discord ' + coverage['auditoria'] + '; os valores exibidos são somente os registros coletados.')
         else:
+            coverage['auditoria'] = 'indisponível'
             alerts.append('Falta a permissão Ver registro de auditoria no Discord.')
         selected, unavailable = activity_channels(guild, channel.id)
         if unavailable:
+            coverage['mensagens'] = 'parcial'
             alerts.append(f'{unavailable} canais de texto sem acesso/histórico; atividade parcial.')
         if not selected:
+            coverage['mensagens'] = 'não coletada'
             alerts.append('Nenhum canal de atividade disponível ou selecionado; mensagens não contabilizadas.')
         lines.append(f'Canais de texto selecionados para atividade: {len(selected)}. Canais dos relatórios excluídos.')
         for raw in selected:
@@ -158,6 +181,7 @@ class RelatoriosAdmin(commands.Cog):
                 async for msg in source.history(limit=5001, after=start, before=end, oldest_first=True):
                     count += 1
                     if count > 5000:
+                        coverage['mensagens'] = 'parcial'
                         alerts.append(f'#{source.name}: limite de 5.000 mensagens; cobertura parcial.')
                         break
                     uid = msg.author.id
@@ -166,7 +190,10 @@ class RelatoriosAdmin(commands.Cog):
                         # Só horário e canal, sem copiar o conteúdo das conversas.
                         remember(uid, msg.created_at, f'Mensagem | {msg.created_at.astimezone(TZ):%d/%m %H:%M} | #{source.name} | {msg.jump_url}')
             except Exception:
+                coverage['mensagens'] = 'parcial'
                 alerts.append(f'Canal de atividade {raw} não pôde ser consultado.')
+        for uid in staff:
+            details[uid].extend(recent_messages[uid])
         observed = sum(1 for uid in staff if panel[uid] or audits[uid] or messages[uid])
         lines.append(f'RESUMO:{len(staff)} membros • {observed} com registros • {sum(panel.values())} registros no painel • {sum(audits.values())} entradas Discord • {sum(messages.values())} mensagens.')
         for member in sorted(staff.values(), key=lambda m: m.display_name.casefold()):
@@ -183,8 +210,16 @@ class RelatoriosAdmin(commands.Cog):
             'Auditoria Discord conta entradas, não vítimas afetadas nem volume exato de ações.',
             'Ações de outros bots não são atribuídas ao staff sem um registro com autoria humana.',
             'Conversas excluídas, canais apagados, threads, mensagens privadas, voz e canais sem acesso/não selecionados não entram na coleta.',
-            'Nenhum conteúdo de conversa é incluído. Atividade de mensagens e moderação são métricas distintas.',
+            'Nenhum conteúdo de conversa é incluído. Contagens abrangem o período coletado; links mostram até as cinco mensagens mais recentes de cada membro. Atividade de mensagens e moderação são métricas distintas.',
             'Ausência de registros não comprova inatividade. Fontes podem ser parciais ou indisponíveis.'])
+        payload = {'members': [], 'alerts': alerts, 'coverage': coverage}
+        for member in sorted(staff.values(), key=lambda m: m.display_name.casefold()):
+            uid = member.id
+            payload['members'].append({'id': uid, 'name': clean(member.display_name),
+                'panel': panel[uid], 'audit': audits[uid], 'messages': messages[uid],
+                'last': last[uid].isoformat() if uid in last else None,
+                'action_types': dict(action_types[uid]), 'details': details[uid], 'coverage': coverage})
+        lines.append('DADOS_STAFF:' + json.dumps(payload, ensure_ascii=False))
         return clean('\n'.join(lines))
 
     @tasks.loop(minutes=1)
@@ -227,9 +262,9 @@ class RelatoriosAdmin(commands.Cog):
                 end = datetime.now(UTC)
                 start = end - timedelta(days=1)
                 report = await self.build(start, end, channel)
-                filename = 'previa-administrativa.txt'
-                view, files = report_media(admin_message(report, start, end, preview=True), filename, prefix='RELATORIO_ADMIN')
-                files.append(discord.File(io.BytesIO(report.encode()), filename=filename))
+                summary = admin_message(report, start, end, preview=True)
+                sid, data = await save_snapshot(self.bot, channel, report, summary, start, end, 'RELATORIO_ADMIN')
+                view, files = public_panel(data, sid)
                 await channel.send(view=view, files=files, allowed_mentions=discord.AllowedMentions.none())
         except ValueError as exc:
             await ctx.send('> `⚠️` ' + clean(str(exc)), allowed_mentions=discord.AllowedMentions.none())

@@ -1,18 +1,16 @@
 """Relatório diário somente leitura. Carregado automaticamente pelo main.py."""
 import asyncio
-import hashlib
-import io
 import logging
 import os
 import re
 from collections import Counter
-from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import aiohttp
 import discord
 from discord.ext import commands, tasks
+from utils.relatorios_ui import save_snapshot, public_panel, register
 
 LOG = logging.getLogger('sants.relatorios')
 TZ = ZoneInfo('America/Sao_Paulo')
@@ -98,24 +96,10 @@ def report_message(report, start, end, *, ping=False, preview=False, role_id=Non
         + f"-# {start.astimezone(TZ):%d/%m %H:%M} → {end.astimezone(TZ):%d/%m %H:%M} • Brasília\n\n"
         + "> `🛠️` **Atualizações**\n> " + short('updates', 'Sem alterações confirmadas na coleta.') + '\n\n'
         + "> `🚀` **Deploys e verificações**\n> " + short('deploys', 'Sem resultados disponíveis.') + '\n\n'
-        + "> `⚠️` **Atenção**\n> " + short('errors', 'Nenhum alerta destacado; detalhes no anexo.') + '\n\n'
+        + "> `⚠️` **Atenção**\n> " + short('errors', 'Nenhum alerta destacado; detalhes nos botões.') + '\n\n'
         + "> `🎯` **Próximo passo**\n> " + short('next', 'Validar as funcionalidades atualizadas.', 150) + '\n\n'
-        + '-# 📎 Detalhes e fontes no anexo. CI e deploy são verificações diferentes.')
+        + '-# Use os botões para consultar detalhes. CI e deploy são verificações diferentes.')
 
-
-def report_media(text, filename, *, prefix='RELATORIO'):
-    view = discord.ui.LayoutView(timeout=None)
-    files = []
-    banner_url = os.getenv(prefix + '_BANNER_URL', '').strip()
-    banner = Path(__file__).resolve().parent.parent / 'assets' / 'relatorios-cuphead.png'
-    if banner_url.startswith('https://'):
-        view.add_item(discord.ui.MediaGallery(discord.MediaGalleryItem(media=banner_url)))
-    elif banner.is_file():
-        files.append(discord.File(banner, filename='banner-relatorios.png'))
-        view.add_item(discord.ui.MediaGallery(discord.MediaGalleryItem(media='attachment://banner-relatorios.png')))
-    view.add_item(discord.ui.TextDisplay(text))
-    view.add_item(discord.ui.File('attachment://' + filename))
-    return view, files
 
 
 class Relatorios(commands.Cog):
@@ -129,6 +113,7 @@ class Relatorios(commands.Cog):
         self.ready_db = False
 
     async def cog_load(self):
+        register(self.bot)
         self.tick.start()
 
     def cog_unload(self):
@@ -391,17 +376,15 @@ class Relatorios(commands.Cog):
                 report = row['conteudo'] if row else await self.builder(start, end, channel)
                 if not row:
                     await con.execute("INSERT INTO sants_relatorio_envios VALUES($1,$2,'preparado',$3,NULL)", channel.id, day, report)
-                # Marcar antes da chamada externa: falhas ambíguas não causam nova marcação do cargo.
-                await con.execute("UPDATE sants_relatorio_envios SET estado='incerto' WHERE canal_id=$1 AND dia=$2", channel.id, day)
                 role_id = int(os.getenv(self.prefix + '_CARGO_ID', '1560385636819796059'))
                 role = channel.guild.get_role(role_id)
                 can_ping = bool(role and not role.is_default() and (role.mentionable or channel.permissions_for(channel.guild.me).mention_everyone))
                 note = '' if can_ping else '\n-# Cargo não encontrado ou sem permissão para mencioná-lo.'
-                digest = hashlib.sha256(report.encode()).hexdigest()[:10]
-                filename = f'{self.prefix.lower()}-sants-{day}.txt'
-                view, files = report_media(self.formatter(report, start, end, ping=can_ping, role_id=role_id)
-                    + note + f'\n-# Registro {day}/{digest}', filename, prefix=self.prefix)
-                files.append(discord.File(io.BytesIO(report.encode('utf-8')), filename=filename))
+                summary = self.formatter(report, start, end, ping=can_ping, role_id=role_id) + note
+                sid, data = await save_snapshot(self.bot, channel, report, summary, start, end, self.prefix)
+                view, files = public_panel(data, sid)
+                # A partir daqui, uma falha ambígua não pode causar nova marcação automática.
+                await con.execute("UPDATE sants_relatorio_envios SET estado='incerto' WHERE canal_id=$1 AND dia=$2", channel.id, day)
                 try:
                     message = await channel.send(view=view, files=files,
                         allowed_mentions=discord.AllowedMentions(everyone=False, users=False, roles=[role] if can_ping else [], replied_user=False))
@@ -449,9 +432,10 @@ class Relatorios(commands.Cog):
                 end = datetime.now(UTC)
                 await ctx.send('> `📊` **Preparando o relatório...** Consultando as fontes configuradas.', allowed_mentions=discord.AllowedMentions.none())
                 report = await self.preview(channel, end=end)
-                filename = 'previa-relatorio-sants.txt'
-                view, files = report_media(self.formatter(report, end - timedelta(days=1), end, preview=True), filename, prefix=self.prefix)
-                files.append(discord.File(io.BytesIO(report.encode()), filename=filename))
+                start = end - timedelta(days=1)
+                summary = self.formatter(report, start, end, preview=True)
+                sid, data = await save_snapshot(self.bot, channel, report, summary, start, end, self.prefix)
+                view, files = public_panel(data, sid)
                 await channel.send(view=view, files=files, allowed_mentions=discord.AllowedMentions.none())
         except (ValueError, discord.Forbidden, discord.NotFound) as exc:
             await ctx.send('> `⚠️` **Não foi possível preparar o relatório.**\n> ' + clean(str(exc))[:1000], allowed_mentions=discord.AllowedMentions.none())
