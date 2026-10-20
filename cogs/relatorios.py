@@ -35,6 +35,22 @@ def clean(value):
     return value.replace('@', '@\u200b').replace('```', "'''")
 
 
+STATUS_LABELS = {
+    'success': 'bem-sucedidos', 'SUCCESS': 'bem-sucedidos',
+    'failure': 'com falha', 'FAILED': 'com falha', 'CRASHED': 'interrompidos por falha',
+    'timed_out': 'tempo esgotado', 'cancelled': 'cancelados',
+    'in_progress': 'em execução', 'BUILDING': 'em construção',
+    'DEPLOYING': 'em publicação', 'queued': 'na fila', 'QUEUED': 'na fila',
+    'waiting': 'aguardando', 'WAITING': 'aguardando aprovação',
+    'REMOVED': 'removidos', 'SKIPPED': 'ignorados', 'skipped': 'ignorados',
+    'SLEEPING': 'em repouso', 'action_required': 'exigem ação',
+}
+
+
+def format_counts(counts):
+    return ' • '.join(f"{count} {STATUS_LABELS.get(state, state)}" for state, count in counts.items()) or 'nenhum deploy criado no período.'
+
+
 def stamp(value):
     return datetime.fromisoformat(value.replace('Z', '+00:00')).astimezone(UTC)
 
@@ -175,7 +191,7 @@ class Relatorios(commands.Cog):
                     'since': start.isoformat(), 'until': end.isoformat(), 'sha': branch})
                 lines.append(f'{len(commits)} commits na branch {branch}.' + (' Coleta limitada a 1.000; resultado parcial.' if partial else ''))
                 for item in commits:
-                    msg = item['commit']['message'].splitlines()[0]
+                    msg = (item['commit'].get('message') or 'Sem descrição').splitlines()[0]
                     lines.append(f"- {item['sha'][:7]}: {msg}\n  {item['html_url']}")
                 areas = Counter()
                 for item in commits[:30]:
@@ -202,7 +218,7 @@ class Relatorios(commands.Cog):
                 runs, partial = await self.github_list(session, repo, 'actions/runs', {
                     'created': start.isoformat() + '..' + end.isoformat(), 'branch': branch}, 'workflow_runs')
                 counts = Counter(r.get('conclusion') or r['status'] for r in runs)
-                lines.append('GitHub Actions (CI, não comprova deploy Railway): ' + (str(dict(counts)) if counts else 'sem execuções no período.'))
+                lines.append('GitHub Actions (CI, não comprova deploy Railway): ' + (format_counts(counts) if counts else 'sem execuções no período.'))
                 if partial:
                     lines.append('Actions: coleta parcial, limite de 1.000 execuções.')
                 for run in runs:
@@ -251,7 +267,7 @@ class Relatorios(commands.Cog):
                     lines.append('Histórico limitado a 1.000 deploys; contagem pode ser parcial.')
                 deployments.sort(key=lambda d: stamp(d['createdAt']), reverse=True)
                 recent = [d for d in deployments if start <= stamp(d['createdAt']) < end]
-                lines.append('Deploys criados no período, com status atual: ' + str(dict(Counter(d['status'] for d in recent))))
+                lines.append('Deploys criados no período, com status atual: ' + format_counts(Counter(d['status'] for d in recent)))
                 lines.append('Status atual consultado agora; não é uma linha do tempo de transições.')
                 if deployments:
                     latest = deployments[0]
@@ -349,8 +365,8 @@ class Relatorios(commands.Cog):
                       '- Ausência de alertas nas fontes consultadas não comprova ausência de falhas.'])
         return clean('\n'.join(lines))
 
-    async def preview(self, channel):
-        end = datetime.now(UTC)
+    async def preview(self, channel, end=None):
+        end = end or datetime.now(UTC)
         return await self.build(end - timedelta(days=1), end, channel)
 
     async def publish(self, channel, start, end):
@@ -412,7 +428,6 @@ class Relatorios(commands.Cog):
     @commands.command(name='relatorio_teste')
     @commands.guild_only()
     @commands.has_guild_permissions(administrator=True)
-    @commands.cooldown(1, 300, commands.BucketType.guild)
     async def relatorio_teste(self, ctx):
         """Prévia no canal configurado, sem @everyone e sem consumir o relatório diário."""
         try:
@@ -420,15 +435,21 @@ class Relatorios(commands.Cog):
             if ctx.channel.id != channel.id:
                 await ctx.send('Execute este comando no canal configurado em RELATORIO_CANAL_ID.', allowed_mentions=discord.AllowedMentions.none())
                 return
+            if self.lock.locked():
+                await ctx.send('> `⏳` **Já existe um relatório em preparação.** Você pode testar novamente assim que ele terminar.', allowed_mentions=discord.AllowedMentions.none())
+                return
             async with self.lock:
-                report = await self.preview(channel)
                 end = datetime.now(UTC)
+                await ctx.send('> `📊` **Preparando o relatório...** Consultando as fontes configuradas.', allowed_mentions=discord.AllowedMentions.none())
+                report = await self.preview(channel, end=end)
                 view = discord.ui.LayoutView()
                 view.add_item(discord.ui.TextDisplay(report_message(report, end - timedelta(days=1), end, preview=True)))
                 view.add_item(discord.ui.File('attachment://previa-relatorio-sants.txt'))
                 await channel.send(view=view,
                     file=discord.File(io.BytesIO(report.encode()), filename='previa-relatorio-sants.txt'),
                     allowed_mentions=discord.AllowedMentions.none())
+        except (ValueError, discord.Forbidden, discord.NotFound) as exc:
+            await ctx.send('> `⚠️` **Não foi possível preparar o relatório.**\n> ' + clean(str(exc))[:1000], allowed_mentions=discord.AllowedMentions.none())
         except Exception:
             LOG.exception('Falha ao gerar prévia do relatório.')
             await ctx.send('Não foi possível gerar a prévia. Confira os logs e a configuração.', allowed_mentions=discord.AllowedMentions.none())
