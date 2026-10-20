@@ -57,6 +57,50 @@ def component_text(items):
     return result
 
 
+def report_message(report, start, end, *, ping=False, preview=False):
+    """Resumo legível no chat; evidências completas permanecem no anexo."""
+    groups = {'updates': [], 'deploys': [], 'errors': [], 'web': [], 'next': []}
+    context = ''
+    for line in report.splitlines():
+        if line.startswith('## GitHub —') or line.startswith('## Railway —'):
+            context = line.removeprefix('## ')
+        elif line.startswith('## '):
+            context = ''
+        if line.startswith('Áreas alteradas') or re.match(r'^\d+ commits', line):
+            groups['updates'].append((context + ': ' if context else '') + line)
+        elif line.startswith(('GitHub Actions', 'Deploys criados', 'Último deploy')):
+            groups['deploys'].append((context + ': ' if context else '') + line)
+        elif line.startswith('Teste HTTP'):
+            groups['web'].append(line)
+        elif line.startswith('- P'):
+            groups['next'].append(line[2:])
+        elif any(word in line.lower() for word in ('indisponível', 'indisponíveis', 'não configurad', 'não foram verificados', 'linhas suspeitas', 'cobertura parcial', 'coleta parcial')):
+            groups['errors'].append((context + ': ' if context else '') + line)
+    def excerpt(key, fallback, limit=470):
+        text = ' • '.join(groups[key]) or fallback
+        text = clean(text).replace('\n', ' ')
+        return text if len(text) <= limit else text[:limit-1] + '…'
+    prefix = '@everyone\n' if ping else ''
+    title = 'PRÉVIA DO RELATÓRIO' if preview else 'RELATÓRIO DIÁRIO'
+    return (
+        prefix + f"## 📊 {title} | FAMÍLIA SANT’S\n"
+        + f"> `🗓️` **Período:** {start.astimezone(TZ):%d/%m %H:%M} até {end.astimezone(TZ):%d/%m %H:%M} • Brasília\n\n"
+        + "Alta Gestão, este é o acompanhamento do nosso bot e do painel web, com os registros disponíveis e as próximas prioridades.\n\n"
+        + "> `🛠️` **FUNCIONALIDADES E ATUALIZAÇÕES**\n> "
+        + excerpt('updates', 'Alterações não confirmadas nas fontes consultadas. Confira a cobertura no anexo.') + '\n\n'
+        + "> `🚀` **DEPLOYS E VERIFICAÇÕES**\n> "
+        + excerpt('deploys', 'Não há resultados confirmados para exibir. Consulte as fontes e limitações no anexo.') + '\n\n'
+        + "> `⚠️` **ERROS E PONTOS DE ATENÇÃO**\n> "
+        + excerpt('errors', 'Nenhum alerta destacado na coleta. Isso não garante ausência de falhas.') + '\n\n'
+        + "> `🌐` **PAINEL WEB**\n> "
+        + excerpt('web', 'Sem resultado confirmado do teste HTTP nesta coleta.', 250) + '\n\n'
+        + "> `🎯` **PRIORIDADES E SUGESTÕES**\n> "
+        + excerpt('next', 'Revisar o relatório completo e validar as funcionalidades alteradas.', 500) + '\n\n'
+        + "> `📎` **RELATÓRIO COMPLETO**\n> O arquivo anexado reúne commits, status, registros e links para investigação. Aprovação no GitHub Actions não comprova sucesso no Railway.\n\n"
+        + '-# Família Sant’s • Acompanhamento técnico • Sugestões para avaliação da gestão.'
+    )
+
+
 class Relatorios(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -79,7 +123,7 @@ class Relatorios(commands.Cog):
         return pool
 
     async def destination(self):
-        cid = int(os.getenv('RELATORIO_CANAL_ID', '0'))
+        cid = int(os.getenv('RELATORIO_CANAL_ID', '1553834996488339547'))
         gid = int(os.getenv('GUILD_ID', '0'))
         channel = self.bot.get_channel(cid) or await self.bot.fetch_channel(cid)
         if not isinstance(channel, discord.TextChannel) or channel.guild.id != gid:
@@ -327,17 +371,11 @@ class Relatorios(commands.Cog):
                 # Marcar antes da chamada externa: falhas ambíguas não causam novo @everyone.
                 await con.execute("UPDATE sants_relatorio_envios SET estado='incerto' WHERE canal_id=$1 AND dia=$2", channel.id, day)
                 can_ping = channel.permissions_for(channel.guild.me).mention_everyone
-                mention = '@everyone\n' if can_ping else ''
                 note = '' if can_ping else '\nO bot não tem permissão para marcar @everyone.'
-                summary_lines = [line for line in report.splitlines() if line.startswith(('GitHub Actions', 'Deploys criados', 'Último deploy', 'Áreas alteradas', 'Teste HTTP', '- P1', '- P2'))]
-                summary = '\n'.join(summary_lines)
-                if len(summary) > 2800:
-                    summary = summary[:2800] + '\n… Consulte o arquivo para os demais detalhes.'
                 digest = hashlib.sha256(report.encode()).hexdigest()[:10]
                 view = discord.ui.LayoutView()
-                view.add_item(discord.ui.TextDisplay(mention + "## 📊 Relatório diário — Família Sant's\n"
-                    + f"{end.astimezone(TZ):%d/%m/%Y} • Brasília\n"
-                    + summary + '\n\nRelatório completo no arquivo anexado, incluindo fontes e limitações da coleta.'
+                view.add_item(discord.ui.TextDisplay(
+                    report_message(report, start, end, ping=can_ping)
                     + note + f'\n-# Registro {day}/{digest}'))
                 view.add_item(discord.ui.File(f'attachment://relatorio-sants-{day}.txt'))
                 try:
@@ -384,7 +422,11 @@ class Relatorios(commands.Cog):
                 return
             async with self.lock:
                 report = await self.preview(channel)
-                await channel.send('📋 Prévia do relatório — últimas 24 horas, sem menção.',
+                end = datetime.now(UTC)
+                view = discord.ui.LayoutView()
+                view.add_item(discord.ui.TextDisplay(report_message(report, end - timedelta(days=1), end, preview=True)))
+                view.add_item(discord.ui.File('attachment://previa-relatorio-sants.txt'))
+                await channel.send(view=view,
                     file=discord.File(io.BytesIO(report.encode()), filename='previa-relatorio-sants.txt'),
                     allowed_mentions=discord.AllowedMentions.none())
         except Exception:
@@ -394,4 +436,3 @@ class Relatorios(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(Relatorios(bot))
-    
