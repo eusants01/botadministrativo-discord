@@ -86,7 +86,15 @@ CREATE TABLE IF NOT EXISTS expresso_salas (
   relatos JSONB NOT NULL DEFAULT '[]'::jsonb,
   premio_entregue BOOLEAN NOT NULL DEFAULT FALSE,
   criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY(guild_id, codigo)
+);
+ALTER TABLE expresso_salas ADD COLUMN IF NOT EXISTS atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW();
+CREATE TABLE IF NOT EXISTS expresso_lobby (
+  guild_id BIGINT NOT NULL,
+  channel_id BIGINT NOT NULL,
+  message_id BIGINT NOT NULL,
+  PRIMARY KEY(guild_id, channel_id)
 );
 CREATE TABLE IF NOT EXISTS expresso_salas_premios (
   guild_id BIGINT NOT NULL,
@@ -164,14 +172,14 @@ class Lobby(discord.ui.LayoutView):
         blocos.extend([discord.ui.TextDisplay('# 🚂 EXPRESSO FANTASMA'),
           discord.ui.TextDisplay('> `🔍` **Uma viagem pelos trilhos amaldiçoados.**\n> `🎟️` Crie sua sala ou entre usando um código.\n> `❤️` Configure de 1 a 700 HP por passageiro.\n> `👥` Até 10 jogadores por sala.\n> `🏆` Sobreviva aos cinco vagões para ganhar Sant\'s Coins.'), discord.ui.Separator()])
         linha = discord.ui.ActionRow()
-        for a,n,e,emoji in [('criar','Criar sala',discord.ButtonStyle.success,'➕'),('entrar','Entrar com código',discord.ButtonStyle.primary,'🎟️'),('salas','Salas abertas',discord.ButtonStyle.secondary,'🚂')]:
+        for a,n,e,emoji in [('criar','Criar sala',discord.ButtonStyle.success,'➕'),('entrar','Entrar com código',discord.ButtonStyle.primary,'🎟️'),('salas','Ver salas',discord.ButtonStyle.secondary,'🚂'),('minha','Minha sala',discord.ButtonStyle.secondary,'👥')]:
             linha.add_item(Acao(cog,a,n,e,emoji))
         blocos.append(linha)
         self.add_item(discord.ui.Container(*blocos,accent_colour=discord.Colour(COR)))
 
 class SalaView(discord.ui.LayoutView):
     def __init__(self, cog, sala):
-        super().__init__(timeout=None)
+        super().__init__(timeout=900)
         blocos = []
         if BANNER.startswith(('http://','https://')):
             blocos.append(discord.ui.MediaGallery(discord.MediaGalleryItem(media=BANNER)))
@@ -190,7 +198,66 @@ class SalaView(discord.ui.LayoutView):
             linha2.add_item(Acao(cog,'tripulacao','Tripulação',discord.ButtonStyle.secondary,'👥',sala['codigo']))
             linha2.add_item(Acao(cog,'encerrar','Encerrar sala',discord.ButtonStyle.secondary,'🔒',sala['codigo']))
             blocos.append(linha2)
+        voltar = discord.ui.ActionRow()
+        voltar.add_item(VoltarSalas(cog))
+        blocos.append(voltar)
         self.add_item(discord.ui.Container(*blocos,accent_colour=discord.Colour(COR)))
+
+
+class VoltarSalas(discord.ui.Button):
+    def __init__(self,cog):
+        super().__init__(label='Ver outras salas',emoji='↩️',style=discord.ButtonStyle.secondary)
+        self.cog=cog
+    async def callback(self,interaction):
+        await self.cog.mostrar_salas(interaction,editar=True)
+
+class SeletorSalas(discord.ui.Select):
+    def __init__(self,cog,rows):
+        self.cog=cog
+        options=[]
+        for sala in rows:
+            titulo='Embarque' if sala['status']=='embarque' else 'Em viagem'
+            options.append(discord.SelectOption(label=sala['codigo'],value=sala['codigo'],
+                description=f"{titulo} • {len(sala['passageiros'])}/{sala['limite']} passageiros • {sala['hp_max']} HP",emoji='🚂'))
+        super().__init__(placeholder='Escolha uma sala para visualizar',options=options)
+    async def callback(self,interaction):
+        sala=await self.cog.obter(interaction.guild_id,self.values[0])
+        if not sala or sala['status']=='encerrada':
+            return await self.cog.mostrar_salas(interaction,editar=True)
+        await interaction.response.edit_message(view=SalaView(self.cog,sala),allowed_mentions=discord.AllowedMentions.none())
+
+class NavegadorSalas(discord.ui.LayoutView):
+    def __init__(self,cog,rows,page=0):
+        super().__init__(timeout=900)
+        self.cog,self.page=cog,page
+        n=len(rows)
+        inicio=page*20
+        selecao=rows[inicio:inicio+20]
+        linhas=[f'> `🚂` **{r["codigo"]}** • {len(r["passageiros"])}/{r["limite"]} • {"Embarque" if r["status"]=="embarque" else "Em viagem"}' for r in selecao]
+        corpo='\n'.join(linhas) or 'Nenhuma sala ativa no momento.'
+        self.add_item(discord.ui.Container(discord.ui.TextDisplay('# 🚂 SALAS DO EXPRESSO'),
+            discord.ui.TextDisplay(corpo),accent_colour=discord.Colour(COR)))
+        if selecao:
+            self.add_item(discord.ui.ActionRow(SeletorSalas(cog,selecao)))
+        linha=discord.ui.ActionRow()
+        if page>0:
+            anterior=discord.ui.Button(label='Anterior',style=discord.ButtonStyle.secondary,emoji='⬅️')
+            anterior.callback=self.anterior
+            linha.add_item(anterior)
+        if inicio+20<n:
+            proximo=discord.ui.Button(label='Próxima',style=discord.ButtonStyle.secondary,emoji='➡️')
+            proximo.callback=self.proximo
+            linha.add_item(proximo)
+        atualizar=discord.ui.Button(label='Atualizar',style=discord.ButtonStyle.primary,emoji='🔄')
+        atualizar.callback=self.atualizar
+        linha.add_item(atualizar)
+        self.add_item(linha)
+    async def anterior(self,interaction):
+        await self.cog.mostrar_salas(interaction,page=self.page-1,editar=True)
+    async def proximo(self,interaction):
+        await self.cog.mostrar_salas(interaction,page=self.page+1,editar=True)
+    async def atualizar(self,interaction):
+        await self.cog.mostrar_salas(interaction,page=self.page,editar=True)
 
 class CriarModal(discord.ui.Modal, title='Criar sala — Expresso Fantasma'):
     vida=discord.ui.TextInput(label='Vida máxima (1 a 700)',placeholder='Ex.: 300',default='300',max_length=3)
@@ -232,12 +299,17 @@ class Expresso(commands.Cog):
         if getattr(self.bot,'pool',None) is None: raise RuntimeError('Expresso requer PostgreSQL (bot.pool).')
         await self.bot.pool.execute(SQL)
         self.bot.add_view(Lobby(self))
-        # Restaurar os botões V2 de cada sala ainda ativa após deploy.
-        rows=await self.bot.pool.fetch("SELECT * FROM expresso_salas WHERE status <> 'encerrada' AND message_id IS NOT NULL")
+        # Despublica os antigos painéis por sala. As salas e seu progresso permanecem no banco.
+        rows=await self.bot.pool.fetch("SELECT guild_id,codigo,channel_id,message_id FROM expresso_salas WHERE message_id IS NOT NULL")
         for row in rows:
-            sala=dict(row)
-            try: self.bot.add_view(SalaView(self,sala),message_id=sala['message_id'])
-            except Exception: LOG.exception('Falha ao registrar controles da sala %s',sala['codigo'])
+            try:
+                canal=self.bot.get_channel(row['channel_id']) or await self.bot.fetch_channel(row['channel_id'])
+                await (await canal.fetch_message(row['message_id'])).delete()
+            except discord.NotFound:
+                pass
+            except (discord.Forbidden,discord.HTTPException):
+                LOG.warning('Não foi possível apagar o antigo painel público %s',row['codigo'])
+            await self.bot.pool.execute('UPDATE expresso_salas SET message_id=NULL WHERE guild_id=$1 AND codigo=$2',row['guild_id'],row['codigo'])
 
     async def obter(self,gid,codigo):
         row=await self.bot.pool.fetchrow('SELECT * FROM expresso_salas WHERE guild_id=$1 AND codigo=$2',gid,codigo)
@@ -252,31 +324,57 @@ class Expresso(commands.Cog):
           json.dumps(as_json(sala['relatos'],[])),sala['hp_max'],sala['limite'])
 
     async def atualizar(self,sala):
-        if not sala.get('message_id'): return
-        try:
-            canal=self.bot.get_channel(sala['channel_id']) or await self.bot.fetch_channel(sala['channel_id'])
-            msg=await canal.fetch_message(sala['message_id'])
-            await msg.edit(view=SalaView(self,sala),allowed_mentions=discord.AllowedMentions.none())
-        except Exception: LOG.exception('Erro ao atualizar painel da sala %s',sala['codigo'])
+        # O estado vive no PostgreSQL; as interfaces privadas são reconstruídas a cada clique.
+        return
+
+    async def mostrar_salas(self,interaction,page=0,editar=False):
+        rows=[dict(r) for r in await self.bot.pool.fetch("""SELECT * FROM expresso_salas
+            WHERE guild_id=$1 AND status IN ('embarque','viagem') ORDER BY criado_em DESC LIMIT 200""",interaction.guild_id)]
+        page=max(0,min(page,max(0,(len(rows)-1)//20)))
+        view=NavegadorSalas(self,rows,page)
+        if editar:
+            await interaction.response.edit_message(view=view,allowed_mentions=discord.AllowedMentions.none())
+        else:
+            await interaction.response.send_message(view=view,ephemeral=True,allowed_mentions=discord.AllowedMentions.none())
 
     @commands.command(name='expresso',aliases=['painelexpresso'])
     @commands.guild_only()
     @commands.has_permissions(manage_guild=True)
     async def painel(self,ctx):
-        await ctx.send(view=Lobby(self),allowed_mentions=discord.AllowedMentions.none())
+        # Reutiliza o painel existente no canal, em vez de postar duplicatas.
+        antigo=await self.bot.pool.fetchval('SELECT message_id FROM expresso_lobby WHERE guild_id=$1 AND channel_id=$2',ctx.guild.id,ctx.channel.id)
+        if antigo:
+            try:
+                msg=await ctx.channel.fetch_message(antigo)
+                await msg.edit(view=Lobby(self),allowed_mentions=discord.AllowedMentions.none())
+                return await ctx.reply('✅ Painel principal atualizado.',delete_after=8,mention_author=False)
+            except (discord.NotFound,discord.Forbidden,discord.HTTPException):
+                pass
+        msg=await ctx.send(view=Lobby(self),allowed_mentions=discord.AllowedMentions.none())
+        await self.bot.pool.execute("""INSERT INTO expresso_lobby(guild_id,channel_id,message_id)
+            VALUES($1,$2,$3) ON CONFLICT(guild_id,channel_id) DO UPDATE SET message_id=EXCLUDED.message_id""",ctx.guild.id,ctx.channel.id,msg.id)
 
     async def lobby_acao(self,interaction,acao):
         if acao=='criar': return await interaction.response.send_modal(CriarModal(self))
         if acao=='entrar': return await interaction.response.send_modal(EntrarModal(self))
-        if acao=='salas':
-            rows=await self.bot.pool.fetch("SELECT codigo,host_id,cardinality(passageiros) AS n,limite FROM expresso_salas WHERE guild_id=$1 AND status='embarque' ORDER BY criado_em DESC LIMIT 15",interaction.guild_id)
-            msg='\n'.join(f'> `🚂` **{r["codigo"]}** — <@{r["host_id"]}> • {r["n"]}/{r["limite"]}' for r in rows) or 'Nenhuma sala aguardando embarque.'
-            return await interaction.response.send_message('**Salas abertas**\n'+msg,ephemeral=True)
+        if acao=='salas': return await self.mostrar_salas(interaction)
+        if acao=='minha':
+            sala=await self.bot.pool.fetchrow("""SELECT * FROM expresso_salas WHERE guild_id=$1
+              AND status IN ('embarque','viagem') AND $2=ANY(passageiros) ORDER BY criado_em DESC LIMIT 1""",
+              interaction.guild_id,interaction.user.id)
+            if not sala:
+                return await interaction.response.send_message('🎟️ Você não está em uma sala ativa. Use **Ver salas** para embarcar.',ephemeral=True)
+            return await interaction.response.send_message(view=SalaView(self,dict(sala)),ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none())
         await interaction.response.send_message('❌ Ação desconhecida.',ephemeral=True)
 
     async def criar(self,interaction,vida,limite):
         await interaction.response.defer(ephemeral=True,thinking=True)
         gid,uid=interaction.guild_id,interaction.user.id
+        existente=await self.bot.pool.fetchval("SELECT codigo FROM expresso_salas WHERE guild_id=$1 AND host_id=$2 AND status IN ('embarque','viagem') ORDER BY criado_em DESC LIMIT 1",gid,uid)
+        if existente:
+            sala=await self.obter(gid,existente)
+            return await interaction.followup.send('⚠️ Você já possui uma sala ativa.',view=SalaView(self,sala),ephemeral=True)
         for _ in range(8):
             codigo='EXP-'+''.join(secrets.choice(string.ascii_uppercase+string.digits) for _ in range(6))
             exists=await self.obter(gid,codigo)
@@ -286,27 +384,20 @@ class Expresso(commands.Cog):
           'status':'embarque','hp_max':vida,'limite':limite,'passageiros':[uid],'vagao':0,'vidas':{},'escolhas':{},'relatos':[]}
         await self.bot.pool.execute("""INSERT INTO expresso_salas(guild_id,codigo,host_id,channel_id,hp_max,limite,passageiros)
             VALUES($1,$2,$3,$4,$5,$6,$7::bigint[])""",gid,codigo,uid,interaction.channel_id,vida,limite,[uid])
-        try:
-            msg=await interaction.channel.send(view=SalaView(self,sala),allowed_mentions=discord.AllowedMentions.none())
-            sala['message_id']=msg.id
-            await self.bot.pool.execute('UPDATE expresso_salas SET message_id=$3 WHERE guild_id=$1 AND codigo=$2',gid,codigo,msg.id)
-            self.bot.add_view(SalaView(self,sala),message_id=msg.id)
-        except Exception:
-            LOG.exception('Erro ao publicar sala %s',codigo)
-            return await interaction.followup.send('❌ Sala registrada, mas não foi possível publicar o painel. Avise a administração.',ephemeral=True)
-        await interaction.followup.send(f'🎟️ Sala criada! Código **`{codigo}`**. Compartilhe com os amigos.',ephemeral=True)
+        await interaction.followup.send(view=SalaView(self,sala),ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none())
 
     async def entrar_codigo(self,interaction,codigo):
         await interaction.response.defer(ephemeral=True,thinking=True)
         async with self.lock(interaction.guild_id,codigo):
             sala=await self.obter(interaction.guild_id,codigo)
             if not sala or sala['status']!='embarque': return await interaction.followup.send('❌ Sala não encontrada ou embarque encerrado.',ephemeral=True)
-            if interaction.user.id in sala['passageiros']: return await interaction.followup.send('🎟️ Você já está nessa sala.',ephemeral=True)
+            if interaction.user.id in sala['passageiros']: return await interaction.followup.send('🎟️ Você já está nessa sala.',view=SalaView(self,sala),ephemeral=True)
             if len(sala['passageiros'])>=sala['limite']: return await interaction.followup.send('❌ Sala lotada.',ephemeral=True)
             sala['passageiros'].append(interaction.user.id)
             await self.salvar(sala)
             await self.atualizar(sala)
-        await interaction.followup.send(f'🎟️ Embarque confirmado na sala **`{codigo}`**!',ephemeral=True)
+        await interaction.followup.send(f'🎟️ Embarque confirmado na sala **`{codigo}`**!',view=SalaView(self,sala),ephemeral=True)
 
     async def configurar(self,interaction,codigo,vida,limite):
         if not 1<=vida<=MAX_VIDA or not MIN_JOGADORES<=limite<=MAX_JOGADORES:
@@ -359,7 +450,7 @@ class Expresso(commands.Cog):
         gid,uid=interaction.guild_id,interaction.user.id
         async with self.lock(gid,codigo):
             sala=await self.obter(gid,codigo)
-            if not sala or sala['message_id']!=interaction.message.id:
+            if not sala:
                 return await interaction.followup.send('⚠️ Painel desatualizado ou sala inexistente.',ephemeral=True)
             if acao=='tripulacao':
                 vidas=as_json(sala['vidas'],{})
@@ -410,7 +501,7 @@ class Expresso(commands.Cog):
             else: return await interaction.followup.send('🏁 Esta sala já foi encerrada.',ephemeral=True)
             await self.salvar(sala)
             await self.atualizar(sala)
-        await interaction.followup.send(resposta,ephemeral=True)
+        await interaction.followup.send(resposta,view=SalaView(self,sala),ephemeral=True,allowed_mentions=discord.AllowedMentions.none())
         if sala['status']=='encerrada' and acao=='avancar':
             try: await self.premiar(sala)
             except Exception: LOG.exception('Falha ao premiar sala %s',codigo)
