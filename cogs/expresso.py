@@ -129,6 +129,7 @@ def descricao(sala):
       f'> `📍` **Situação:** {"Embarque" if status == "embarque" else "Em viagem" if status == "viagem" else "Encerrada"}',
       f'> `👥` **Passageiros:** {len(jogadores)}/{sala["limite"]}',
       f'> `❤️` **Vida máxima:** {sala["hp_max"]} HP',
+      f'> `🚦` **Início:** mínimo de {MIN_JOGADORES} passageiros; somente o anfitrião inicia.',
     ]
     if status == 'viagem':
         etapa = VAGOES[min(sala['vagao'], len(VAGOES)-1)]
@@ -158,10 +159,22 @@ class Acao(discord.ui.Button):
         self.cog, self.acao, self.codigo = cog, acao, codigo
 
     async def callback(self, interaction):
-        if self.codigo is None:
-            await self.cog.lobby_acao(interaction, self.acao)
-        else:
-            await self.cog.sala_acao(interaction, self.codigo, self.acao)
+        try:
+            if self.codigo is None:
+                await self.cog.lobby_acao(interaction, self.acao)
+            else:
+                await self.cog.sala_acao(interaction, self.codigo, self.acao)
+        except Exception:
+            LOG.exception('Falha no botão do Expresso (ação=%s, sala=%s, usuário=%s)',
+                          self.acao,self.codigo,interaction.user.id)
+            mensagem='❌ Ocorreu um erro ao processar esta ação. Tente novamente pelo painel principal.'
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(mensagem,ephemeral=True)
+                else:
+                    await interaction.response.send_message(mensagem,ephemeral=True)
+            except discord.HTTPException:
+                LOG.exception('Falha ao comunicar erro da ação do Expresso')
 
 class Lobby(discord.ui.LayoutView):
     def __init__(self, cog):
@@ -199,6 +212,7 @@ class SalaView(discord.ui.LayoutView):
             linha2.add_item(Acao(cog,'encerrar','Encerrar sala',discord.ButtonStyle.secondary,'🔒',sala['codigo']))
             blocos.append(linha2)
         voltar = discord.ui.ActionRow()
+        voltar.add_item(Acao(cog,'atualizar','Atualizar sala',discord.ButtonStyle.primary,'🔄',sala['codigo']))
         voltar.add_item(VoltarSalas(cog))
         blocos.append(voltar)
         self.add_item(discord.ui.Container(*blocos,accent_colour=discord.Colour(COR)))
@@ -452,6 +466,20 @@ class Expresso(commands.Cog):
             sala=await self.obter(gid,codigo)
             if not sala:
                 return await interaction.followup.send('⚠️ Painel desatualizado ou sala inexistente.',ephemeral=True)
+            # Todos os passageiros consultam o estado atual do banco, inclusive se
+            # seus painéis efêmeros estiverem mostrando uma etapa antiga.
+            if acao == 'atualizar':
+                return await interaction.followup.send('🔄 **Informações atualizadas.**',
+                    view=SalaView(self,sala),ephemeral=True,
+                    allowed_mentions=discord.AllowedMentions.none())
+            acoes_embarque={'entrar','sair','iniciar','config'}
+            acoes_viagem={'escolha0','escolha1','escolha2','avancar'}
+            if (sala['status']=='viagem' and acao in acoes_embarque) or (sala['status']=='embarque' and acao in acoes_viagem):
+                aviso=('🚂 **A viagem já começou.** Não é mais possível embarcar ou iniciar novamente.'
+                       if sala['status']=='viagem' else '🎟️ **A sala ainda está em embarque.**')
+                return await interaction.followup.send(aviso+' Abra o painel atualizado abaixo:',
+                    view=SalaView(self,sala),ephemeral=True,
+                    allowed_mentions=discord.AllowedMentions.none())
             if acao=='tripulacao':
                 vidas=as_json(sala['vidas'],{})
                 nomes='\n'.join(f'{i}. <@{p}> — {vidas.get(str(p),sala["hp_max"])} HP' for i,p in enumerate(sala['passageiros'],1)) or 'Nenhum passageiro.'
@@ -497,7 +525,7 @@ class Expresso(commands.Cog):
                     else:
                         sala['vagao']+=1;sala['escolhas']={};sala['relatos']=[]
                         resposta=f'🚂 Próxima parada: {VAGOES[sala["vagao"]]["nome"]}.'
-                else: return await interaction.followup.send('❌ Ação indisponível.',ephemeral=True)
+                else: return await interaction.followup.send('⚠️ Esta ação não está disponível nesta etapa. Atualize sua sala.',view=SalaView(self,sala),ephemeral=True)
             else: return await interaction.followup.send('🏁 Esta sala já foi encerrada.',ephemeral=True)
             await self.salvar(sala)
             await self.atualizar(sala)
