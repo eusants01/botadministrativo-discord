@@ -116,14 +116,16 @@ class BoasVindasRoyal(commands.Cog):
             )
             panel.add_item(
                 discord.ui.TextDisplay(
-                    "## 👑・BEM-VINDO(A) À FAMÍLIA ROYAL\n"
-                    f"> `🪽` Seja bem-vindo(a), {member.mention}! É uma honra receber você em nosso reino.\n\n"
-                    f"> `📜` **Regras:** {rules}\n"
-                    f"> `🎉` **Sorteios:** {giveaways}\n"
-                    f"> `🎫` **Suporte:** {support}\n\n"
-                    "> `⚜️` **Que sua jornada seja marcada pela união, respeito e lealdade.**"
-                )
-            )
+        "# <a:coroa:1564000189167960177> ・ BEM-VINDO(A) À FAMÍLIA ROYAL\n"
+        f"> `🪽` Seja muito bem-vindo(a), {member.mention}!\n"
+        "> `⚜️` Você agora faz parte da **Família Royal**, uma nova era construída com **união, respeito, lealdade e presença**.\n\n"
+        "> `🎖️` Somos uma família com identidade própria dentro do **E.B do ALPHA**, mantendo nossa tradição, organização e força.\n\n"
+        f"> `📜` **Regras:** {rules}\n"
+        f"> `🎉` **Sorteios:** {giveaways}\n"
+        f"> `🎫` **Suporte:** {support}\n\n"
+        "> `👑` **Honre a coroa, fortaleça a família e faça parte da nossa história.**"
+    )
+)
             view.add_item(panel)
             # Uso de `with` garante o fechamento correto do arquivo após o envio.
             with banner.open("rb") as stream:
