@@ -1,4 +1,3 @@
-"""Boas-vindas da FamÃ­lia Royal â€” Discord Components V2 (discord.py >= 2.6)."""
 
 import logging
 import os
@@ -87,17 +86,17 @@ def make_welcome_view(member: discord.Member) -> discord.ui.LayoutView:
         )
     )
 
+    # BotÃµes de link sem emoji: evita rejeiÃ§Ã£o de emoji.name pela API Discord.
     row = discord.ui.ActionRow()
-    for label, emoji, key in (
-        ("Regras", "ðŸ“œ", "ROYAL_RULES_CHANNEL_ID"),
-        ("Cargos", "ðŸ‘‘", "ROYAL_ROLES_CHANNEL_ID"),
-        ("Sorteios", "ðŸŽ‰", "ROYAL_GIVEAWAYS_CHANNEL_ID"),
-        ("Suporte", "ðŸŽ«", "ROYAL_SUPPORT_CHANNEL_ID"),
+    for label, key in (
+        ("Regras", "ROYAL_RULES_CHANNEL_ID"),
+        ("Cargos", "ROYAL_ROLES_CHANNEL_ID"),
+        ("Sorteios", "ROYAL_GIVEAWAYS_CHANNEL_ID"),
+        ("Suporte", "ROYAL_SUPPORT_CHANNEL_ID"),
     ):
         row.add_item(
             discord.ui.Button(
                 label=label,
-                emoji=emoji,
                 style=discord.ButtonStyle.link,
                 url=link_to_channel(member.guild.id, key),
             )
