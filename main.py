@@ -25,14 +25,32 @@ intents.members = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 install_components_v2(bot)
 
-status_list = [
-    "Sant's Family 👑",
-    "Primeira Família do E.B 🎖️",
-    "Desenvolvido por Sant's 🛠️",
-    "Bot Administrativo da Família Sant's 🤖",
-    "Monitorando o Servidor 🕒",
-]
 
+status_list = [
+    "👑 Protegendo a Família Royal",
+    "🪽 Sob as asas da Fênix Real",
+    "⚜️ O Reino Royal está online",
+    "🏰 Bem-vindo ao Reino Royal",
+    "✨ Onde a lealdade é nossa coroa",
+    "🛡️ Zelando pela Família Royal",
+    "💛 Unidos pela mesma coroa",
+    "🕊️ Um reino de união e respeito",
+    "🔥 A Fênix Real nunca se rende",
+    "⚔️ Honra, coragem e lealdade",
+    "💎 A realeza está entre nós",
+    "👑 A coroa pertence aos leais",
+    "📜 Escrevendo uma nova história",
+    "🌟 Uma família, um só reino",
+    "🤖 Desenvolvido por Sant's",
+    "⚙️ Sistemas exclusivos da Royal",
+    "🎰 Cassino Real em funcionamento",
+    "🚂 Próxima parada: Reino Royal",
+    "🎉 Preparando novos eventos",
+    "💰 Leilões dignos da realeza",
+    "👀 De olho nos súditos...",
+    "😂 Até a realeza tem resenha",
+    "💅 Realeza também causa!"
+]
 
 @tasks.loop(seconds=30)
 async def mudar_status():
