@@ -1,9 +1,4 @@
-# -*- coding: utf-8 -*-
-"""Insígnias pessoais Royal — discord.py 2.6+ / asyncpg.
-Coloque em cogs/insignias_royal.py. Usa bot.pool (PostgreSQL) do main.py.
-Preencha os IDs DOS USUÁRIOS no dicionário TITULARES abaixo.
-Comandos: !previainsignias  |  !painelinsignias #canal
-"""
+
 
 import logging
 from pathlib import Path
@@ -17,16 +12,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 BANNER = BASE_DIR / "assets" / "insignias_royal.png"
 BANNER_FILENAME = "insignias_royal.png"
 
-# Cada item: (nome, ID do cargo, emoji para texto, descrição)
 INSIGNIAS = [
     ("Bruna", 1554376484637122591, "🌹",
-     "Representa acolhimento e consideração pessoal. Sua concessão depende da autorização de Bruna."),
+     "Representa acolhimento e consideração pessoal. Sua concessão depende da autorização da Bruna."),
     ("Tatah", 1555370356343312486, "🌙",
-     "Símbolo de confiança e proximidade, reservado às pessoas reconhecidas por Tatah."),
+     "Símbolo de confiança e proximidade, reservado às pessoas reconhecidas pelaTatah."),
     ("Pietra", 1556147238852628562, "💎",
-     "Expressa apreço e reconhecimento pessoal, mediante autorização de Pietra."),
+     "Expressa apreço e reconhecimento pessoal, mediante autorização da Pietra."),
     ("Kananda", 1556147239179518022, "🪽",
-     "Representa companheirismo e proteção, mediante consentimento de Kananda."),
+     "Representa companheirismo e proteção, mediante consentimento da Kananda."),
     ("Sant's", 1554376496196493342, "👑",
      "Reconhecimento pessoal do fundador, concedido apenas mediante sua autorização."),
     ("Kael", 1554376496787886090, "⚔️",
@@ -43,20 +37,18 @@ INSIGNIAS = [
      "Representa confiança e consideração pessoal, concedida exclusivamente por Hanz."),
 ]
 
-# IMPORTANTE: COLOQUE AQUI OS IDs DOS USUÁRIOS (NÃO IDs DOS CARGOS).
-# Você pode usar o mesmo ID para mais de uma insígnia, se for o caso.
 TITULARES = {
-    "Bruna": None,
-    "Tatah": None,
-    "Pietra": None,
-    "Kananda": None,
+    "Bruna": 697068974323793921,
+    "Tatah": 1032084016196763688,
+    "Pietra": 1295645409082867732,
+    "Kananda": 1430221798389059584,
     "Sant's": 925863471902503033,
-    "Kael": None,
-    "Ruan": None,
-    "Pato": None,
-    "Violets": None,
-    "Diniz": None,
-    "Hanz": None,
+    "Kael": 1541150632554135724,
+    "Ruan": 1348504492345397358,
+    "Pato": 1459320617852731635,
+    "Violets": 969628191268421672,
+    "Diniz": 1546524499430604891,
+    "Hanz": 1004088774810144859,
 }
 
 POR_CARGO = {cargo_id: (nome, emoji, descricao) for nome, cargo_id, emoji, descricao in INSIGNIAS}
@@ -72,14 +64,12 @@ def painel_catalogo(cog: "InsigniasRoyal", com_banner: bool = False) -> discord.
         ))
 
     painel.add_item(discord.ui.TextDisplay(
-        "## ⚜️・INSÍGNIAS DA FAMÍLIA ROYAL\n"
+        "## <a:coroa:1564000189167960177>・INSÍGNIAS DA FAMÍLIA ROYAL\n"
         "> `👑` Distinções pessoais dos membros oficiais.\n"
         "> `📜` Cada insígnia exige aprovação de seu titular."
     ))
     painel.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
 
-    # Um único TextDisplay para a lista inteira evita espaçamentos
-    # automáticos entre 11 componentes separados.
     linhas = []
     for nome, cargo_id, emoji, descricao in INSIGNIAS:
         linhas.append(f"> `{emoji}` <@&{cargo_id}>\n{descricao}")
@@ -117,7 +107,7 @@ class AprovacaoView(discord.ui.LayoutView):
         super().__init__(timeout=None)
         panel = discord.ui.Container(accent_colour=ROYAL)
         panel.add_item(discord.ui.TextDisplay(
-            "## ⚜️・AUTORIZAÇÃO DE INSÍGNIA\n"
+            "## <:ImagemdoChatGPT25deoutde202615_4:1563986790753378424>・AUTORIZAÇÃO DE INSÍGNIA\n"
             f"> `👑` **Insígnia {nome}**\n"
             f"> `👤` Solicitante: <@{solicitante}> (`{solicitante}`)\n"
             f"> `🏰` Servidor: **{servidor or 'Família Royal'}**\n\n"
@@ -413,7 +403,7 @@ def decisao_encerrada(pedido, resultado: str) -> discord.ui.LayoutView:
     view = discord.ui.LayoutView(timeout=None)
     panel = discord.ui.Container(accent_colour=ROYAL)
     panel.add_item(discord.ui.TextDisplay(
-        f"## ⚜️・SOLICITAÇÃO {resultado}\n"
+        f"## <a:coroa:1564000189167960177>・SOLICITAÇÃO {resultado}\n"
         f"**Insígnia {pedido['insignia_name']}**\n"
         f"Solicitante: <@{pedido['requester_id']}>\n"
         "Decisão registrada. Esta solicitação está encerrada."
