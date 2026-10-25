@@ -50,7 +50,7 @@ TITULARES = {
     "Tatah": None,
     "Pietra": None,
     "Kananda": None,
-    "Sant's": None,
+    "Sant's": 925863471902503033,
     "Kael": None,
     "Ruan": None,
     "Pato": None,
@@ -62,53 +62,53 @@ TITULARES = {
 POR_CARGO = {cargo_id: (nome, emoji, descricao) for nome, cargo_id, emoji, descricao in INSIGNIAS}
 
 
-def painel_catalogo(parte: int, cog: "InsigniasRoyal") -> discord.ui.LayoutView:
+def painel_catalogo(cog: "InsigniasRoyal", com_banner: bool = False) -> discord.ui.LayoutView:
+    """Uma única mensagem V2: imagem, lista compacta e seletor."""
     view = discord.ui.LayoutView(timeout=None)
-    panel = discord.ui.Container(accent_colour=ROYAL)
-    if parte == 0 and BANNER.is_file():
-        panel.add_item(discord.ui.MediaGallery(
+    painel = discord.ui.Container(accent_colour=ROYAL)
+    if com_banner:
+        painel.add_item(discord.ui.MediaGallery(
             discord.MediaGalleryItem(media=f"attachment://{BANNER_FILENAME}")
         ))
-    if parte == 0:
-        panel.add_item(discord.ui.TextDisplay(
-            "## <:ImagemdoChatGPT25deoutde202615_4:1563986790753378424>・INSÍGNIAS OFICIAIS — FAMÍLIA ROYAL\n"
-            "> `👑` Distinções pessoais dos membros oficiais.\n"
-            "> `📜` Concessão apenas com autorização do titular."
-        ))
-        panel.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
-    for nome, cargo_id, emoji, descricao in INSIGNIAS[parte * 6:(parte + 1) * 6]:
-        panel.add_item(discord.ui.TextDisplay(
-            f"> `{emoji}` <@&{cargo_id}>\n{descricao}"
-        ))
-    panel.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
-    if parte == 0:
-        panel.add_item(discord.ui.TextDisplay(
-            "> `✉️` **SOLICITAÇÃO DE INSÍGNIA**\n"
-            "Selecione uma insígnia. O titular receberá uma solicitação privada "
-            "e poderá aprová-la ou recusá-la."
-        ))
-        select = discord.ui.Select(
-            placeholder="Selecione uma insígnia Royal",
-            min_values=1, max_values=1,
-            custom_id="royal:insignias:selecionar:v1",
-            options=[
-                discord.SelectOption(label=f"Insígnia {n}", value=str(cid),
-                                     description=f"Titular: {n} • Aprovação necessária",
-                                     emoji=emoji)
-                for n, cid, emoji, _ in INSIGNIAS
-            ],
-        )
-        async def select_callback(interaction: discord.Interaction):
-            await cog.solicitar(interaction, int(select.values[0]))
-        select.callback = select_callback
-        panel.add_item(discord.ui.ActionRow(select))
-    else:
-        panel.add_item(discord.ui.TextDisplay(
-            "> `⚜️` **RECONHECIMENTO PESSOAL**\n"
-            "Insígnias não representam hierarquia administrativa. "
-            "Sua concessão é uma decisão exclusiva de cada titular."
-        ))
-    view.add_item(panel)
+
+    painel.add_item(discord.ui.TextDisplay(
+        "## ⚜️・INSÍGNIAS DA FAMÍLIA ROYAL\n"
+        "> `👑` Distinções pessoais dos membros oficiais.\n"
+        "> `📜` Cada insígnia exige aprovação de seu titular."
+    ))
+    painel.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
+
+    # Um único TextDisplay para a lista inteira evita espaçamentos
+    # automáticos entre 11 componentes separados.
+    linhas = []
+    for nome, cargo_id, emoji, descricao in INSIGNIAS:
+        linhas.append(f"> `{emoji}` <@&{cargo_id}>\n{descricao}")
+    painel.add_item(discord.ui.TextDisplay("\n".join(linhas)))
+
+    painel.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
+    painel.add_item(discord.ui.TextDisplay(
+        "> `✉️` **SOLICITAR INSÍGNIA**\n"
+        "Selecione uma opção para enviar seu pedido ao titular. "
+        "Somente ele pode aprovar a concessão."
+    ))
+    seletor = discord.ui.Select(
+        placeholder="Escolha uma insígnia Royal",
+        min_values=1,
+        max_values=1,
+        custom_id="royal:insignias:selecionar:v1",
+        options=[discord.SelectOption(
+            label=f"Insígnia {nome}", value=str(cargo_id),
+            description=f"Titular: {nome} • Autorização obrigatória",
+            emoji=emoji
+        ) for nome, cargo_id, emoji, _ in INSIGNIAS]
+    )
+
+    async def selecionar(interaction: discord.Interaction):
+        await cog.solicitar(interaction, int(seletor.values[0]))
+
+    seletor.callback = selecionar
+    painel.add_item(discord.ui.ActionRow(seletor))
+    view.add_item(painel)
     return view
 
 
@@ -117,7 +117,7 @@ class AprovacaoView(discord.ui.LayoutView):
         super().__init__(timeout=None)
         panel = discord.ui.Container(accent_colour=ROYAL)
         panel.add_item(discord.ui.TextDisplay(
-            "## <:ImagemdoChatGPT25deoutde202615_4:1563986790753378424>・AUTORIZAÇÃO DE INSÍGNIA\n"
+            "## ⚜️・AUTORIZAÇÃO DE INSÍGNIA\n"
             f"> `👑` **Insígnia {nome}**\n"
             f"> `👤` Solicitante: <@{solicitante}> (`{solicitante}`)\n"
             f"> `🏰` Servidor: **{servidor or 'Família Royal'}**\n\n"
@@ -187,7 +187,7 @@ class InsigniasRoyal(commands.Cog):
                     message_id=item["dm_message_id"],
                 )
             # A seleção pública permanece ativa após reiniciar o bot.
-            self.bot.add_view(painel_catalogo(0, self))
+            self.bot.add_view(painel_catalogo(self, com_banner=False))
         except Exception:
             logger.exception("Falha ao preparar banco e painéis de insígnias")
             raise
@@ -377,21 +377,17 @@ class InsigniasRoyal(commands.Cog):
                     raise RuntimeError("Preciso da permissão Anexar arquivos para enviar o banner.")
                 with BANNER.open("rb") as arquivo:
                     await canal.send(
-                        view=painel_catalogo(0, self),
+                        view=painel_catalogo(self, com_banner=True),
                         file=discord.File(arquivo, filename=BANNER_FILENAME),
                         allowed_mentions=discord.AllowedMentions.none(),
                     )
             else:
                 logger.warning("Banner não encontrado: %s. Catálogo enviado sem imagem.", BANNER)
                 await canal.send(
-                    view=painel_catalogo(0, self),
+                    view=painel_catalogo(self, com_banner=False),
                     allowed_mentions=discord.AllowedMentions.none(),
                 )
-            await canal.send(
-                view=painel_catalogo(1, self),
-                allowed_mentions=discord.AllowedMentions.none(),
-            )
-            await ctx.reply(f"✅ Catálogo publicado em {canal.mention}.",
+            await ctx.reply(f"✅ Painel único publicado em {canal.mention}.",
                             mention_author=False)
         except (discord.HTTPException, RuntimeError) as exc:
             logger.exception("Erro ao publicar painel")
