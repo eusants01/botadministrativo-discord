@@ -1,4 +1,4 @@
-
+"""Boas-vindas da FamÃ­lia Royal â€” Discord Components V2 (discord.py >= 2.6)."""
 
 import logging
 import os
@@ -10,7 +10,6 @@ from discord.ext import commands
 logger = logging.getLogger("sants.bot.boas_vindas")
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# IDs padrão; o Railway pode sobrescrever cada um com uma variável de ambiente.
 CHANNEL_IDS = {
     "WELCOME_CHANNEL_ID": 1563991142159360150,
     "ROYAL_RULES_CHANNEL_ID": 1553829609160835342,
@@ -20,10 +19,11 @@ CHANNEL_IDS = {
 }
 
 BANNER_NAMES = (
-    "boas_vindas_royal.png",  # nome recomendado
-    "Família Royal_ Portal Celestial Dourado.png",
-    "família_royal_portal_celestial_dourado.png",
+    "boas_vindas_royal.png",
+    "FamÃ­lia Royal_ Portal Celestial Dourado.png",
+    "famÃ­lia_royal_portal_celestial_dourado.png",
 )
+BANNER_ATTACHMENT = "boas_vindas_royal.png"
 
 
 def channel_id(key: str) -> int:
@@ -31,28 +31,80 @@ def channel_id(key: str) -> int:
     if not raw:
         return CHANNEL_IDS[key]
     try:
-        return int(raw)
+        value = int(raw)
+        if value <= 0:
+            raise ValueError("ID precisa ser positivo")
+        return value
     except ValueError:
-        logger.warning("%s incorreto (%r); usando ID padrão", key, raw)
+        logger.warning("%s invÃ¡lido: %r. Usando ID padrÃ£o.", key, raw)
         return CHANNEL_IDS[key]
 
 
-def channel_ref(guild: discord.Guild, key: str, fallback_name: str) -> str:
-    # Uma menção por ID funciona mesmo quando o canal não está no cache do bot.
-    cid = channel_id(key)
-    channel = guild.get_channel(cid)
-    if isinstance(channel, discord.TextChannel):
-        return channel.mention
-    return f"<#{cid}>" if cid else f"#{fallback_name}"
-
-
-def banner_path() -> Path | None:
-    folder = BASE_DIR / "assets"
-    for name in BANNER_NAMES:
-        path = folder / name
-        if path.is_file():
-            return path
+def find_banner() -> Path | None:
+    directory = BASE_DIR / "assets"
+    for filename in BANNER_NAMES:
+        candidate = directory / filename
+        if candidate.is_file():
+            return candidate
     return None
+
+
+def link_to_channel(guild_id: int, key: str) -> str:
+    # BotÃµes de link levam diretamente ao canal, sem callback e sem expirar.
+    return f"https://discord.com/channels/{guild_id}/{channel_id(key)}"
+
+
+def make_welcome_view(member: discord.Member) -> discord.ui.LayoutView:
+    view = discord.ui.LayoutView(timeout=None)
+    panel = discord.ui.Container(accent_colour=discord.Colour.from_rgb(182, 132, 59))
+
+    panel.add_item(
+        discord.ui.MediaGallery(
+            discord.MediaGalleryItem(media=f"attachment://{BANNER_ATTACHMENT}")
+        )
+    )
+    panel.add_item(
+        discord.ui.TextDisplay(
+            "## ðŸ‘‘ãƒ»BOAS-VINDAS Ã€ FAMÃLIA ROYAL\n"
+            f"{member.mention}, as portas do nosso reino estÃ£o abertas para vocÃª."
+        )
+    )
+    panel.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
+    panel.add_item(
+        discord.ui.TextDisplay(
+            "**âšœï¸ NOSSO REINO**\n"
+            "Uma comunidade de **uniÃ£o, respeito e lealdade**, "
+            "com raÃ­zes no **E.B do ALPHA**. "
+            "Aqui, cada integrante faz parte da nossa histÃ³ria."
+        )
+    )
+    panel.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
+    panel.add_item(
+        discord.ui.TextDisplay(
+            "**âœ¦ COMECE SUA JORNADA**\n"
+            "Use os botÃµes abaixo para conhecer as regras, escolher cargos, "
+            "participar dos sorteios ou solicitar suporte."
+        )
+    )
+
+    row = discord.ui.ActionRow()
+    for label, emoji, key in (
+        ("Regras", "ðŸ“œ", "ROYAL_RULES_CHANNEL_ID"),
+        ("Cargos", "ðŸ‘‘", "ROYAL_ROLES_CHANNEL_ID"),
+        ("Sorteios", "ðŸŽ‰", "ROYAL_GIVEAWAYS_CHANNEL_ID"),
+        ("Suporte", "ðŸŽ«", "ROYAL_SUPPORT_CHANNEL_ID"),
+    ):
+        row.add_item(
+            discord.ui.Button(
+                label=label,
+                emoji=emoji,
+                style=discord.ButtonStyle.link,
+                url=link_to_channel(member.guild.id, key),
+            )
+        )
+    panel.add_item(row)
+    view.add_item(panel)
+    return view
 
 
 class BoasVindasRoyal(commands.Cog):
@@ -63,22 +115,24 @@ class BoasVindasRoyal(commands.Cog):
         guild = member.guild
         destination_id = channel_id("WELCOME_CHANNEL_ID")
         channel = guild.get_channel(destination_id)
-
         if not isinstance(channel, discord.TextChannel):
-            reason = f"Canal de boas-vindas {destination_id} não encontrado neste servidor."
-            logger.error("%s Guild=%s", reason, guild.id)
-            return False, reason
+            try:
+                channel = await self.bot.fetch_channel(destination_id)
+            except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+                channel = None
+        if not isinstance(channel, discord.TextChannel) or channel.guild.id != guild.id:
+            return False, f"Canal de boas-vindas {destination_id} nÃ£o encontrado neste servidor."
 
-        if not self.bot.user:
-            return False, "Bot ainda não está pronto."
-
-        me = guild.me or guild.get_member(self.bot.user.id)
-        if me is None:
+        me = guild.me
+        if me is None and self.bot.user:
+            me = guild.get_member(self.bot.user.id)
+        if me is None and self.bot.user:
             try:
                 me = await guild.fetch_member(self.bot.user.id)
-            except discord.HTTPException as exc:
-                logger.exception("Falha ao consultar permissões do bot")
-                return False, f"Não consegui consultar as permissões do bot ({exc})."
+            except discord.HTTPException:
+                return False, "NÃ£o consegui verificar as permissÃµes do bot."
+        if me is None:
+            return False, "Bot ainda nÃ£o estÃ¡ pronto."
 
         perms = channel.permissions_for(me)
         missing = []
@@ -86,50 +140,19 @@ class BoasVindasRoyal(commands.Cog):
             missing.append("Ver canal")
         if not perms.send_messages:
             missing.append("Enviar mensagens")
-        if missing:
-            reason = "Permissões ausentes: " + ", ".join(missing)
-            logger.error("%s (canal %s)", reason, channel.id)
-            return False, reason
-
-        banner = banner_path()
-        if banner is None:
-            reason = (
-                "Banner não encontrado na pasta assets/. "
-                "Renomeie a imagem para boas_vindas_royal.png e faça push no GitHub."
-            )
-            logger.error(reason)
-            return False, reason
         if not perms.attach_files:
-            return False, "Falta a permissão Anexar arquivos no canal de boas-vindas."
+            missing.append("Anexar arquivos")
+        if missing:
+            return False, "PermissÃµes ausentes: " + ", ".join(missing)
 
-        rules = channel_ref(guild, "ROYAL_RULES_CHANNEL_ID", "regras")
-        giveaways = channel_ref(guild, "ROYAL_GIVEAWAYS_CHANNEL_ID", "sorteios")
-        support = channel_ref(guild, "ROYAL_SUPPORT_CHANNEL_ID", "suporte")
+        banner = find_banner()
+        if banner is None:
+            return False, "Banner ausente: coloque boas_vindas_royal.png na pasta assets/."
 
         try:
-            view = discord.ui.LayoutView(timeout=None)
-            panel = discord.ui.Container(accent_colour=discord.Colour.from_rgb(190, 150, 79))
-            panel.add_item(
-                discord.ui.MediaGallery(
-                    discord.MediaGalleryItem(media="attachment://boas_vindas_royal.png")
-                )
-            )
-            panel.add_item(
-                discord.ui.TextDisplay(
-        "# <a:coroa:1564000189167960177> ・ BEM-VINDO(A) À FAMÍLIA ROYAL\n"
-        f"> `🪽` Seja muito bem-vindo(a), {member.mention}!\n"
-        "> `⚜️` Você agora faz parte da **Família Royal**, uma nova era construída com **união, respeito, lealdade e presença**.\n\n"
-        "> `🎖️` Somos uma família com identidade própria dentro do **E.B do ALPHA**, mantendo nossa tradição, organização e força.\n\n"
-        f"> `📜` **Regras:** {rules}\n"
-        f"> `🎉` **Sorteios:** {giveaways}\n"
-        f"> `🎫` **Suporte:** {support}\n\n"
-        "> `👑` **Honre a coroa, fortaleça a família e faça parte da nossa história.**"
-    )
-)
-            view.add_item(panel)
-            # Uso de `with` garante o fechamento correto do arquivo após o envio.
+            view = make_welcome_view(member)
             with banner.open("rb") as stream:
-                attachment = discord.File(stream, filename="boas_vindas_royal.png")
+                attachment = discord.File(stream, filename=BANNER_ATTACHMENT)
                 await channel.send(
                     view=view,
                     file=attachment,
@@ -137,20 +160,17 @@ class BoasVindasRoyal(commands.Cog):
                         users=[member], roles=False, everyone=False
                     ),
                 )
-            logger.info("Boas-vindas enviadas para %s no canal %s", member.id, channel.id)
-            return True, "Prévia enviada com sucesso."
+            logger.info("Boas-vindas enviadas a %s no canal %s", member.id, channel.id)
+            return True, f"Mensagem enviada em {channel.mention}."
         except discord.Forbidden as exc:
-            logger.exception("Discord recusou o envio (403) no canal %s", channel.id)
-            return False, f"Discord recusou acesso (403): {exc}"
+            logger.exception("Envio de boas-vindas recusado (403)")
+            return False, f"Discord recusou o envio (403): {exc}"
         except discord.HTTPException as exc:
-            logger.exception(
-                "Falha HTTP do Discord | status=%s | codigo=%s | texto=%s",
-                exc.status, exc.code, exc.text,
-            )
-            return False, f"Discord HTTP {exc.status} / código {exc.code}: {str(exc)[:250]}"
+            logger.exception("Falha HTTP ao enviar boas-vindas")
+            return False, f"Discord HTTP {exc.status}, cÃ³digo {exc.code}: {str(exc)[:180]}"
         except Exception as exc:
-            logger.exception("Erro inesperado no painel de boas-vindas")
-            return False, f"Erro {type(exc).__name__}: {str(exc)[:250]}"
+            logger.exception("Erro inesperado ao enviar boas-vindas")
+            return False, f"{type(exc).__name__}: {str(exc)[:180]}"
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
@@ -158,17 +178,15 @@ class BoasVindasRoyal(commands.Cog):
             return
         ok, detail = await self.enviar(member)
         if not ok:
-            logger.error("Boas-vindas não enviadas para %s: %s", member.id, detail)
+            logger.error("NÃ£o foi possÃ­vel enviar boas-vindas a %s: %s", member.id, detail)
 
     @commands.command(name="testeboasvindas")
     @commands.guild_only()
     @commands.has_guild_permissions(manage_guild=True)
     async def teste_boas_vindas(self, ctx: commands.Context):
+        """Envia uma prÃ©via das boas-vindas para o canal oficial."""
         ok, detail = await self.enviar(ctx.author)
-        await ctx.reply(
-            ("✅ " if ok else "❌ ") + detail,
-            mention_author=False,
-        )
+        await ctx.reply(("âœ… " if ok else "âŒ ") + detail, mention_author=False)
 
 
 async def setup(bot: commands.Bot):
