@@ -1,14 +1,12 @@
 """Boas-vindas oficiais da Família Royal (discord.py >= 2.6, Components V2).
 
 Variáveis opcionais no Railway:
-WELCOME_CHANNEL_ID = ID do canal #boas-vindas (recomendado)
-ROYAL_RULES_CHANNEL_ID = 1553829609160835342 #regras
-ROYAL_ROLES_CHANNEL_ID = 1553820522322862200 #cargos
-ROYAL_GIVEAWAYS_CHANNEL_ID = 1553829712621740103 #sorteios
-ROYAL_SUPPORT_CHANNEL_ID = 1553843978229522633 #suporte
+WELCOME_CHANNEL_ID = 1563991142159360150 
+ROYAL_RULES_CHANNEL_ID = 1553829609160835342 
+ROYAL_ROLES_CHANNEL_ID = 1553820522322862200 
+ROYAL_GIVEAWAYS_CHANNEL_ID = 1553829712621740103 
+ROYAL_SUPPORT_CHANNEL_ID = 1553843978229522633 
 
-Sem WELCOME_CHANNEL_ID, busca um canal textual com nome 'boas-vindas'.
-A imagem deve existir em assets/boas_vindas_royal.png na raiz do projeto.
 """
 
 import logging
