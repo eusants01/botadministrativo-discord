@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+"""Insígnias pessoais Royal — discord.py 2.6+ / asyncpg.
+Coloque em cogs/insignias_royal.py. Usa bot.pool (PostgreSQL) do main.py.
+Preencha os IDs DOS USUÁRIOS no dicionário TITULARES abaixo.
+Comandos: !previainsignias  |  !painelinsignias #canal
+"""
 
 import logging
 from pathlib import Path
@@ -40,17 +46,17 @@ INSIGNIAS = [
 # IMPORTANTE: COLOQUE AQUI OS IDs DOS USUÁRIOS (NÃO IDs DOS CARGOS).
 # Você pode usar o mesmo ID para mais de uma insígnia, se for o caso.
 TITULARES = {
-    "Bruna": 697068974323793921,
-    "Tatah": 1032084016196763688,
-    "Pietra": 1295645409082867732,
-    "Kananda": 1430221798389059584,
-    "Sant's": 925863471902503033,
-    "Kael": 1541150632554135724,
-    "Ruan": 1348504492345397358,
-    "Pato": 1459320617852731635,
-    "Violets": 969628191268421672,
-    "Diniz": 1546524499430604891,
-    "Hanz": 1004088774810144859,
+    "Bruna": None,
+    "Tatah": None,
+    "Pietra": None,
+    "Kananda": None,
+    "Sant's": None,
+    "Kael": None,
+    "Ruan": None,
+    "Pato": None,
+    "Violets": None,
+    "Diniz": None,
+    "Hanz": None,
 }
 
 POR_CARGO = {cargo_id: (nome, emoji, descricao) for nome, cargo_id, emoji, descricao in INSIGNIAS}
@@ -65,60 +71,57 @@ def painel_catalogo(parte: int, cog: "InsigniasRoyal") -> discord.ui.LayoutView:
         ))
     if parte == 0:
         panel.add_item(discord.ui.TextDisplay(
-            "## ⚜️・INSÍGNIAS OFICIAIS DA FAMÍLIA ROYAL\n"
-            "Distinções pessoais dos membros oficiais. "
-            "**Cada titular decide quem pode receber a sua insígnia.**"
+            "## <:ImagemdoChatGPT25deoutde202615_4:1563986790753378424>・INSÍGNIAS OFICIAIS — FAMÍLIA ROYAL\n"
+            "> `👑` Distinções pessoais dos membros oficiais.\n"
+            "> `📜` Concessão apenas com autorização do titular."
         ))
         panel.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
-
     for nome, cargo_id, emoji, descricao in INSIGNIAS[parte * 6:(parte + 1) * 6]:
         panel.add_item(discord.ui.TextDisplay(
-            f"**{emoji}・Insígnia {nome}** · <@&{cargo_id}>\n"
-            f"{descricao}\n"
-            f"-# Titular: {nome} • Autorização obrigatória"
+            f"> `{emoji}` <@&{cargo_id}>\n{descricao}"
         ))
-
     panel.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
     if parte == 0:
         panel.add_item(discord.ui.TextDisplay(
-            "> `📜` **SOLICITAÇÃO DE INSÍGNIA**\n"
-            "Selecione uma insígnia abaixo. O titular receberá um pedido "
-            "**privado** e poderá **aprovar ou recusar**."
+            "> `✉️` **SOLICITAÇÃO DE INSÍGNIA**\n"
+            "Selecione uma insígnia. O titular receberá uma solicitação privada "
+            "e poderá aprová-la ou recusá-la."
         ))
         select = discord.ui.Select(
-            placeholder="Escolha uma insígnia para solicitar",
-            min_values=1,
-            max_values=1,
+            placeholder="Selecione uma insígnia Royal",
+            min_values=1, max_values=1,
             custom_id="royal:insignias:selecionar:v1",
             options=[
-                discord.SelectOption(label=f"Insígnia {n}", value=str(cid), description=f"Titular: {n}")
-                for n, cid, _, _ in INSIGNIAS
+                discord.SelectOption(label=f"Insígnia {n}", value=str(cid),
+                                     description=f"Titular: {n} • Aprovação necessária",
+                                     emoji=emoji)
+                for n, cid, emoji, _ in INSIGNIAS
             ],
         )
-
         async def select_callback(interaction: discord.Interaction):
             await cog.solicitar(interaction, int(select.values[0]))
-
         select.callback = select_callback
         panel.add_item(discord.ui.ActionRow(select))
     else:
         panel.add_item(discord.ui.TextDisplay(
-            "> `👑` **RECONHECIMENTO PESSOAL**\n"
-            "Essas insígnias não representam hierarquia administrativa. "
-            "A concessão depende da decisão do respectivo titular."
+            "> `⚜️` **RECONHECIMENTO PESSOAL**\n"
+            "Insígnias não representam hierarquia administrativa. "
+            "Sua concessão é uma decisão exclusiva de cada titular."
         ))
     view.add_item(panel)
     return view
 
 
 class AprovacaoView(discord.ui.LayoutView):
-    def __init__(self, cog: "InsigniasRoyal", pedido_id: int):
+    def __init__(self, cog: "InsigniasRoyal", pedido_id: int, nome: str = "Royal", solicitante: int = 0, servidor: str = ""):
         super().__init__(timeout=None)
         panel = discord.ui.Container(accent_colour=ROYAL)
         panel.add_item(discord.ui.TextDisplay(
-            "## ⚜️・AUTORIZAÇÃO DE INSÍGNIA\n"
-            "Você recebeu uma solicitação de sua insígnia pessoal.\n"
-            "Escolha **Aprovar** ou **Recusar**. Só você pode decidir."
+            "## <:ImagemdoChatGPT25deoutde202615_4:1563986790753378424>・AUTORIZAÇÃO DE INSÍGNIA\n"
+            f"> `👑` **Insígnia {nome}**\n"
+            f"> `👤` Solicitante: <@{solicitante}> (`{solicitante}`)\n"
+            f"> `🏰` Servidor: **{servidor or 'Família Royal'}**\n\n"
+            "`📜` Somente você pode aprovar ou recusar a concessão."
         ))
         aprovar = discord.ui.Button(
             label="Aprovar", style=discord.ButtonStyle.success,
@@ -175,12 +178,12 @@ class InsigniasRoyal(commands.Cog):
                 WHERE status IN ('pending', 'processing')
             """)
             pending = await pool.fetch("""
-                SELECT id, dm_message_id FROM royal_insignia_requests
+                SELECT id, dm_message_id, insignia_name, requester_id FROM royal_insignia_requests
                 WHERE status = 'pending' AND dm_message_id IS NOT NULL
             """)
             for item in pending:
                 self.bot.add_view(
-                    AprovacaoView(self, item["id"]),
+                    AprovacaoView(self, item["id"], item["insignia_name"], item["requester_id"]),
                     message_id=item["dm_message_id"],
                 )
             # A seleção pública permanece ativa após reiniciar o bot.
@@ -230,28 +233,35 @@ class InsigniasRoyal(commands.Cog):
             pedido_id = pedido["id"]
             try:
                 titular = await self.bot.fetch_user(owner_id)
+                # No Components V2 o TextDisplay deve conter todo o texto da DM.
+                # Enviar content=... junto com LayoutView resulta em HTTP 400.
                 dm = await titular.send(
-                    f"**Nova solicitação — Insígnia {nome}**\n"
-                    f"Solicitante: {interaction.user.mention} (`{interaction.user.id}`)\n"
-                    f"Servidor: **{interaction.guild.name}**\n"
-                    "Apenas sua aprovação autoriza a concessão.",
-                    view=AprovacaoView(self, pedido_id),
+                    view=AprovacaoView(self, pedido_id, nome,
+                                      interaction.user.id, interaction.guild.name),
                     allowed_mentions=discord.AllowedMentions.none(),
                 )
-            except (discord.Forbidden, discord.HTTPException):
+            except discord.HTTPException as exc:
                 await pool.execute(
                     "DELETE FROM royal_insignia_requests WHERE id=$1 AND status='pending'",
                     pedido_id,
                 )
-                logger.exception("Não foi possível enviar DM ao titular %s", owner_id)
-                return await interaction.followup.send(
-                    "❌ Não consegui enviar a solicitação ao titular. "
-                    "Ele precisa permitir mensagens privadas do bot.",
-                    ephemeral=True,
-                )
+                logger.exception("Erro na DM: titular=%s HTTP=%s codigo=%s corpo=%s",
+                                 owner_id, exc.status, exc.code, exc.text)
+                if exc.code in (50007, 50278):
+                    motivo = ("O Discord não permitiu enviar DM ao titular. "
+                              "Ele deve verificar as configurações de privacidade, "
+                              "bloqueios e o servidor compartilhado.")
+                else:
+                    motivo = (f"Erro no envio do painel: HTTP {exc.status} "
+                              f"/ código {exc.code}. Consulte os logs no Railway.")
+                return await interaction.followup.send(f"❌ {motivo}", ephemeral=True)
             await pool.execute(
                 "UPDATE royal_insignia_requests SET dm_message_id=$1 WHERE id=$2",
                 dm.id, pedido_id,
+            )
+            self.bot.add_view(
+                AprovacaoView(self, pedido_id, nome, interaction.user.id,
+                             interaction.guild.name), message_id=dm.id
             )
             await interaction.followup.send(
                 f"✅ Seu pedido da **Insígnia {nome}** foi enviado ao titular. "
