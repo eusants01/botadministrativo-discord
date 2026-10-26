@@ -1569,7 +1569,7 @@ class TicketView(discord.ui.LayoutView):
             elementos.insert(0, discord.ui.MediaGallery(discord.MediaGalleryItem(media=BANNER_PRINCIPAL)))
         elementos.append(discord.ui.Separator())
         elementos.append(discord.ui.ActionRow(TicketSelect()))
-        elementos.append(discord.ui.TextDisplay('-# ⚜️ Família Royal • Atendimento oficial e reservado'))
+        elementos.append(discord.ui.TextDisplay('-# <a:animated_Settings:1556187476177981440> Família Royal'))
         self.add_item(discord.ui.Container(*elementos, accent_colour=discord.Colour(COR_AZUL)))
 
 
