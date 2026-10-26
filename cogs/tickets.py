@@ -56,17 +56,17 @@ PAINEL_DESCRICAO = """\
 # <a:coroa:1564000189167960177> CENTRAL ATENDIMENTO ROYAL
 Bem-vindo(a) à central oficial de atendimento da **Família Royal**. Selecione a categoria correspondente à sua solicitação para receber o devido atendimento.
 
-**⚜️ CATEGORIAS DE ATENDIMENTO**
+**<:ImagemdoChatGPT25deoutde202615_4:1563986647144730826> CATEGORIAS DE ATENDIMENTO**
 > `📜` **Denúncias** — Relatar condutas irregulares ou infrações.
 > `🛡️` **Cargo do E.B** — Solicitar cargos de divisões ou organizações.
 > `🤝` **Parcerias** — Apresentar propostas de colaboração.
 > `✉️` **Outros Assuntos** — Encaminhar dúvidas e solicitações gerais.
 
-**🕰️ HORÁRIO DE ATENDIMENTO**
+**<:ImagemdoChatGPT25deoutde202615_4:1563986753830912070> HORÁRIO DE ATENDIMENTO**
 > `⏳` **Segunda a sexta-feira:** 09h às 22h.
 > `⏳` **Sábados e domingos:** 11h às 18h.
 
-**📜 ORIENTAÇÕES IMPORTANTES**
+**<:ImagemdoChatGPT25deoutde202615_4:1563986790753378424> ORIENTAÇÕES IMPORTANTES**
 > `⚖️` Todas as solicitações serão analisadas conforme as normas da Família Royal.
 > `📎` Apresente informações claras e as comprovações necessárias.
 > `⚠️` O uso indevido do sistema poderá resultar em medidas administrativas.
@@ -826,7 +826,7 @@ def criar_card_v2(canal: discord.TextChannel, t: dict) -> discord.ui.LayoutView:
         blocos.append(linha)
 
     blocos.append(discord.ui.TextDisplay(
-        "-# Família Royal • Atendimento reservado • O banner da categoria acompanha cada ticket"
+        "-# <a:animated_Settings:1556187476177981440> Família Royal"
     ))
     layout = TicketCardV2(controles)
     layout.add_item(discord.ui.Container(*blocos, accent_colour=discord.Colour(COR_AZUL)))
@@ -1152,7 +1152,7 @@ class ComentarioModal(discord.ui.Modal):
         )
         if canal:
             embed = discord.Embed(
-                title="⭐ Nova Avaliação de Atendimento",
+                title="<a:coroa:1564000189167960177> Nova Avaliação de Atendimento",
                 description=(
                     "Registro automático de avaliação do atendimento realizado pela "
                     f"**{NOME_SERVIDOR}**."
