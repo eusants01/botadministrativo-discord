@@ -15,7 +15,6 @@ CHANNEL_IDS = {
     'ROYAL_GIVEAWAYS_CHANNEL_ID': 1553829712621740103,
     'ROYAL_SUPPORT_CHANNEL_ID': 1553843978229522633,
 }
-
 BANNER_NAMES = (
     'boas_vindas_royal.png',
     'Família Royal_ Portal Celestial Dourado.png',
@@ -37,7 +36,7 @@ def channel_ref(key: str) -> str:
     return f'<#{channel_id(key)}>'
 
 
-def banner_path():
+def banner_path() -> Path | None:
     for name in BANNER_NAMES:
         path = BASE_DIR / 'assets' / name
         if path.is_file():
@@ -58,6 +57,7 @@ class BoasVindasRoyal(commands.Cog):
                 channel = await guild.fetch_channel(cid)
             except (discord.Forbidden, discord.NotFound, discord.HTTPException):
                 channel = None
+
         if not isinstance(channel, discord.TextChannel):
             return False, f'Canal de boas-vindas {cid} não encontrado.'
         if self.bot.user is None:
@@ -70,13 +70,13 @@ class BoasVindasRoyal(commands.Cog):
             except discord.HTTPException as exc:
                 return False, f'Não foi possível conferir permissões: {exc}'
 
-        perms = channel.permissions_for(me)
+        permissions = channel.permissions_for(me)
         missing = []
-        if not perms.view_channel:
+        if not permissions.view_channel:
             missing.append('Ver canal')
-        if not perms.send_messages:
+        if not permissions.send_messages:
             missing.append('Enviar mensagens')
-        if not perms.attach_files:
+        if not permissions.attach_files:
             missing.append('Anexar arquivos')
         if missing:
             return False, 'Permissões ausentes: ' + ', '.join(missing)
@@ -97,29 +97,27 @@ class BoasVindasRoyal(commands.Cog):
         ))
         panel.add_item(discord.ui.TextDisplay(
             '## <a:coroa:1564000189167960177> BOAS-VINDAS À FAMÍLIA ROYAL\n'
-            f'🪽 Seja muito bem-vindo(a), {member.mention}! '
-            'As portas do nosso reino estão abertas para você.'
+            f'Seja bem-vindo(a), {member.mention}. É uma satisfação receber você em nossa comunidade.'
         ))
         panel.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
         panel.add_item(discord.ui.TextDisplay(
-            '**⚜️ NOSSA FAMÍLIA**\n'
-            'Com raízes no **E.B do ALPHA**, a Família Royal é um espaço de '
-            '**união, respeito e lealdade**. Aqui, cada integrante tem seu valor '
-            'e contribui para escrever nossa história.'
+            '**⚜️ SOBRE A FAMÍLIA**\n'
+            'Com raízes no **E.B do ALPHA**, a Família Royal é guiada pelos valores de '
+            '**união, respeito e lealdade**. Que sua trajetória conosco seja marcada por boas conquistas.'
         ))
         panel.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
+        
         panel.add_item(discord.ui.TextDisplay(
-            '**📜 SUA JORNADA COMEÇA AQUI**\n'
-            f'Comece por {rules} para conhecer as diretrizes que mantêm '
-            'nossa comunidade organizada.\n\n'
-            f'Escolha seus interesses em {roles} e descubra as atividades e '
-            f'premiações disponíveis em {giveaways}.\n\n'
-            f'Se precisar de orientação ou quiser falar com a equipe, '
-            f'conte com {support}.'
-        ))
+            "**📜 ORIENTAÇÕES**\n"
+         f"> `📜` Conheça nossas diretrizes em {rules}.\n"
+          f"> `👑` Personalize sua experiência em {roles}.\n"
+          f"> `🎉` Acompanhe as premiações em {giveaways}.\n"
+          f"> `🎫` Solicite assistência à equipe em {support}."
+))
+
         panel.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
         panel.add_item(discord.ui.TextDisplay(
-            '-# 🕊️ Honre a coroa, fortaleça a família e faça parte da nossa história.'
+            '-# ✦ Honra à coroa. Lealdade à família.'
         ))
         view.add_item(panel)
 
