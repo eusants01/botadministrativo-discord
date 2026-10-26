@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 import asyncio
@@ -17,13 +18,13 @@ from zoneinfo import ZoneInfo
 import discord
 from discord.ext import commands, tasks
 
-LOG = logging.getLogger("sants.tickets")
+LOG = logging.getLogger("royal.tickets")
 
-NOME_SERVIDOR = "Família Sant's"
+NOME_SERVIDOR = "Família Royal"
 FUSO = ZoneInfo("America/Sao_Paulo")
 
-COR_AZUL = 0x8B0000       
-COR_AZUL_CLARO = 0xDC2626  
+COR_AZUL = 0xB8904F  # ouro envelhecido • identidade Royal       
+COR_AZUL_CLARO = 0xE7C990  # marfim dourado  
 
 CARGOS_STAFF = [
     1553832098404499516,
@@ -46,27 +47,29 @@ ALERTA_SEM_ATENDENTE_MINUTOS = 5
 INATIVIDADE_AVISO_HORAS = 0
 INATIVIDADE_FECHAR_APOS_AVISO_HORAS = 0
 FECHAR_APOS_DECISAO_MIN = 0
+BANNER_PRINCIPAL = os.getenv("ROYAL_SUPPORT_BANNER_URL", "").strip() or None
+BANNER_TICKET_PADRAO = os.getenv("ROYAL_TICKET_BANNER_URL", "").strip() or BANNER_PRINCIPAL
+BANNER_AVALIACAO = os.getenv("ROYAL_AVALIACAO_BANNER_URL", "").strip() or BANNER_TICKET_PADRAO
 
-BANNER_PRINCIPAL = "https://i.imgur.com/WBvZWPp.png"
 
 PAINEL_DESCRICAO = """\
-# <a:animated_Requests_Messages_Red:1561617026823233566> **Central de Atendimento**
-Escolha no menu abaixo uma categoria que deseja receber o atendimento necessário.
+# <a:coroa:1564000189167960177> CENTRAL ATENDIMENTO ROYAL
+Bem-vindo(a) à central oficial de atendimento da **Família Royal**. Selecione a categoria correspondente à sua solicitação para receber o devido atendimento.
 
-**Escolha a sua Categoria**
-> `☎️` **Denúncias** — Reportar jogadores ou comportamentos.
-> `🎖️` **Solicitar Medalhas** — Peça uma medalha com comprovação.
-> `🪖` **Cargo do E.B** — Peça cargo em uma divisão ou organização.
-> `💼` **Solicitar Parcerias** — Propostas de parceria entre servidores.
-> `💬` **Outros Assuntos** — Qualquer outra dúvida ou pedido.
+**⚜️ CATEGORIAS DE ATENDIMENTO**
+> `📜` **Denúncias** — Relatar condutas irregulares ou infrações.
+> `🛡️` **Cargo do E.B** — Solicitar cargos de divisões ou organizações.
+> `🤝` **Parcerias** — Apresentar propostas de colaboração.
+> `✉️` **Outros Assuntos** — Encaminhar dúvidas e solicitações gerais.
 
-**Horário de Funcionamento.**
-> `⏳` Segunda a Sexta: das **09:00 até 22:00h**
-> `⏳` Sábado e Domingo: das **11:00 até 18:00h**
+**🕰️ HORÁRIO DE ATENDIMENTO**
+> `⏳` **Segunda a sexta-feira:** 09h às 22h.
+> `⏳` **Sábados e domingos:** 11h às 18h.
 
-**Avisos**
-> `⚠️` O uso abusivo desnecessário acarretará em punição.
-> `⚠️` Esteja ciente de nossas [regras](https://discord.com/channels/1553803921514963075/1553829609160835342) e evite punições.
+**📜 ORIENTAÇÕES IMPORTANTES**
+> `⚖️` Todas as solicitações serão analisadas conforme as normas da Família Royal.
+> `📎` Apresente informações claras e as comprovações necessárias.
+> `⚠️` O uso indevido do sistema poderá resultar em medidas administrativas.
 """
 
 PRIORIDADES = {
@@ -111,17 +114,17 @@ RESPOSTAS_PRONTAS = {
         "Resolvido",
         "✅",
         "{usuario}, acreditamos que tudo foi resolvido. Se estiver tudo certo, "
-        "pode fechar o ticket no botão **Fechar**. 💙",
+        "pode fechar o ticket no botão **Fechar**. ⚜️",
     ),
 }
 
 CATEGORIAS = {
     "denuncia": {
         "nome": "Denúncias",
-        "emoji": "<:denuncias:1560383906551697649>",
+        "emoji": "📜",
         "descricao": "Reportar jogadores ou comportamentos",
         "cor": COR_AZUL,
-        "banner": "https://i.imgur.com/Jlo7zv8.png",
+        "banner": "https://media.discordapp.net/attachments/961677475191078992/1564152726575915018/02_denuncias.png?ex=6ae03a3e&is=6adee8be&hm=f7a2cb4d6c674ec7f711cadd207b4fdfc8c09209ac3fbc8a27286b8614b63847&=&format=webp&quality=lossless",
         "mensagem": """Olá, {usuario}.
 Sua denúncia será tratada com **sigilo e seriedade**.
 
@@ -174,62 +177,13 @@ Sua denúncia será tratada com **sigilo e seriedade**.
         "cargos_ping": [],
         "categoria_discord_id": None,
     },
-    "medalhas": {
-        "nome": "Solicitar Medalhas",
-        "emoji": "<:medalhas:1560384481783718289>",
-        "descricao": "Peça uma medalha com comprovação",
-        "cor": COR_AZUL,
-        "banner": "https://i.imgur.com/Ri4mViU.png",
-        "mensagem": """Olá, {usuario}! 🎖️
-Recebemos o seu pedido de medalha.
-
-**Como funciona**
-> `🔎` A equipe confere a sua comprovação.
-> `⚖️` Você recebe a decisão (**aprovado** ou **recusado**) aqui mesmo.
-> `⏳` Aguarde — a equipe já foi avisada.
-""",
-        "escolha": {
-            "label": "Medalha desejada",
-            "placeholder": "Qual medalha você deseja?",
-            "opcoes": [
-                ("Medalha Curadouro", "Pessoa que contribuiu ajudando as pessoas no servidor.", "⛑️"),
-                ("Medalha Contribuidor", "Membros booster do servidor.", "💛"),
-                ("Medalha Ceifeiro", "Faça um total de 10 abates em um evento organizado pelo servidor.", "☠️"),
-                ("Outra medalha", "Informe qual no formulário", "🎖️"),
-            ],
-        },
-        "perguntas": [
-            {
-                "label": "Como você cumpriu os requisitos?",
-                "placeholder": "Explique com detalhes...",
-                "longo": True,
-                "obrigatorio": True,
-            },
-            {
-                "label": "Comprovação (links)",
-                "placeholder": "Links de prints/clipes (ou envie aqui no ticket)",
-                "longo": False,
-                "obrigatorio": False,
-            },
-            {
-                "label": "Há quanto tempo você está na Família?",
-                "placeholder": "Ex: 3 meses",
-                "longo": False,
-                "obrigatorio": True,
-            },
-        ],
-        "decisao": True,
-        "cargo_ao_aprovar": None,
-        "cargos_ping": [],
-        "categoria_discord_id": None,
-    },
     "cargo_eb": {
         "nome": "Solicitar Cargo no E.B",
-        "emoji": "<:download1:1560384545642127480>",
+        "emoji": "🛡️",
         "descricao": "Peça cargo em uma divisão do E.B",
         "cor": COR_AZUL,
-        "banner": "https://i.imgur.com/Z85fQG6.png",
-        "mensagem": """Olá, {usuario}! 🪖
+        "banner": "https://media.discordapp.net/attachments/961677475191078992/1564152724314914856/04_cargo_do_eb.png?ex=6ae03a3e&is=6adee8be&hm=3a96636091a2419c091f36e6bb99e3bbd12c6662e7524ab05c408757470d044d&=&format=webp&quality=lossless",
+        "mensagem": """Olá, {usuario}.
 Recebemos o seu pedido de cargo no **E.B**.
 
 **Como funciona**
@@ -245,8 +199,8 @@ Recebemos o seu pedido de cargo no **E.B**.
             "label": "Divisão",
             "placeholder": "Em qual divisão/organização você quer o cargo?",
             "opcoes": [
-                ("CGEx", "Solicitar cargo no CGEx", "<:CGEx:1560374896138256524>"),
-                ("AFEx", "Solicitar cargo no AFEx", "<:AFEx:1560375341145391196>"),
+                ("CGEx", "Solicitar cargo no CGEx", "🛡️"),
+                ("AFEx", "Solicitar cargo no AFEx", "🎖️"),
                 ("Outra divisão", "Informe qual no formulário", "📌"),
             ],
         },
@@ -290,12 +244,12 @@ Recebemos o seu pedido de cargo no **E.B**.
     },
     "parceria": {
         "nome": "Solicitar Parcerias",
-        "emoji": "<:parcerias:1560384427316617328>",
+        "emoji": "🤝",
         "descricao": "Propostas de parceria entre servidores",
         "cor": COR_AZUL,
-        "banner": "https://i.imgur.com/9RJo2in.png",
-        "mensagem": """Olá, {usuario}! 🤝
-Que bom ter interesse em uma parceria com a **Família Sant's**.
+        "banner": "https://media.discordapp.net/attachments/961677475191078992/1564152724889538561/05_parcerias.png?ex=6ae03a3e&is=6adee8be&hm=d87012f76b163587e5ee6b2b192652f8c9e7d014a3f2227b786e84da848d337d&=&format=webp&quality=lossless",
+        "mensagem": """Olá, {usuario}.
+Agradecemos seu interesse em estabelecer uma parceria com a **Família Royal**.
 
 **Como funciona**
 > `📋` Um responsável analisa a sua proposta.
@@ -346,12 +300,12 @@ Que bom ter interesse em uma parceria com a **Família Sant's**.
     },
     "outros": {
         "nome": "Outros Assuntos",
-        "emoji": "<:outros:1560384516164558909>",
+        "emoji": "✉️",
         "descricao": "Qualquer outra dúvida ou pedido",
         "cor": COR_AZUL,
-        "banner": "https://i.imgur.com/iEssdVe.png",
-        "mensagem": """Olá, {usuario}! 👋
-Seja bem-vindo ao atendimento da **Família Sant's**.
+        "banner": "https://media.discordapp.net/attachments/961677475191078992/1564152725422219265/06_outros_assuntos.png?ex=6ae03a3e&is=6adee8be&hm=874cdc3e3f8ea514b41d30b7cdbea4d1939ec72becdb48752bfa5d24339a68e8&=&format=webp&quality=lossless",
+        "mensagem": """Olá, {usuario}.
+Seu atendimento foi registrado na **Família Royal**.
 
 **Como funciona**
 > `📝` Explique a sua dúvida ou pedido com detalhes.
@@ -378,6 +332,17 @@ Seja bem-vindo ao atendimento da **Família Sant's**.
         "categoria_discord_id": None,
     },
 }
+
+BANNERS_CATEGORIAS = {
+    "denuncia": os.getenv("ROYAL_BANNER_DENUNCIA_URL", "").strip() or BANNER_TICKET_PADRAO,
+    "cargo_eb": os.getenv("ROYAL_BANNER_CARGO_EB_URL", "").strip() or BANNER_TICKET_PADRAO,
+    "parceria": os.getenv("ROYAL_BANNER_PARCERIA_URL", "").strip() or BANNER_TICKET_PADRAO,
+    "outros": os.getenv("ROYAL_BANNER_OUTROS_URL", "").strip() or BANNER_TICKET_PADRAO,
+}
+
+for _chave, _banner in BANNERS_CATEGORIAS.items():
+    if _chave in CATEGORIAS and _banner:
+        CATEGORIAS[_chave]["banner"] = _banner
 
 PASTA_DADOS = "dados_tickets"
 os.makedirs(PASTA_DADOS, exist_ok=True)
@@ -628,9 +593,9 @@ def nome_canal(chave: str, respostas: list, numero: int) -> str:
 
 
 def protocolo_de(criado_em: datetime, numero: int) -> str:
-    """Protocolo único do atendimento. Ex.: SANTS-2610-0042"""
+    """Protocolo único do atendimento. Ex.: ROYAL-2610-0042"""
     d = criado_em.astimezone(FUSO)
-    return f"SANTS-{d.year % 100:02d}{d.month:02d}-{numero:04d}"
+    return f"ROYAL-{d.year % 100:02d}{d.month:02d}-{numero:04d}"
 
 
 def formatar_duracao(seg: float) -> str:
@@ -773,7 +738,7 @@ def montar_card(guild: discord.Guild, canal, t: dict) -> discord.Embed:
         linhas.append("> `🔒` Ticket trancado pela equipe")
     partes.append("**Atendimento**\n" + "\n".join(linhas))
 
-    # Seção: decisão (medalhas, cargos, parcerias)
+    # Seção: decisão (cargos e parcerias)
     dec = t.get("decisao")
     if dec:
         aprovado = dec.get("status") == "aprovado"
@@ -797,29 +762,74 @@ def montar_card(guild: discord.Guild, canal, t: dict) -> discord.Embed:
 
 
 def criar_card_v2(canal: discord.TextChannel, t: dict) -> discord.ui.LayoutView:
-    """Card e botões nativos V2, sem embeds e sem conversor global."""
+    """Cartão persistente do atendimento, com identidade visual Royal."""
     cat = CATEGORIAS.get(t.get("cat", ""), {})
     controles = TicketControls(
         assumido=bool(t.get("claim")),
         decisao=bool(cat.get("decisao")),
         decidido=bool(t.get("decisao")),
     )
-    embed = montar_card(canal.guild, canal, t)
-    texto = embed.description or "Atendimento em andamento."
-    layout = TicketCardV2(controles)
-    partes = [discord.ui.TextDisplay(parte) for parte in dividir_texto_card(texto)]
-    if banner_valido(cat.get("banner")):
-        partes.insert(0, discord.ui.MediaGallery(discord.MediaGalleryItem(media=cat["banner"])))
-    partes.append(discord.ui.Separator())
+    proto = protocolo_de(canal.created_at, int(t.get("num", 0)))
+    nome = cat.get("nome", "Atendimento")
+    banner_ticket = cat.get("banner") or BANNER_TICKET_PADRAO
+
+    blocos = []
+    if banner_valido(banner_ticket):
+        blocos.append(discord.ui.MediaGallery(discord.MediaGalleryItem(media=banner_ticket)))
+        blocos.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
+
+    linhas = [
+        f"## ⚜️ {nome.upper()}",
+        f"> `📋` Protocolo: **{proto}**",
+        f"> `👤` Solicitante: <@{t['owner']}>",
+        f"> `🛡️` Responsável: " + (f"<@{t['claim']}>" if t.get("claim") else "Aguardando a equipe"),
+    ]
+    if t.get("prio", "normal") != "normal":
+        linhas.append(f"> `⚑` Prioridade: **{PRIORIDADES.get(t['prio'], PRIORIDADES['normal'])[1]}**")
+    if t.get("locked"):
+        linhas.append("> `🔒` Atendimento restrito pela equipe")
+    blocos.append(discord.ui.TextDisplay("\n".join(linhas)))
+    blocos.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
+
+    if cat.get("mensagem"):
+        texto = cat["mensagem"].replace("{usuario}", f"<@{t['owner']}>").strip()
+        blocos.extend(discord.ui.TextDisplay(p) for p in dividir_texto_card(texto))
+
+    respostas = t.get("respostas", [])
+    if respostas:
+        blocos.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
+        blocos.append(discord.ui.TextDisplay("**📜 INFORMAÇÕES DA SOLICITAÇÃO**"))
+        texto = "\n".join(
+            f"> **{str(label)}**\n> {str(valor).replace(chr(10), chr(10) + '> ')}"
+            for label, valor in respostas
+        )
+        blocos.extend(discord.ui.TextDisplay(p) for p in dividir_texto_card(texto))
+
+    decisao = t.get("decisao")
+    if decisao:
+        blocos.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
+        situacao = "APROVADA" if decisao.get("status") == "aprovado" else "RECUSADA"
+        justificativa = str(decisao.get("motivo") or "Sem justificativa adicional.")
+        blocos.append(discord.ui.TextDisplay(
+            f"**⚖️ DELIBERAÇÃO — {situacao}**\n"
+            f"> Responsável: <@{decisao.get('por', 0)}>\n"
+            f"> {justificativa[:1000]}"
+        ))
+
+    blocos.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
     botoes = list(controles.children)
-    for i in range(0, len(botoes), 5):
+    for inicio in range(0, len(botoes), 5):
         linha = discord.ui.ActionRow()
-        for botao in botoes[i:i + 5]:
+        for botao in botoes[inicio:inicio + 5]:
             botao._view = None
             linha.add_item(botao)
-        partes.append(linha)
-    partes.append(discord.ui.TextDisplay(f"-# {NOME_SERVIDOR} • Central de Atendimento"))
-    layout.add_item(discord.ui.Container(*partes, accent_colour=discord.Colour(COR_AZUL)))
+        blocos.append(linha)
+
+    blocos.append(discord.ui.TextDisplay(
+        "-# Família Royal • Atendimento reservado • O banner da categoria acompanha cada ticket"
+    ))
+    layout = TicketCardV2(controles)
+    layout.add_item(discord.ui.Container(*blocos, accent_colour=discord.Colour(COR_AZUL)))
     return layout
 
 
@@ -915,13 +925,13 @@ async def gerar_transcript_html(canal: discord.TextChannel, t: dict) -> tuple[st
 <html lang="pt-br"><head><meta charset="utf-8">
 <title>Logs — {html.escape(canal.name)}</title>
 <style>
-body{{background:#101a33;color:#dbe4ff;font-family:Segoe UI,Arial,sans-serif;margin:0;padding:20px}}
-h1{{color:#fff;margin-bottom:0}} .sub{{color:#8fa3d6;margin-bottom:20px}}
-.msg{{display:flex;gap:12px;padding:8px 0;border-bottom:1px solid #1d2b52}}
+body{{background:#191712;color:#f1eadf;font-family:Segoe UI,Arial,sans-serif;margin:0;padding:20px}}
+h1{{color:#fff;margin-bottom:0}} .sub{{color:#bca782;margin-bottom:20px}}
+.msg{{display:flex;gap:12px;padding:8px 0;border-bottom:1px solid #403729}}
 .msg img{{width:40px;height:40px;border-radius:50%}}
-.autor{{color:#fff;font-weight:600}} .hora{{color:#8fa3d6;font-size:12px}}
-.anexo{{margin-top:4px;font-size:13px}} a{{color:#6aa9ff}}
-.embed{{border-left:4px solid #1a3c8c;background:#16224a;padding:6px 10px;margin-top:4px;border-radius:4px}}
+.autor{{color:#fff;font-weight:600}} .hora{{color:#bca782;font-size:12px}}
+.anexo{{margin-top:4px;font-size:13px}} a{{color:#e7c990}}
+.embed{{border-left:4px solid #b8904f;background:#282319;padding:6px 10px;margin-top:4px;border-radius:4px}}
 </style></head><body>
 <h1>📑 {html.escape(NOME_SERVIDOR)} — Logs do Ticket</h1>
 <div class="sub">Protocolo: {html.escape(proto)} · Canal: #{html.escape(canal.name)} ·
@@ -1019,7 +1029,7 @@ async def fechar_ticket(
                         f"Seu ticket **{proto}** "
                         f"({cat.get('nome', 'Ticket')}) foi finalizado.\n"
                         f"Como foi o seu atendimento{atendente}?\n\n"
-                        "Clique em uma das notas abaixo. 💙"
+                        "Clique em uma das notas abaixo. ⚜️"
                     ),
                     color=COR_AZUL_CLARO,
                 )
@@ -1143,6 +1153,10 @@ class ComentarioModal(discord.ui.Modal):
         if canal:
             embed = discord.Embed(
                 title="⭐ Nova Avaliação de Atendimento",
+                description=(
+                    "Registro automático de avaliação do atendimento realizado pela "
+                    f"**{NOME_SERVIDOR}**."
+                ),
                 color=COR_AZUL_CLARO,
                 timestamp=datetime.now(FUSO),
             )
@@ -1163,15 +1177,17 @@ class ComentarioModal(discord.ui.Modal):
             embed.add_field(
                 name="Comentário", value=comentario or "*Sem comentário*", inline=False
             )
-            embed.set_footer(text=NOME_SERVIDOR)
+            if banner_valido(BANNER_AVALIACAO):
+                embed.set_image(url=BANNER_AVALIACAO)
+            embed.set_footer(text=f"{NOME_SERVIDOR} • Central de Atendimento")
             try:
                 await canal.send(embed=embed)
             except discord.HTTPException:
                 pass
-            
+
 
         agradecimento = discord.Embed(
-            title="💙 Obrigado pela sua avaliação!",
+            title="⚜️ Obrigado pela sua avaliação!",
             description=f"Sua nota: {estrelas(self.nota)}\n\n"
             f"Ela nos ajuda a melhorar o atendimento da **{NOME_SERVIDOR}**.",
             color=COR_AZUL,
@@ -1473,7 +1489,7 @@ class TicketSelect(discord.ui.Select):
             for chave, c in CATEGORIAS.items()
         ]
         super().__init__(
-            placeholder="📩 Selecione a categoria do seu ticket...",
+            placeholder="Selecione o assunto do atendimento...",
             options=options,
             custom_id="sants_ticket_select",
         )
@@ -1553,7 +1569,7 @@ class TicketView(discord.ui.LayoutView):
             elementos.insert(0, discord.ui.MediaGallery(discord.MediaGalleryItem(media=BANNER_PRINCIPAL)))
         elementos.append(discord.ui.Separator())
         elementos.append(discord.ui.ActionRow(TicketSelect()))
-        elementos.append(discord.ui.TextDisplay('-# Família Sant\'s • Atendimento oficial'))
+        elementos.append(discord.ui.TextDisplay('-# ⚜️ Família Royal • Atendimento oficial e reservado'))
         self.add_item(discord.ui.Container(*elementos, accent_colour=discord.Colour(COR_AZUL)))
 
 
@@ -1581,7 +1597,7 @@ class MotivoFechamentoModal(discord.ui.Modal, title="Fechar Ticket"):
 
 
 class DecisaoModal(discord.ui.Modal):
-    """Aprovar/Recusar uma solicitação (medalhas, cargos, parcerias)."""
+    """Aprovar/Recusar uma solicitação (cargos e parcerias)."""
 
     def __init__(self, aprovar: bool):
         super().__init__(
