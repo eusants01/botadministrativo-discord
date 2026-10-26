@@ -101,15 +101,15 @@ class BoasVindasRoyal(commands.Cog):
         ))
         panel.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
         panel.add_item(discord.ui.TextDisplay(
-            '**⚜️ SOBRE A FAMÍLIA**\n'
+            '**⚜️ Sobre a Família Royal**\n'
             'Com raízes no **E.B do ALPHA**, a Família Royal é guiada pelos valores de '
             '**união, respeito e lealdade**. Que sua trajetória conosco seja marcada por boas conquistas.'
         ))
         panel.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
         
         panel.add_item(discord.ui.TextDisplay(
-            "**📜 ORIENTAÇÕES**\n"
-         f"> `📜` Conheça nossas diretrizes em {rules}.\n"
+            "**📜 Orientações Iniciais**\n"
+            f"> `📜` Conheça nossas diretrizes em {rules}.\n"
           f"> `👑` Personalize sua experiência em {roles}.\n"
           f"> `🎉` Acompanhe as premiações em {giveaways}.\n"
           f"> `🎫` Solicite assistência à equipe em {support}."
@@ -117,7 +117,7 @@ class BoasVindasRoyal(commands.Cog):
 
         panel.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
         panel.add_item(discord.ui.TextDisplay(
-            '-# ✦ Honra à coroa. Lealdade à família.'
+            '-#<:ImagemdoChatGPT25deoutde202615_4:1563986790753378424> Honra à coroa. Lealdade à família.'
         ))
         view.add_item(panel)
 
