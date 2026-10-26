@@ -1,7 +1,3 @@
-# -*- coding: utf-8 -*-
-"""Boas-vindas da Família Royal — Components V2, sem botões.
-Requer discord.py 2.6+ e Members Intent ativada no Discord Developer Portal.
-"""
 import logging
 import os
 from pathlib import Path
@@ -89,7 +85,7 @@ class BoasVindasRoyal(commands.Cog):
         panel.add_item(discord.ui.MediaGallery(discord.MediaGalleryItem(media='attachment://boas_vindas_royal.png')))
         panel.add_item(discord.ui.TextDisplay(
             '## <a:coroa:1564000189167960177>・BOAS-VINDAS À FAMÍLIA ROYAL\n'
-            f'`🪽` Seja muito bem-vindo(a), {member.mention}! As portas do nosso reino estão abertas para você.'
+            f'`🪽` Seja muito bem-vindo(a) {member.mention}, As portas do nosso reino estão abertas para você.'
         ))
         panel.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
         panel.add_item(discord.ui.TextDisplay(
