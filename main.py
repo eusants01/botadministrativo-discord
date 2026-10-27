@@ -25,7 +25,6 @@ intents.members = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 install_components_v2(bot)
 
-
 status_list = [
     "👑 Protegendo a Família Royal",
     "🪽 Sob as asas da Fênix Real",
@@ -51,6 +50,7 @@ status_list = [
     "😂 Até a realeza tem resenha",
     "💅 Realeza também causa!"
 ]
+
 
 @tasks.loop(seconds=30)
 async def mudar_status():
@@ -113,12 +113,17 @@ async def setup_hook():
             except Exception:
                 logger.exception('❌ Erro ao carregar %s', extensao)
 
+    if 'cogs.insignias_royal' in bot.extensions:
+        logger.info('✅ Insígnias carregadas | previainsignias=%s | painelinsignias=%s',
+                    bot.get_command('previainsignias') is not None,
+                    bot.get_command('painelinsignias') is not None)
+    else:
+        logger.error('❌ O cog cogs.insignias_royal não foi carregado. Veja o erro acima.')
+
     logger.info('📦 Extensões carregadas: %s', list(bot.extensions))
     logger.info('🔎 Comandos !: %s', [c.qualified_name for c in bot.walk_commands()])
 
     # Slash commands desativados — o bot usa apenas prefixo !
-    # (tree.sync removido para não publicar comandos / no Discord)
-
     if not mudar_status.is_running():
         mudar_status.start()
 
@@ -152,4 +157,3 @@ if __name__ == '__main__':
     if not token:
         raise RuntimeError('DISCORD_TOKEN não encontrado no ambiente.')
     bot.run(token)
-    
