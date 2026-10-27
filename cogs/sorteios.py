@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import copy
+import logging
 import json
 import os
 import random
 import re
 import time
+from urllib.parse import urlparse
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -17,24 +20,25 @@ from discord.ext import commands, tasks
 # ║                        CONFIGURAÇÃO                          ║
 # ╚══════════════════════════════════════════════════════════════╝
 
-NOME_SERVIDOR = "Família Sant's"
+NOME_SERVIDOR = "Família Royal"
+LOG = logging.getLogger("royal.sorteios")
 FUSO = ZoneInfo("America/Sao_Paulo")
-COR_AZUL = 0x1A3C8C  
+COR_AZUL = 0xBC9456  # Dourado Royal  
 
 CARGOS_STAFF = [
     1553832098404499516,
     1553832097905377422,
 ]
 
-CANAL_LOGS_SORTEIOS_ID = 1555798364837257236
+CANAL_LOGS_SORTEIOS_ID = 1559312469959119039
 
 CANAL_SORTEIOS_ID = 1553829712621740103
 
 CARGO_PING_SORTEIOS_ID = 1555798698410377246
 
-BANNER_SORTEIO = "https://i.imgur.com/hFyX7CT.png"
+BANNER_SORTEIO = os.getenv("ROYAL_SORTEIO_BANNER_URL.png", "").strip()
 
-BANNER_PAINEL = "https://i.imgur.com/ZRZNu33.png"
+BANNER_PAINEL = os.getenv("ROYAL_SORTEIO_PAINEL_BANNER_URL.png", "").strip() or BANNER_SORTEIO
 
 TEXTO_RESGATE = "Abra um ticket em <#1553843978229522633> para resgatar o seu prêmio."
 
@@ -45,9 +49,9 @@ DURACAO_MIN = 60
 DURACAO_MAX = 60 * 86400     
 
 TEMAS = {
-    "azul": {"nome": "Azul Real", "emoji": "💎", "cor": COR_AZUL},
-    "ouro": {"nome": "Ouro", "emoji": "👑", "cor": 0xF1C40F},
-    "neon": {"nome": "Neon", "emoji": "⚡", "cor": 0x00E5FF},
+    "azul": {"nome": "Royal", "emoji": "👑", "cor": COR_AZUL},
+    "ouro": {"nome": "Ouro Imperial", "emoji": "⚜️", "cor": 0xCFAC6D},
+    "neon": {"nome": "Relâmpago Royal", "emoji": "⚡", "cor": COR_AZUL},
     "rubi": {"nome": "Rubi", "emoji": "🔥", "cor": 0xC0392B},
     "esmeralda": {"nome": "Esmeralda", "emoji": "🍀", "cor": 0x1ABC9C},
     "galaxia": {"nome": "Galáxia", "emoji": "🌌", "cor": 0x6C3FC5},
@@ -62,7 +66,7 @@ DIAS_OPCOES = [
     (30, "30 dias no servidor"),
 ]
 
-PASTA_DADOS = "dados_sorteios"
+PASTA_DADOS = os.getenv("ROYAL_SORTEIOS_DATA_DIR", "dados_sorteios")
 os.makedirs(PASTA_DADOS, exist_ok=True)
 F_SORTEIOS = os.path.join(PASTA_DADOS, "sorteios.json")
 
@@ -75,46 +79,151 @@ ENCERRANDO: set[int] = set()   # evita encerrar duas vezes
 # ════════════════════════════════════════════════════════════════
 
 
-def _ler_json(caminho: str, padrao):
-    if os.path.exists(caminho):
+# Cache único em memória; PostgreSQL é a fonte persistente quando disponível.
+# Os dados legados em JSON são migrados somente se a tabela ainda estiver vazia.
+_SORTEIOS_CACHE: dict[str, dict] = {}
+_POOL = None
+_GRAVACOES: set[asyncio.Task] = set()
+_PENDENTE = False
+_REVISAO = 0
+SQL_CREATE = """CREATE TABLE IF NOT EXISTS royal_giveaways (
+    message_id BIGINT PRIMARY KEY,
+    payload JSONB NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+)"""
+SQL_UPSERT = """INSERT INTO royal_giveaways (message_id, payload)
+    VALUES ($1, $2::jsonb) ON CONFLICT (message_id)
+    DO UPDATE SET payload=EXCLUDED.payload, updated_at=now()"""
+
+# Preferências de futuros sorteios, por servidor (não afetam os já publicados).
+CONFIG_PADRAO = {
+    "canal_id": CANAL_SORTEIOS_ID,
+    "duracao": "2h",
+    "vencedores": 1,
+    "dias_min": 0,
+    "cargo_exigido": None,
+    "cargo_bonus": None,
+    "bonus_mult": 2,
+    "ping": 0,
+    "tema": "azul",
+}
+_CONFIG_CACHE: dict[int, dict] = {}
+SQL_CONFIG = """CREATE TABLE IF NOT EXISTS royal_giveaway_settings (
+    guild_id BIGINT PRIMARY KEY, payload JSONB NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT now())"""
+SQL_CONFIG_UPSERT = """INSERT INTO royal_giveaway_settings(guild_id, payload)
+    VALUES($1,$2::jsonb) ON CONFLICT(guild_id) DO UPDATE
+    SET payload=EXCLUDED.payload, updated_at=now()"""
+
+
+def configuracao(guild_id: int) -> dict:
+    return {**CONFIG_PADRAO, **_CONFIG_CACHE.get(int(guild_id), {})}
+
+
+async def salvar_config(guild_id: int, novos: dict):
+    atual = {**configuracao(guild_id), **novos}
+    if _POOL is None:
+        raise RuntimeError("PostgreSQL não conectado. Preferências não foram salvas.")
+    await _POOL.execute(SQL_CONFIG_UPSERT, guild_id, json.dumps(atual, ensure_ascii=False))
+    _CONFIG_CACHE[int(guild_id)] = atual
+    return atual
+
+
+
+def _ler_arquivo() -> dict:
+    try:
+        with open(F_SORTEIOS, "r", encoding="utf-8") as f:
+            dados = json.load(f)
+        return dados if isinstance(dados, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _gravar_local():
+    try:
+        os.makedirs(PASTA_DADOS, exist_ok=True)
+        arquivo = F_SORTEIOS + ".tmp"
+        with open(arquivo, "w", encoding="utf-8") as f:
+            json.dump(_SORTEIOS_CACHE, f, ensure_ascii=False, indent=2)
+        os.replace(arquivo, F_SORTEIOS)
+    except OSError:
+        LOG.exception("Não foi possível salvar o backup JSON dos sorteios")
+
+
+_LOCKS: dict[int, asyncio.Lock] = {}
+
+
+async def _gravar_postgres(msg_id: int, payload: dict):
+    if _POOL is not None:
+        lock = _LOCKS.setdefault(msg_id, asyncio.Lock())
+        async with lock:
+            try:
+                # Sempre recuperar a versão mais recente; evita gravações antigas
+                # sobrescreverem o resultado de uma interação mais nova.
+                atual = _SORTEIOS_CACHE.get(str(msg_id), payload)
+                await _POOL.execute(SQL_UPSERT, msg_id, json.dumps(atual, ensure_ascii=False))
+            except Exception:
+                LOG.exception("Erro ao persistir sorteio %s no PostgreSQL", msg_id)
+
+
+def _salvar_pendente(g: dict):
+    global _REVISAO
+    _REVISAO += 1
+    if _POOL is not None:
         try:
-            with open(caminho, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, OSError):
-            pass
-    return padrao
+            tarefa = asyncio.get_running_loop().create_task(
+                _gravar_postgres(int(g["mensagem"]), copy.deepcopy(g)))
+            _GRAVACOES.add(tarefa)
+            tarefa.add_done_callback(_GRAVACOES.discard)
+        except RuntimeError:
+            LOG.warning("Loop indisponível para persistir sorteio")
 
 
-def _salvar_json(caminho: str, dados):
-    tmp = caminho + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(dados, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, caminho)
+async def iniciar_armazenamento(bot: commands.Bot):
+    global _POOL, _SORTEIOS_CACHE
+    pool = getattr(bot, "pool", None)
+    legado = _ler_arquivo()
+    if pool is None:
+        LOG.warning("PostgreSQL indisponível: usando arquivo local (não persistente no Railway sem volume)")
+        _SORTEIOS_CACHE = legado
+        return
+    await pool.execute(SQL_CREATE)
+    await pool.execute(SQL_CONFIG)
+    for linha in await pool.fetch("SELECT guild_id, payload FROM royal_giveaway_settings"):
+        dados = linha["payload"]
+        _CONFIG_CACHE[int(linha["guild_id"])] = json.loads(dados) if isinstance(dados, str) else dados
+    linhas = await pool.fetch("SELECT message_id, payload FROM royal_giveaways")
+    if linhas:
+        _SORTEIOS_CACHE = {
+            str(r["message_id"]): json.loads(r["payload"]) if isinstance(r["payload"], str) else r["payload"]
+            for r in linhas
+        }
+        LOG.info("%d sorteios recuperados do PostgreSQL", len(_SORTEIOS_CACHE))
+    else:
+        _SORTEIOS_CACHE = legado
+        for chave, payload in legado.items():
+            await pool.execute(SQL_UPSERT, int(chave), json.dumps(payload, ensure_ascii=False))
+        LOG.info("%d sorteios legados migrados do JSON", len(legado))
+    _POOL = pool
+
+
+async def aguardar_gravacoes():
+    if _GRAVACOES:
+        await asyncio.gather(*list(_GRAVACOES), return_exceptions=True)
 
 
 def todos() -> dict:
-    return _ler_json(F_SORTEIOS, {})
+    return _SORTEIOS_CACHE
 
 
 def obter(msg_id) -> dict | None:
-    return todos().get(str(msg_id))
-
-
-def _podar(dados: dict) -> dict:
-    """Mantém todos os ativos e só os 150 finalizados mais recentes."""
-    finalizados = [(k, v) for k, v in dados.items() if v.get("status") != "ativo"]
-    if len(finalizados) <= 150:
-        return dados
-    finalizados.sort(key=lambda kv: kv[1].get("encerrado_ts", kv[1].get("criado_ts", 0)))
-    for k, _ in finalizados[: len(finalizados) - 150]:
-        dados.pop(k, None)
-    return dados
+    return _SORTEIOS_CACHE.get(str(msg_id))
 
 
 def salvar(g: dict):
-    dados = todos()
-    dados[str(g["mensagem"])] = g
-    _salvar_json(F_SORTEIOS, _podar(dados))
+    _SORTEIOS_CACHE[str(g["mensagem"])] = copy.deepcopy(g)
+    _gravar_local()
+    _salvar_pendente(g)
 
 
 def sorteios_da_guild(guild_id: int) -> list[dict]:
@@ -181,7 +290,8 @@ def banner_valido(url) -> bool:
 
 def destino_sorteios(guild: discord.Guild, fallback_id: int | None = None):
     """Canal onde o sorteio será publicado (canal fixo; senão, o canal atual)."""
-    for cid in (CANAL_SORTEIOS_ID, fallback_id):
+    preferencias = configuracao(guild.id)
+    for cid in dict.fromkeys((preferencias.get("canal_id"), CANAL_SORTEIOS_ID, fallback_id)):
         if cid:
             c = guild.get_channel(cid)
             if isinstance(c, discord.TextChannel):
@@ -387,12 +497,12 @@ async def atualizar_mensagem(bot: commands.Bot, g: dict):
     if msg is None:
         return
     try:
-        await msg.edit(
-            embed=montar_embed(g),
-            view=SorteioView(encerrado=g.get("status") != "ativo"),
-        )
+        if msg.flags.value & (1 << 15):
+            await msg.edit(view=montar_sorteio_v2(g))
+        else:
+            await msg.edit(embed=montar_embed(g), view=SorteioView(encerrado=g.get("status") != "ativo"))
     except discord.HTTPException:
-        pass
+        LOG.exception("Falha ao atualizar sorteio %s", g.get("mensagem"))
 
 
 async def anunciar(
@@ -493,12 +603,9 @@ async def publicar(
     opcoes = opcoes_ping(guild)
     ping = int(base.get("ping", 0))
     content = opcoes[ping][1] if 0 <= ping < len(opcoes) else None
-    msg = await canal.send(
-        content=content,
-        embed=montar_embed(g),
-        view=SorteioView(),
-        allowed_mentions=discord.AllowedMentions(everyone=True, roles=True),
-    )
+    if content:
+        await canal.send(content, allowed_mentions=discord.AllowedMentions(everyone=True, roles=True))
+    msg = await canal.send(view=montar_sorteio_v2(g), allowed_mentions=discord.AllowedMentions.none())
     g["mensagem"] = msg.id
     salvar(g)
     await registrar(
@@ -528,7 +635,7 @@ async def encerrar_sorteio(bot: commands.Bot, msg_id: int, quem=None) -> list[in
         msg = await buscar_mensagem(bot, g)
         if msg is not None:
             try:
-                await msg.edit(embed=montar_embed(g), view=SorteioView(encerrado=True))
+                await atualizar_mensagem(bot, g)
             except discord.HTTPException:
                 pass
         await anunciar(bot, g, msg, ganhadores)
@@ -584,7 +691,7 @@ async def rerolar_sorteio(bot: commands.Bot, msg_id: int, quem=None, qtd: int = 
     msg = await buscar_mensagem(bot, g)
     if msg is not None:
         try:
-            await msg.edit(embed=montar_embed(g), view=SorteioView(encerrado=True))
+            await atualizar_mensagem(bot, g)
         except discord.HTTPException:
             pass
     await anunciar(bot, g, msg, novos, reroll=True)
@@ -601,6 +708,114 @@ async def rerolar_sorteio(bot: commands.Bot, msg_id: int, quem=None, qtd: int = 
 # ════════════════════════════════════════════════════════════════
 #                  MENSAGEM DO SORTEIO (botões públicos)
 # ════════════════════════════════════════════════════════════════
+
+
+class RoyalSorteioBotao(discord.ui.Button):
+    def __init__(self, acao: str, encerrado: bool = False):
+        super().__init__(
+            label={"entrar": "Participar", "lista": "Participantes"}[acao],
+            emoji={"entrar": "🎟️", "lista": "👥"}[acao],
+            style=discord.ButtonStyle.success if acao == "entrar" else discord.ButtonStyle.secondary,
+            custom_id=f"royal:sorteio:{acao}:v1",
+            disabled=encerrado and acao == "entrar",
+        )
+        self.acao = acao
+
+    async def callback(self, interaction: discord.Interaction):
+        if self.acao == "entrar":
+            await entrar_royal(interaction)
+        else:
+            await participantes_royal(interaction)
+
+
+class RoyalSorteioView(discord.ui.LayoutView):
+    def __init__(self, g: dict | None = None):
+        super().__init__(timeout=None)
+        if g is None:
+            g = {"premio": "Sorteio Royal", "vencedores": 1, "fim_ts": 0,
+                 "participantes": {}, "status": "ativo"}
+        self.add_item(_container_sorteio(g))
+
+
+def _container_sorteio(g: dict) -> discord.ui.Container:
+    status = g.get("status", "ativo")
+    banner = g.get("banner") or BANNER_SORTEIO
+    componentes = []
+    if banner_valido(banner):
+        componentes.append(discord.ui.MediaGallery(discord.MediaGalleryItem(media=banner)))
+    if status == "ativo":
+        descricao = [
+            f"## 👑 {str(g.get('premio', 'Sorteio Royal'))[:120]}",
+            f"{str(g.get('descricao') or '').strip()[:700]}",
+            f"> `⏳` Encerramento: <t:{int(g.get('fim_ts', 0))}:R>",
+            f"> `🏆` Vencedores: **{g.get('vencedores', 1)}**",
+            f"> `👥` Participantes: **{len(g.get('participantes', {}))}**",
+        ]
+        reqs = texto_requisitos(g)
+        if reqs:
+            descricao += ["", "**⚜️ CONDIÇÕES DE PARTICIPAÇÃO**"] + [f"> {r}" for r in reqs]
+        descricao += ["", "-# Família Royal • Boa sorte a todos os participantes"]
+    else:
+        descricao = [
+            f"## {'🏁 SORTEIO ENCERRADO' if status == 'encerrado' else '🚫 SORTEIO CANCELADO'}",
+            f"**{g.get('premio', 'Sorteio Royal')}**",
+        ]
+        if status == "encerrado":
+            nomes = ", ".join(f"<@{uid}>" for uid in g.get("ganhadores", [])) or "Nenhum participante elegível"
+            descricao.append(f"> `🏆` Vencedores: {nomes}")
+    componentes.append(discord.ui.TextDisplay("\n".join(x for x in descricao if x is not None)[:3600]))
+    componentes.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
+    componentes.append(discord.ui.ActionRow(
+        RoyalSorteioBotao("entrar", encerrado=status != "ativo"),
+        RoyalSorteioBotao("lista", encerrado=False),
+    ))
+    return discord.ui.Container(*componentes, accent_colour=discord.Colour(COR_AZUL))
+
+
+def montar_sorteio_v2(g: dict) -> discord.ui.LayoutView:
+    view = discord.ui.LayoutView(timeout=None)
+    view.add_item(_container_sorteio(g))
+    return view
+
+
+async def entrar_royal(interaction: discord.Interaction):
+    g = obter(interaction.message.id)
+    if not g or g.get("status") != "ativo" or time.time() >= int(g["fim_ts"]):
+        return await interaction.response.send_message("⚠️ Este sorteio não aceita novas entradas.", ephemeral=True)
+    membro = interaction.user
+    if not isinstance(membro, discord.Member):
+        return await interaction.response.send_message("❌ Participe pelo servidor.", ephemeral=True)
+    erro = checar_requisitos(membro, g)
+    if erro:
+        return await interaction.response.send_message(erro, ephemeral=True)
+    uid = str(membro.id)
+    participantes = g.setdefault("participantes", {})
+    if uid in participantes:
+        return await interaction.response.send_message(
+            "✅ Você já participa deste sorteio. Para desistir, use o botão abaixo.",
+            view=SairView(interaction.message.id), ephemeral=True)
+    entradas = calcular_entradas(membro, g)
+    participantes[uid] = entradas
+    salvar(g)
+    SUJOS.add(interaction.message.id)
+    return await interaction.response.send_message(
+        f"✅ Participação confirmada! Você possui **{entradas}** entrada(s). Boa sorte!",
+        ephemeral=True)
+
+
+async def participantes_royal(interaction: discord.Interaction):
+    g = obter(interaction.message.id)
+    if not g:
+        return await interaction.response.send_message("⚠️ Sorteio não encontrado.", ephemeral=True)
+    participantes = g.get("participantes", {})
+    valor = participantes.get(str(interaction.user.id), 0)
+    texto = f"**Participantes:** {len(participantes)}\n**Sua situação:** " + (
+        f"participando com {valor} entrada(s)" if valor else "não está participando")
+    if eh_staff(interaction.user) and participantes:
+        texto += "\n\n**Inscritos (equipe):**\n" + "\n".join(
+            f"• <@{uid}>" for uid in list(participantes)[:40])
+    return await interaction.response.send_message(texto[:1900], ephemeral=True)
+
 
 
 class SairView(discord.ui.View):
@@ -669,15 +884,15 @@ class SorteioView(discord.ui.View):
         SUJOS.add(interaction.message.id)
 
         total = sum(int(n) for n in participantes.values())
-        chance = min(100.0, int(g["vencedores"]) * entradas / total * 100)
+        chance = None  # não mostrar probabilidade imprecisa em sorteio ponderado
         extra = " ✨ (bônus de cargo!)" if entradas > 1 else ""
         embed = discord.Embed(
             description=(
                 "**🎉 Você está dentro!**\n"
                 f"> `🎟️` Suas entradas: **{entradas}**{extra}\n"
                 f"> `👥` Participantes agora: **{len(participantes)}**\n"
-                f"> `🍀` Chance aproximada: **{chance:.1f}%**\n\n"
-                "*Boa sorte!* 💙"
+                "\n"
+                "*Boa sorte!* ⚜️"
             ),
             color=TEMAS.get(g.get("tema", "azul"), TEMAS["azul"])["cor"],
         )
@@ -732,12 +947,13 @@ class CriarView(discord.ui.View):
         self.autor = autor
         self.fallback_id = fallback_id
         self.dados = dados
-        self.cargo_exigido: int | None = None
-        self.cargo_bonus: int | None = None
-        self.bonus_mult = 2
-        self.dias_min = 0
-        self.tema = "azul"
-        self.ping = 0
+        conf = configuracao(autor.guild.id)
+        self.cargo_exigido: int | None = conf.get("cargo_exigido")
+        self.cargo_bonus: int | None = conf.get("cargo_bonus")
+        self.bonus_mult = int(conf.get("bonus_mult", 2))
+        self.dias_min = int(conf.get("dias_min", 0))
+        self.tema = conf.get("tema", "azul") if conf.get("tema") in TEMAS else "azul"
+        self.ping = int(conf.get("ping", 0))
         self._atualizar_botoes()
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -855,7 +1071,7 @@ class CriarView(discord.ui.View):
         if canal is None:
             return await interaction.response.send_message(
                 "❌ Não encontrei o canal de sorteios. "
-                "Configure `CANAL_SORTEIOS_ID` no topo do arquivo.",
+                "Defina o canal em `!painelconfigsorteio`.",
                 ephemeral=True,
             )
         perms = canal.permissions_for(interaction.guild.me)
@@ -918,9 +1134,12 @@ class CriarModal(discord.ui.Modal, title="🎁 Novo Sorteio"):
         max_length=400,
     )
 
-    def __init__(self, bot):
+    def __init__(self, bot, guild_id: int | None = None):
         super().__init__(timeout=600)
         self.bot = bot
+        conf = configuracao(guild_id) if guild_id else CONFIG_PADRAO
+        self.duracao.default = str(conf.get("duracao", "2h"))
+        self.vencedores.default = str(conf.get("vencedores", 1))
 
     async def on_submit(self, interaction: discord.Interaction):
         seg = parse_duracao(str(self.duracao))
@@ -988,7 +1207,7 @@ class RelampagoModal(discord.ui.Modal, title="⚡ Sorteio Relâmpago"):
         if canal is None:
             return await interaction.response.send_message(
                 "❌ Não encontrei o canal de sorteios. "
-                "Configure `CANAL_SORTEIOS_ID` no topo do arquivo.",
+                "Defina o canal em `!painelconfigsorteio`.",
                 ephemeral=True,
             )
         perms = canal.permissions_for(interaction.guild.me)
@@ -1019,11 +1238,11 @@ class RelampagoModal(discord.ui.Modal, title="⚡ Sorteio Relâmpago"):
             "vencedores": qtd,
             "duracao_seg": seg,
             "tema": "neon",
-            "ping": 0,
-            "cargo_exigido": None,
-            "cargo_bonus": None,
-            "bonus_mult": 2,
-            "dias_min": 0,
+            "ping": configuracao(interaction.guild.id).get("ping", 0),
+            "cargo_exigido": configuracao(interaction.guild.id).get("cargo_exigido"),
+            "cargo_bonus": configuracao(interaction.guild.id).get("cargo_bonus"),
+            "bonus_mult": configuracao(interaction.guild.id).get("bonus_mult", 2),
+            "dias_min": configuracao(interaction.guild.id).get("dias_min", 0),
         }
         try:
             msg = await publicar(self.bot, interaction.guild, canal, base, interaction.user)
@@ -1224,6 +1443,238 @@ def embed_estatisticas(guild: discord.Guild) -> discord.Embed:
 # ════════════════════════════════════════════════════════════════
 
 
+class ConfiguracaoModal(discord.ui.Modal, title="Padrões dos próximos sorteios"):
+    duracao = discord.ui.TextInput(label="Duração padrão", placeholder="Ex.: 2h ou 1d", max_length=20)
+    vencedores = discord.ui.TextInput(label="Vencedores padrão", max_length=2)
+    dias = discord.ui.TextInput(label="Dias mínimos no servidor", max_length=4)
+    bonus = discord.ui.TextInput(label="Entradas do cargo bônus (2, 3 ou 5)", max_length=1)
+
+    def __init__(self, guild_id: int):
+        super().__init__(timeout=300)
+        self.guild_id = guild_id
+        conf = configuracao(guild_id)
+        self.duracao.default = str(conf["duracao"])
+        self.vencedores.default = str(conf["vencedores"])
+        self.dias.default = str(conf["dias_min"])
+        self.bonus.default = str(conf["bonus_mult"])
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if not eh_staff(interaction.user):
+            return await interaction.response.send_message("Acesso restrito.", ephemeral=True)
+        seg = parse_duracao(str(self.duracao))
+        try:
+            qtd = int(str(self.vencedores))
+            dias = int(str(self.dias))
+            bonus = int(str(self.bonus))
+            assert seg and DURACAO_MIN <= seg <= DURACAO_MAX
+            assert 1 <= qtd <= MAX_VENCEDORES and 0 <= dias <= 3650
+            assert bonus in BONUS_OPCOES
+        except (ValueError, AssertionError):
+            return await interaction.response.send_message(
+                "Valores inválidos. Duração mínima: 1min; vencedores: 1–10; "
+                "dias: 0–3650; bônus: 2, 3 ou 5.", ephemeral=True)
+        try:
+            await salvar_config(self.guild_id, {
+                "duracao": str(self.duracao).strip(), "vencedores": qtd,
+                "dias_min": dias, "bonus_mult": bonus})
+        except Exception:
+            LOG.exception("Falha ao salvar padrões de sorteio")
+            return await interaction.response.send_message("Não foi possível salvar no PostgreSQL.", ephemeral=True)
+        await interaction.response.send_message("✅ Padrões atualizados para os próximos sorteios.", ephemeral=True)
+
+
+class ConfigSelectView(discord.ui.View):
+    """Configuração privada; cada seletor abre somente ao administrador."""
+    def __init__(self, guild_id: int):
+        super().__init__(timeout=240)
+        self.guild_id = guild_id
+        canal = discord.ui.ChannelSelect(
+            placeholder="Selecionar canal dos próximos sorteios",
+            channel_types=[discord.ChannelType.text], min_values=1, max_values=1)
+        cargo = discord.ui.RoleSelect(placeholder="Cargo obrigatório (opcional)", min_values=0, max_values=1)
+        bonus = discord.ui.RoleSelect(placeholder="Cargo com bônus (opcional)", min_values=0, max_values=1)
+        canal.callback = self.canal_cb
+        cargo.callback = self.cargo_cb
+        bonus.callback = self.bonus_cb
+        self.canal_sel, self.cargo_sel, self.bonus_sel = canal, cargo, bonus
+        self.add_item(canal); self.add_item(cargo); self.add_item(bonus)
+
+    async def interaction_check(self, interaction):
+        if interaction.guild_id == self.guild_id and eh_staff(interaction.user):
+            return True
+        await interaction.response.send_message("⛔ Acesso restrito à equipe.", ephemeral=True)
+        return False
+
+    async def _salvar(self, interaction, dados):
+        try:
+            await salvar_config(self.guild_id, dados)
+        except Exception:
+            LOG.exception("Falha ao atualizar configuração dos sorteios")
+            return await interaction.response.send_message("Falha ao salvar no PostgreSQL.", ephemeral=True)
+        await interaction.response.send_message("✅ Configuração salva para futuros sorteios.", ephemeral=True)
+
+    async def canal_cb(self, interaction):
+        await self._salvar(interaction, {"canal_id": self.canal_sel.values[0].id})
+
+    async def cargo_cb(self, interaction):
+        await self._salvar(interaction, {"cargo_exigido": self.cargo_sel.values[0].id if self.cargo_sel.values else None})
+
+    async def bonus_cb(self, interaction):
+        await self._salvar(interaction, {"cargo_bonus": self.bonus_sel.values[0].id if self.bonus_sel.values else None})
+
+
+class PainelConfigRoyal(discord.ui.LayoutView):
+    """Painel administrativo V2, independente do painel de criação."""
+    def __init__(self):
+        super().__init__(timeout=None)
+        elementos = []
+        if banner_valido(BANNER_PAINEL):
+            elementos.append(discord.ui.MediaGallery(discord.MediaGalleryItem(media=BANNER_PAINEL)))
+        elementos.append(discord.ui.TextDisplay(
+            "## ⚜️ CONFIGURAÇÕES DOS SORTEIOS\n"
+            "Defina os padrões utilizados nas próximas premiações. "
+            "Sorteios em andamento não serão modificados.\n\n"
+            "> `⚙️` **Padrões** — duração, ganhadores e requisitos\n"
+            "> `🏰` **Canal e cargos** — local da publicação e elegibilidade\n"
+            "> `🔔` **Avisos** — menções e identidade visual\n"
+            "> `📋` **Consultar** — confira as definições atuais"))
+        elementos.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
+        linha = []
+        for acao, rotulo, emoji in (
+            ("padroes", "Padrões", "⚙️"), ("canais", "Canal e cargos", "🏰"),
+            ("avisos", "Avisos", "🔔"), ("consultar", "Consultar", "📋"),
+        ):
+            botao = discord.ui.Button(label=rotulo, emoji=emoji,
+                  style=discord.ButtonStyle.secondary,
+                  custom_id=f"royal:sorteio:config:{acao}:v1")
+            async def cb(interaction, escolha=acao):
+                if not interaction.guild or not eh_staff(interaction.user):
+                    return await interaction.response.send_message("⛔ Acesso exclusivo da equipe.", ephemeral=True)
+                gid = interaction.guild.id
+                if escolha == "padroes":
+                    return await interaction.response.send_modal(ConfiguracaoModal(gid))
+                if escolha == "canais":
+                    return await interaction.response.send_message(
+                        "⚜️ **Canal e requisitos** — selecione as opções abaixo.",
+                        view=ConfigSelectView(gid), ephemeral=True)
+                if escolha == "avisos":
+                    return await interaction.response.send_message(
+                        "**Avisos e tema para novos sorteios**", view=ConfigAvisosView(gid), ephemeral=True)
+                conf = configuracao(gid)
+                canal = f"<#{conf['canal_id']}>" if conf.get('canal_id') else "Padrão do servidor"
+                return await interaction.response.send_message(
+                    "**⚜️ CONFIGURAÇÃO ATUAL**\n"
+                    f"> `🏰` Canal: {canal}\n"
+                    f"> `⏳` Duração: **{conf['duracao']}**\n"
+                    f"> `🏆` Vencedores: **{conf['vencedores']}**\n"
+                    f"> `📅` Dias mínimos: **{conf['dias_min']}**\n"
+                    f"> `🎖️` Cargo: {('<@&%s>' % conf['cargo_exigido']) if conf.get('cargo_exigido') else 'Nenhum'}\n"
+                    f"> `✨` Bônus: **x{conf['bonus_mult']}**\n"
+                    f"> `🔔` Notificação: **{conf['ping']}**\n"
+                    f"> `👑` Tema: **{TEMAS[conf['tema']]['nome']}**", ephemeral=True)
+            botao.callback = cb
+            linha.append(botao)
+        elementos.append(discord.ui.ActionRow(*linha))
+        elementos.append(discord.ui.TextDisplay("-# Família Royal • Preferências salvas no PostgreSQL"))
+        self.add_item(discord.ui.Container(*elementos, accent_colour=discord.Colour(COR_AZUL)))
+
+
+class ConfigAvisosView(discord.ui.View):
+    def __init__(self, guild_id: int):
+        super().__init__(timeout=240)
+        self.guild_id = guild_id
+        self.add_item(ConfigAvisosSelect(guild_id, "ping"))
+        self.add_item(ConfigAvisosSelect(guild_id, "tema"))
+
+
+class ConfigAvisosSelect(discord.ui.Select):
+    def __init__(self, guild_id: int, campo: str):
+        self.guild_id = guild_id
+        self.campo = campo
+        if campo == "ping":
+            options = [
+                discord.SelectOption(label="Sem aviso", value="0"),
+                discord.SelectOption(label="Cargo de sorteios", value="1"),
+                discord.SelectOption(label="@here", value="2"),
+                discord.SelectOption(label="@everyone", value="3"),
+            ]
+        else:
+            options = [discord.SelectOption(label=v["nome"], value=k, emoji=v["emoji"])
+                       for k, v in TEMAS.items()]
+        super().__init__(placeholder="Notificações" if campo == "ping" else "Estilo do sorteio",
+                         options=options)
+
+    async def callback(self, interaction):
+        if interaction.guild_id != self.guild_id or not eh_staff(interaction.user):
+            return await interaction.response.send_message("⛔ Acesso restrito.", ephemeral=True)
+        valor = int(self.values[0]) if self.campo == "ping" else self.values[0]
+        if self.campo == "ping" and valor >= len(opcoes_ping(interaction.guild)):
+            return await interaction.response.send_message("Cargo de ping indisponível. Confira a configuração.", ephemeral=True)
+        try:
+            await salvar_config(self.guild_id, {self.campo: valor})
+            await interaction.response.send_message("✅ Preferência atualizada.", ephemeral=True)
+        except Exception:
+            LOG.exception("Erro ao salvar avisos de sorteios")
+            await interaction.response.send_message("❌ Falha ao salvar.", ephemeral=True)
+
+
+class PainelSorteioRoyal(discord.ui.LayoutView):
+    """Painel administrativo Royal (Components V2); preserva controles anteriores."""
+
+    def __init__(self):
+        super().__init__(timeout=None)
+        componentes = []
+        if banner_valido(BANNER_PAINEL):
+            componentes.append(discord.ui.MediaGallery(discord.MediaGalleryItem(media=BANNER_PAINEL)))
+        componentes.append(discord.ui.TextDisplay(
+            "## 👑 CENTRAL DE SORTEIOS ROYAL\n"
+            "Gerencie premiações e eventos da Família Royal com segurança.\n\n"
+            "> `🎁` **Criar** — premiação, duração e condições\n"
+            "> `⚡` **Relâmpago** — publicação imediata\n"
+            "> `🛡️` **Gerenciar** — encerrar, cancelar ou sortear novamente\n"
+            "> `📊` **Estatísticas** — acompanhamento administrativo"
+        ))
+        componentes.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
+        botoes = []
+        for label, emoji, style, action in (
+            ("Criar", "🎁", discord.ButtonStyle.primary, "criar"),
+            ("Relâmpago", "⚡", discord.ButtonStyle.primary, "rapido"),
+            ("Gerenciar", "🛡️", discord.ButtonStyle.secondary, "gerenciar"),
+            ("Estatísticas", "📊", discord.ButtonStyle.secondary, "stats"),
+            ("Configurar", "⚙️", discord.ButtonStyle.secondary, "config"),
+        ):
+            botao = discord.ui.Button(label=label, emoji=emoji, style=style,
+                                      custom_id=f"royal:sorteio:painel:{action}:v1")
+            async def clique(interaction: discord.Interaction, acao=action):
+                if not eh_staff(interaction.user):
+                    return await interaction.response.send_message("⛔ Acesso exclusivo da equipe.", ephemeral=True)
+                if acao == "config":
+                    return await interaction.response.send_message(
+                        "⚜️ Abra ou publique o painel administrativo com `!painelconfigsorteio`.", ephemeral=True)
+                if acao == "criar":
+                    return await interaction.response.send_modal(CriarModal(interaction.client, interaction.guild.id))
+                if acao == "rapido":
+                    return await interaction.response.send_modal(RelampagoModal(interaction.client))
+                if acao == "stats":
+                    return await interaction.response.send_message(
+                        embed=embed_estatisticas(interaction.guild), ephemeral=True)
+                itens = sorteios_da_guild(interaction.guild.id)
+                if not itens:
+                    return await interaction.response.send_message("Nenhum sorteio registrado.", ephemeral=True)
+                ativos = sorted((x for x in itens if x.get("status") == "ativo"),
+                                key=lambda x: x.get("fim_ts", 0))
+                outros = sorted((x for x in itens if x.get("status") != "ativo"),
+                                key=lambda x: x.get("encerrado_ts", 0), reverse=True)
+                return await interaction.response.send_message(
+                    "**Gerenciar sorteios da Família Royal**",
+                    view=GerenciarSelectView(interaction.client, ativos + outros), ephemeral=True)
+            botao.callback = clique
+            botoes.append(botao)
+        componentes.append(discord.ui.ActionRow(*botoes))
+        componentes.append(discord.ui.TextDisplay("-# ⚜️ Família Royal • Administração de sorteios"))
+        self.add_item(discord.ui.Container(*componentes, accent_colour=discord.Colour(COR_AZUL)))
+
+
 class PainelSorteioView(discord.ui.View):
     def __init__(self, bot=None):
         super().__init__(timeout=None)
@@ -1239,7 +1690,7 @@ class PainelSorteioView(discord.ui.View):
 
     @discord.ui.button(label="Criar", emoji="➕", style=discord.ButtonStyle.primary, custom_id="sants_sorteio_criar")
     async def criar(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(CriarModal(interaction.client))
+        await interaction.response.send_modal(CriarModal(interaction.client, interaction.guild.id))
 
     @discord.ui.button(label="Relâmpago", emoji="⚡", style=discord.ButtonStyle.primary, custom_id="sants_sorteio_rapido")
     async def rapido(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1283,12 +1734,17 @@ class SorteiosCog(commands.Cog):
         self.bot = bot
 
     async def cog_load(self):
+        await iniciar_armazenamento(self.bot)
         self.bot.add_view(PainelSorteioView(self.bot))
-        self.bot.add_view(SorteioView())
+        self.bot.add_view(PainelSorteioRoyal())
+        self.bot.add_view(PainelConfigRoyal())
+        self.bot.add_view(SorteioView())  # painéis antigos
+        self.bot.add_view(RoyalSorteioView())  # sorteios novos (Components V2)
         self.monitorar.start()
 
     async def cog_unload(self):
         self.monitorar.cancel()
+        await aguardar_gravacoes()
 
     async def cog_command_error(self, ctx: commands.Context, error):
         if isinstance(error, commands.CheckFailure):
@@ -1329,27 +1785,23 @@ class SorteiosCog(commands.Cog):
         destino = (
             f"<#{CANAL_SORTEIOS_ID}>" if CANAL_SORTEIOS_ID else "o canal onde você criar"
         )
-        embed = discord.Embed(
-            description=(
-                "## 🎁 Central de Sorteios\n"
-                f"Crie e gerencie os sorteios da **{NOME_SERVIDOR}**.\n"
-                f"Eles são publicados em {destino}.\n\n"
-                "> `➕` **Criar** — requisitos, bônus de entradas e temas\n"
-                "> `⚡` **Relâmpago** — sorteio rápido, sem burocracia\n"
-                "> `🛠️` **Gerenciar** — encerrar, cancelar ou rerolar\n"
-                "> `📊` **Estatísticas** — números e sorteios ativos"
-            ),
-            color=COR_AZUL,
-        )
-        banner = BANNER_PAINEL or BANNER_SORTEIO
-        if banner_valido(banner):
-            embed.set_image(url=banner)
-        embed.set_footer(text=NOME_SERVIDOR)
         try:
             await ctx.message.delete()
         except discord.HTTPException:
             pass
-        await ctx.send(embed=embed, view=PainelSorteioView(self.bot))
+        await ctx.send(view=PainelSorteioRoyal(), allowed_mentions=discord.AllowedMentions.none())
+
+    @commands.command(name="painelconfigsorteio", aliases=["configsorteio"])
+    @commands.guild_only()
+    @apenas_staff()
+    async def painelconfigsorteio(self, ctx: commands.Context):
+        """Publica o painel separado de preferências para sorteios futuros."""
+        try:
+            await ctx.message.delete()
+        except discord.HTTPException:
+            pass
+        await ctx.send(view=PainelConfigRoyal(),
+                       allowed_mentions=discord.AllowedMentions.none())
 
     @commands.command(name="sorteioajuda")
     @apenas_staff()
@@ -1360,7 +1812,8 @@ class SorteiosCog(commands.Cog):
             title="📖 Comandos de Sorteios",
             description=(
                 f"`{p}painelsorteio` — cria o painel da equipe\n"
-                f"`{p}sorteioajuda` — mostra esta ajuda\n\n"
+                f"`{p}sorteioajuda` — mostra esta ajuda\n"
+                f"`{p}painelconfigsorteio` — configura os próximos sorteios\n\n"
                 "**Tudo o resto é feito pelo painel:** criar, relâmpago, "
                 "gerenciar (encerrar, cancelar, rerolar) e estatísticas.\n\n"
                 "**Formatos de duração:** `30m` • `2h` • `1d` • `1d12h` • `90` (minutos)"
