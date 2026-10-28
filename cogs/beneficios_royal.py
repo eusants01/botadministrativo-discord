@@ -1,37 +1,24 @@
 from __future__ import annotations
-
 import logging
-
 import os
-
 from datetime import datetime, timezone
-
 from pathlib import Path
-
 import discord
-
 from discord.ext import commands
 
 LOG = logging.getLogger('royal.beneficios')
-
 COR = discord.Colour.from_rgb(188, 148, 86)
-
 OFC_ROLE_ID = 1554367619463913582
-
 STAFF_ROLE_IDS = {1553832098404499516, 1553832097905377422}
 
 BANNER = Path(__file__).resolve().parent.parent / 'assets' / 'beneficios_royal.png'
-
 BANNER_CONSELHO = Path(__file__).resolve().parent.parent / 'assets' / 'conselho_royal.png'
 BANNER_INDICACOES = Path(__file__).resolve().parent.parent / 'assets' / 'indicacoes_royal.png'
 PROPOSTAS_CHANNEL_ID = 1564875343330811925
 BENEFICIOS_CHANNEL_ID = 1564005234655625327
 FUNDADORES_ROLE_ID = 1553944794957615175
-
 CONSELHO_CHANNEL_ID = int(os.getenv('ROYAL_BENEFICIOS_CONSELHO_CHANNEL_ID', '0') or 0)
-
-GIVEAWAY_CHANNEL_ID = 1553829712621740103
-
+GIVEAWAY_CHANNEL_ID = 1564876094551625839
 ADMIN_CHANNEL_ID = int(os.getenv('ROYAL_BENEFICIOS_ADMIN_CHANNEL_ID', '0') or 0)
 
 COROA = '👑'
@@ -147,7 +134,9 @@ class IndicacaoModal(discord.ui.Modal, title='Indicação Familiar Royal'):
         await interaction.response.send_message(f'✅ Indicação registrada sob protocolo **ROY-{row["id"]:05d}**. A Diretoria fará a análise.', ephemeral=True)
 
         enviados = await self.cog.enviar_indicacao_staff(interaction.guild, row['id'])
+
         if enviados == 0:
+
             LOG.warning('Indicação #%s não foi entregue em nenhuma DM de fundador.', row['id'])
 
 class PropostaModal(discord.ui.Modal, title='Proposta ao Conselho Royal'):
@@ -236,7 +225,7 @@ class VoteView(discord.ui.LayoutView):
 
                  yes_count: int = 0, no_count: int = 0, with_banner: bool = False,
 
-                 closed: bool = False):
+                 closed: bool = False, banner_url: str | None = None):
 
         super().__init__(timeout=None)
 
@@ -246,13 +235,14 @@ class VoteView(discord.ui.LayoutView):
 
         cont = discord.ui.Container(accent_colour=COR)
 
-        if with_banner and (BANNER_CONSELHO if BANNER_CONSELHO.is_file() else BANNER).is_file():
-
-            banner_file = BANNER_CONSELHO if BANNER_CONSELHO.is_file() else BANNER
-
+        if banner_url:
             cont.add_item(discord.ui.MediaGallery(
-
-                discord.MediaGalleryItem(media=f'attachment://{banner_file.name}')))
+                discord.MediaGalleryItem(media=banner_url)))
+        elif with_banner:
+            banner_file = BANNER_CONSELHO if BANNER_CONSELHO.is_file() else BANNER
+            if banner_file.is_file():
+                cont.add_item(discord.ui.MediaGallery(
+                    discord.MediaGalleryItem(media=f'attachment://{banner_file.name}')))
 
         if row is not None:
 
@@ -420,7 +410,9 @@ class BenefitPanel(discord.ui.LayoutView):
 
             '> `🎭` **Eventos** — Atividades e inscrições privativas.\n'
 
-            '> `⚖️` **Conselho** — Propostas e votações consultivas.'))
+            '> `⚖️` **Conselho** — Propostas e votações consultivas.\n'
+            '> `🔊` **Call privada** — Espaço de voz reservado à Família.\n'
+            '> `🛡️` **Benefícios no E.B** — Permissões especiais vinculadas ao cargo da Família no servidor do E.B.'))
 
         p.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
 
@@ -531,11 +523,17 @@ class BeneficiosRoyal(commands.Cog):
         self.bot.add_view(BenefitPanel(self, False))
 
         await pool.execute('''CREATE TABLE IF NOT EXISTS royal_benefit_referral_dms (
+
             referral_id BIGINT NOT NULL REFERENCES royal_benefit_referrals(id),
+
             founder_id BIGINT NOT NULL, message_id BIGINT NOT NULL,
+
             PRIMARY KEY(referral_id,founder_id))''')
+
         pending_ids = await pool.fetch("SELECT id FROM royal_benefit_referrals WHERE status='pending'")
+
         for row in pending_ids:
+
             self.bot.add_view(ReferralDecision(self, row['id']))
 
         for row in await pool.fetch("SELECT id, voting_message_id FROM royal_benefit_proposals WHERE status='voting' AND voting_message_id IS NOT NULL"):
@@ -569,100 +567,199 @@ class BeneficiosRoyal(commands.Cog):
         return channel if isinstance(channel, discord.TextChannel) else None
 
     async def enviar_indicacao_staff(self, guild: discord.Guild, ref_id: int) -> int:
+
         """Encaminha a indicação por DM a todos os fundadores com acesso ao servidor."""
+
         row = await self.pool().fetchrow('SELECT * FROM royal_benefit_referrals WHERE id=$1', ref_id)
+
         if row is None:
+
             return 0
+
         role = guild.get_role(FUNDADORES_ROLE_ID)
+
         if role is None:
+
             LOG.error('Cargo dos fundadores %s não existe no servidor %s', FUNDADORES_ROLE_ID, guild.id)
+
             return 0
+
         # A lista de membros requer Members Intent habilitado no portal e no bot.
+
         founders = [m for m in role.members if not m.bot]
+
         if not founders:
+
             LOG.error('Nenhum fundador encontrado no cache; confira Members Intent e o cargo de fundadores')
+
             return 0
+
         sent = 0
+
         for founder in founders:
+
             try:
+
                 panel = discord.ui.Container(accent_colour=COR)
+
                 if BANNER_INDICACOES.is_file():
+
                     panel.add_item(discord.ui.MediaGallery(
+
                         discord.MediaGalleryItem(media=f'attachment://{BANNER_INDICACOES.name}')))
+
                 panel.add_item(discord.ui.TextDisplay(
+
                     f'## 👑 INDICAÇÃO ROYAL · ROY-{ref_id:05d}\n'
+
                     f'> `👤` Indicado por: <@{row["author_id"]}>\n'
+
                     f'> `🎯` Candidato: <@{row["candidate_id"]}>\n'
+
                     f'> `🎮` Roblox: {discord.utils.escape_markdown(row["roblox"] or "Não informado")}\n\n'
+
                     f'**📜 JUSTIFICATIVA**\n{discord.utils.escape_mentions(str(row["justification"]))[:900]}\n\n'
+
                     '-# Decisão exclusiva dos fundadores · A indicação não concede cargo automaticamente.'))
+
                 buttons = ReferralDecision(self, ref_id)
+
                 panel.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
+
                 botoes = list(buttons.children)
+
                 for botao in botoes:
+
                     botao._view = None
+
                 panel.add_item(discord.ui.ActionRow(*botoes))
+
                 view = discord.ui.LayoutView(timeout=None)
+
                 view.add_item(panel)
+
                 if BANNER_INDICACOES.is_file():
+
                     with BANNER_INDICACOES.open('rb') as image:
+
                         msg = await founder.send(view=view,
+
                             file=discord.File(image, filename=BANNER_INDICACOES.name),
+
                             allowed_mentions=discord.AllowedMentions.none())
+
                 else:
+
                     msg = await founder.send(view=view, allowed_mentions=discord.AllowedMentions.none())
+
                 await self.pool().execute("""INSERT INTO royal_benefit_referral_dms
+
                     (referral_id,founder_id,message_id) VALUES($1,$2,$3)
+
                     ON CONFLICT(referral_id,founder_id) DO UPDATE SET message_id=$3""",
+
                     ref_id, founder.id, msg.id)
+
                 sent += 1
+
             except (discord.HTTPException, OSError):
+
                 LOG.exception('Não foi possível enviar indicação #%s por DM ao fundador %s', ref_id, founder.id)
+
         if sent:
+
             self.bot.add_view(ReferralDecision(self, ref_id))
+
         return sent
 
     async def decidir_indicacao(self, interaction: discord.Interaction, ref_id: int, approved: bool):
+
         # As interações ocorrem na DM: interaction.user não é discord.Member.
+
         row = await self.pool().fetchrow('SELECT * FROM royal_benefit_referrals WHERE id=$1', ref_id)
+
         if row is None:
+
             return await interaction.response.send_message('Indicação não encontrada.', ephemeral=True)
+
         guild = self.bot.get_guild(int(row['guild_id']))
+
         if guild is None:
+
             return await interaction.response.send_message('Servidor indisponível.', ephemeral=True)
+
         try:
+
             founder = guild.get_member(interaction.user.id) or await guild.fetch_member(interaction.user.id)
+
         except discord.HTTPException:
+
             return await interaction.response.send_message('Não foi possível confirmar seu cargo de fundador.', ephemeral=True)
+
         if not any(role.id == FUNDADORES_ROLE_ID for role in founder.roles):
+
             return await interaction.response.send_message('⛔ Apenas fundadores podem decidir indicações.', ephemeral=True)
+
         state = 'approved' if approved else 'rejected'
+
         updated = await self.pool().fetchrow("""UPDATE royal_benefit_referrals
+
             SET status=$2, reviewer_id=$3, reviewed_at=NOW()
+
             WHERE id=$1 AND status='pending' RETURNING author_id""",
+
             ref_id, state, interaction.user.id)
+
         if updated is None:
+
             return await interaction.response.send_message('Esta indicação já foi decidida.', ephemeral=True)
+
         await interaction.response.send_message(
-            f'✅ Indicação ROY-{ref_id:05d} **{"aprovada" if approved else "recusada"}**. ' 
+
+            f'✅ Indicação ROY-{ref_id:05d} **{"aprovada" if approved else "recusada"}**. '&#x20;
+
             'O ingresso não é concedido automaticamente.', ephemeral=True)
+
         try:
+
             requester = await self.bot.fetch_user(updated['author_id'])
+
             await requester.send(f'👑 Sua indicação ROY-{ref_id:05d} foi **{"aprovada" if approved else "recusada"}** pelos fundadores.')
+
         except discord.HTTPException:
+
             LOG.warning('Não foi possível avisar o autor da indicação #%s', ref_id)
+
         for dm in await self.pool().fetch('SELECT founder_id,message_id FROM royal_benefit_referral_dms WHERE referral_id=$1', ref_id):
+
             try:
+
                 target = await self.bot.fetch_user(dm['founder_id'])
+
                 channel = await target.create_dm()
+
                 message = await channel.fetch_message(dm['message_id'])
+
+                # Mantém o banner original também depois da decisão.
+                # Utiliza o próprio anexo já hospedado no Discord.
+                anexo = next((a for a in message.attachments
+                              if a.filename == BANNER_INDICACOES.name), None)
+                painel = discord.ui.Container(accent_colour=COR)
+                if anexo is not None:
+                    painel.add_item(discord.ui.MediaGallery(
+                        discord.MediaGalleryItem(media=anexo.url)))
+                painel.add_item(discord.ui.TextDisplay(
+                    f'## ⚜️ INDICAÇÃO ROYAL · ROY-{ref_id:05d}\n'
+                    f'> `👤` Indicado por: <@{row["author_id"]}>\n'
+                    f'> `🎯` Candidato: <@{row["candidate_id"]}>\n'
+                    f'> `📜` Decisão: **{"Aprovada" if approved else "Recusada"}**\n'
+                    f'-# Decidida por <@{interaction.user.id}>.'))
                 finished = discord.ui.LayoutView(timeout=None)
-                finished.add_item(discord.ui.Container(
-                    discord.ui.TextDisplay(f'## ⚜️ INDICAÇÃO ROYAL · ROY-{ref_id:05d}\n'
-                        f'**Decisão: {"Aprovada" if approved else "Recusada"}**\n'
-                        f'-# Decidida por <@{interaction.user.id}>.'), accent_colour=COR))
-                await message.edit(view=finished)
+                finished.add_item(painel)
+                await message.edit(view=finished, attachments=message.attachments)
+
             except discord.HTTPException:
+
                 LOG.warning('Não foi possível atualizar DM da indicação #%s para %s',ref_id,dm['founder_id'])
 
     async def enviar_proposta_staff(self, guild: discord.Guild, proposal_id: int):
@@ -807,11 +904,16 @@ class BeneficiosRoyal(commands.Cog):
 
         favor, contra = await self.contagem_votos(proposal_id)
 
-        banner = any(a.filename in {BANNER.name, BANNER_CONSELHO.name} for a in mensagem.attachments)
-
-        await mensagem.edit(view=VoteView(self, proposal_id, row, favor, contra,
-
-            with_banner=banner, closed=row['status'] != 'voting'))
+        # Ao editar Components V2, preserve o anexo e use a URL real da imagem.
+        # Reconhece também imagens de propostas publicadas antes desta atualização.
+        anexo = next((a for a in mensagem.attachments
+                      if a.filename in {BANNER.name, BANNER_CONSELHO.name}), None)
+        banner_url = anexo.url if anexo is not None else None
+        await mensagem.edit(
+            view=VoteView(self, proposal_id, row, favor, contra,
+                          banner_url=banner_url, closed=row['status'] != 'voting'),
+            attachments=mensagem.attachments,
+        )
 
     async def votar(self, interaction: discord.Interaction, proposal_id: int, yes: bool):
 
@@ -913,7 +1015,7 @@ class BeneficiosRoyal(commands.Cog):
 
             WHERE guild_id=$1 AND status='open' AND starts_at > NOW() ORDER BY starts_at LIMIT 8''', interaction.guild_id)
 
-        texto = '\n'.join(f'> `🎭` #{r["id"]} — {r["title"]}** • <t:{int(r["starts_at"].timestamp())}:F>' for r in rows)
+        texto = '\n'.join(f'> `🎭` **#{r["id"]} — {r["title"]}** • <t:{int(r["starts_at"].timestamp())}:F>' for r in rows)
 
         await ephemeral(interaction, '🎭 EVENTOS OFICIAIS', texto or 'Não há eventos OFC com inscrições abertas. Consulte novamente em breve.')
 
@@ -933,7 +1035,9 @@ class BeneficiosRoyal(commands.Cog):
 
             f'> `🎭` Próximos eventos inscritos: **{e}**\n> `⚖️` Conselho consultivo: **disponível**\n'
 
-            '> `🎁` Sorteios OFC: **conforme publicações vigentes**')
+            '> `🎁` Sorteios OFC: **conforme publicações vigentes**\n'
+            '> `🔊` Call privada: **acesso reservado aos oficiais**\n'
+            '> `🛡️` E.B do ALPHA: **permissões especiais conforme o cargo da Família no servidor do E.B**')
 
     @commands.command(name='painelbeneficios')
 
@@ -1101,7 +1205,7 @@ class BeneficiosRoyal(commands.Cog):
 
             '`!encerrarvotacaoroyal 12` — encerra e apresenta resultado.\n'
 
-            'Novas propostas são publicadas automaticamente no canal do painel de benefícios.\n'
+            'Novas propostas são publicadas automaticamente no canal privado de propostas.\n'
 
             f'Canal para análise de indicações/propostas: `ROYAL_BENEFICIOS_ADMIN_CHANNEL_ID` (atual: {ADMIN_CHANNEL_ID or "não configurado"}).',
 
