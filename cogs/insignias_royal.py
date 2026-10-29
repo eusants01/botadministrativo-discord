@@ -58,15 +58,11 @@ INSIGNIAS = [
 
     {"nome": "Golgos", "cargo_id": 1565443033787277394, "emoji": "🎥", "titular_id": 525837977545605132, "descricao_curta": "Criatividade e influência.", "descricao_completa": "Distinção pessoal de Golgos, editor de vídeo e influenciador, associada à criatividade e à comunicação."},
 
-    {"nome": "Dark", "cargo_id": 1565443625523880137, "emoji": "🐦‍", "titular_id": 1089646065084534854, "descricao_curta": "Lealdade e consideração.", "descricao_completa": "Representa lealdade e consideração pessoal de um corregedor."},
+    {"nome": "Dark", "cargo_id": 1565443625523880137, "emoji": "🐦‍⬛", "titular_id": 1089646065084534854, "descricao_curta": "Lealdade e consideração.", "descricao_completa": "Representa lealdade e consideração pessoal de um corregedor."},
 
 ]
 
-
-
 INSIGNIAS_DESTAQUE = {"Bruna", "Pietra", "Kananda", "Tatah", "Lívia", "Nathy"}
-
-
 
 def catalogo() -> dict[int, dict]:
 
@@ -128,8 +124,6 @@ def montar_catalogo(com_banner: bool = False) -> discord.ui.LayoutView:
 
         painel_com_banner(bloco, "catalogo")
 
-
-
     bloco.add_item(discord.ui.TextDisplay(
 
         "## <a:coroa:1564000189167960177> INSÍGNIAS DA FAMÍLIA ROYAL\n"
@@ -144,11 +138,16 @@ def montar_catalogo(com_banner: bool = False) -> discord.ui.LayoutView:
 
     principais = [i for i in INSIGNIAS if i["nome"] in INSIGNIAS_DESTAQUE]
 
-    # Um único TextDisplay mantém as seis insígnias juntas, sem espaçamentos extras.
+    # Um único TextDisplay mantém as seis insígnias juntas, sem espaçamentos extras.*
+
     linhas_destaque = [
+
         f"> `{item['emoji']}` <@&{item['cargo_id']}> — *{item['descricao_curta']}*"
+
         for item in principais
+
     ]
+
     bloco.add_item(discord.ui.TextDisplay("\n".join(linhas_destaque)))
 
     outras = [i for i in INSIGNIAS if i["nome"] not in INSIGNIAS_DESTAQUE]
@@ -159,7 +158,7 @@ def montar_catalogo(com_banner: bool = False) -> discord.ui.LayoutView:
 
         bloco.add_item(discord.ui.TextDisplay("**<:ImagemdoChatGPT25deoutde202615_4:1563986647144730826> NOBRES CAVALHEIROS**"))
 
-        # Divisão em blocos evita estourar o limite de componentes/texto.*
+        # Divisão em blocos evita estourar o limite de componentes/texto.**
 
         for inicio in range(0, len(outras), 6):
 
@@ -187,8 +186,6 @@ def montar_catalogo(com_banner: bool = False) -> discord.ui.LayoutView:
 
     return view
 
-
-
 class InsigniaSelect(discord.ui.Select):
 
     def __init__(self, cog: "InsigniasRoyal", pagina: int = 0, persistente: bool = False):
@@ -213,7 +210,7 @@ class InsigniaSelect(discord.ui.Select):
 
                 description=i["descricao_curta"][:100],
 
-                emoji=i["emoji"],
+                emoji=("🐦" if i["nome"] == "Dark" else i["emoji"]),
 
             ) for i in itens],
 
@@ -469,7 +466,7 @@ class InsigniasRoyal(commands.Cog):
 
         """)
 
-        # Mesmo custom_id histórico: painéis antigos continuam operando.*
+        # Mesmo custom_id histórico: painéis antigos continuam operando.**
 
         self.bot.add_view(montar_solicitacao(self, com_banner=False))
 
