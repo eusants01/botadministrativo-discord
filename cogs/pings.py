@@ -1,604 +1,316 @@
+
 from __future__ import annotations
 
-import os
+import asyncio
+import logging
 import time
-from datetime import datetime, timezone
+from pathlib import Path
 
-import aiohttp
 import discord
 from discord.ext import commands
 
-# ╔══════════════════════════════════════════════════════════════╗
-# ║                        CONFIGURAÇÃO                          ║
-# ╚══════════════════════════════════════════════════════════════╝
-#
-# O bot precisa da permissão "Gerenciar Cargos" e o cargo dele precisa estar
-# ACIMA dos cargos de notificação na lista de cargos do servidor.
-# O PostgreSQL (bot.pool) é usado só para lembrar em quais mensagens o painel está,
-# para o !atualizarpings conseguir aplicar mudanças nos painéis já enviados.
-# Sem o pool, tudo funciona normalmente.
+LOG = logging.getLogger('royal.notificacoes')
+COR = discord.Colour.from_rgb(188, 148, 86)
+BANNER = Path(__file__).resolve().parent.parent / 'assets' / 'notificacoes_royal.png'
+STAFF_IDS = {1553832098404499516, 1553832097905377422}
+COOLDOWN = 3.0
 
-NOME_SERVIDOR = "Família Sant's"
-
-# Mesma identidade do painel de tickets
-COR_PRINCIPAL = 0x1A3C8C
-COR_SUCESSO = 0x2ECC71
-COR_ALERTA = 0xE67E22
-COR_ERRO = 0xE74C3C
-COR_NEUTRA = 0x95A5A6
-
-# Linha divisória usada nas mensagens do painel
-SEPARADOR = "▬" * 16
-
-BANNER = "https://i.imgur.com/BU2ot5J.png"
-
-# Ícone pequeno do rodapé (opcional, link direto).
-ICONE_PINGS = ""
-
-CARGOS_STAFF = [
-    1553832098404499516,
-    1553832097905377422,
-]
-
-LOG_CANAL_ID = 0
-
-COOLDOWN_SEG = 3
-
-PAINEL_DESCRICAO = """\
-# <a:animated_Notifications:1557622860569120821> **Central de Notificações**
-Escolha no menu abaixo as notificações que deseja receber.
-
-**Escolha suas Notificações**
-> `🎁` **Sorteios** — Seja avisado quando rolar um sorteio.
-> `🎉` **Eventos** — Eventos e atividades do servidor.
-> `📢` **Anúncios** — Comunicados importantes da administração.
-> `⚠️` **Avisos** — Avisos gerais e lembretes rápidos.
-> `📰` **Notícias** — Novidades e atualizações da família.
-
-**Como funciona**
-> `✅` Escolha uma opção no menu para **ativar**.
-> `🚫` Escolha a mesma opção de novo para **desativar**.
-"""
-
-NOTIFICACOES: dict[str, dict] = {
-    "sorteios": {
-        "nome": "Sorteios",
-        "emoji": "🎁",
-        "cargo_id": 1555798698410377246,
-        "desc": "Seja avisado quando rolar um sorteio.",
-    },
-    "eventos": {
-        "nome": "Eventos",
-        "emoji": "🎉",
-        "cargo_id": 1555798699643375717,
-        "desc": "Eventos e atividades do servidor.",
-    },
-    "anuncio": {
-        "nome": "Anúncios",
-        "emoji": "📢",
-        "cargo_id": 1555798703586152458,
-        "desc": "Comunicados importantes da administração.",
-    },
-    "avisos": {
-        "nome": "Avisos",
-        "emoji": "⚠️",
-        "cargo_id": 1555798705775448084,
-        "desc": "Avisos gerais e lembretes rápidos.",
-    },
-    "noticias": {
-        "nome": "Notícias",
-        "emoji": "📰",
-        "cargo_id": 1557612576798544002,
-        "desc": "Novidades e atualizações da família.",
-    },
+NOTIFICACOES = {
+    'sorteios': {'nome': 'Sorteios', 'emoji': '🎁', 'id': 1555798698410377246, 'desc': 'Premiações e sorteios da Família.'},
+    'eventos': {'nome': 'Eventos', 'emoji': '🎉', 'id': 1555798699643375717, 'desc': 'Eventos e atividades da comunidade.'},
+    'anuncios': {'nome': 'Anúncios', 'emoji': '📢', 'id': 1555798703586152458, 'desc': 'Comunicados oficiais e novidades.'},
+    'avisos': {'nome': 'Avisos', 'emoji': '📜', 'id': 1555798705775448084, 'desc': 'Orientações e lembretes importantes.'},
+    'videos': {'nome': 'Vídeos', 'emoji': '🎥', 'id': 1557612576798544002, 'desc': 'Novos vídeos e conteúdos publicados.'},
+    'artes': {'nome': 'Artes', 'emoji': '🎨', 'id': 1559238946305613904, 'desc': 'Criações e trabalhos artísticos.'},
 }
 
-VALOR_TODAS = "__todas"
-VALOR_NENHUMA = "__nenhuma"
-
-SQL_CRIAR_TABELA = """
+CREATE_TABLE = '''
 CREATE TABLE IF NOT EXISTS pings_paineis (
-    guild_id BIGINT NOT NULL,
-    channel_id BIGINT NOT NULL,
-    message_id BIGINT NOT NULL,
-    PRIMARY KEY (guild_id, message_id)
-);
-"""
-
-_ultimo_uso: dict[int, float] = {}
-
-def eh_staff(membro) -> bool:
-    if not isinstance(membro, discord.Member):
-        return False
-    if membro.guild_permissions.administrator:
-        return True
-    ids = {r.id for r in membro.roles}
-    return any(c in ids for c in CARGOS_STAFF)
+  guild_id BIGINT NOT NULL,
+  channel_id BIGINT NOT NULL,
+  message_id BIGINT NOT NULL,
+  PRIMARY KEY (guild_id, message_id)
+)'''
 
 
-def apenas_staff():
-    async def predicate(ctx: commands.Context):
-        if ctx.guild is not None and eh_staff(ctx.author):
-            return True
-        raise commands.CheckFailure("sem_permissao")
-
-    return commands.check(predicate)
-
-def _banner_eh_link() -> bool:
-    return BANNER.strip().lower().startswith(("http://", "https://"))
-
-
-def _banner_arquivo_existe() -> bool:
-    return bool(BANNER.strip()) and not _banner_eh_link() and os.path.isfile(BANNER.strip())
-
-
-def banner_arquivo() -> discord.File | None:
-    """Só existe quando o BANNER é um arquivo local (um File só pode ser usado uma vez)."""
-    if _banner_arquivo_existe():
-        caminho = BANNER.strip()
-        return discord.File(caminho, filename=os.path.basename(caminho))
-    return None
-
-
-def banner_url() -> str | None:
-    if _banner_eh_link():
-        return BANNER.strip()
-    if _banner_arquivo_existe():
-        return f"attachment://{os.path.basename(BANNER.strip())}"
-    return None
-
-
-async def testar_banner() -> tuple[bool, str]:
-    """Confere se o banner está utilizável e devolve (ok, texto para exibir)."""
-    if not BANNER.strip():
-        return False, "Nenhum banner configurado."
-    if not _banner_eh_link():
-        if _banner_arquivo_existe():
-            return True, f"Arquivo local `{BANNER.strip()}`"
-        return False, f"Arquivo `{BANNER.strip()}` não encontrado."
-    try:
-        timeout = aiohttp.ClientTimeout(total=6)
-        async with aiohttp.ClientSession(timeout=timeout) as sessao:
-            async with sessao.get(BANNER.strip(), headers={"User-Agent": "Mozilla/5.0"}) as r:
-                tipo = r.headers.get("Content-Type", "")
-                if r.status == 200 and tipo.startswith("image/"):
-                    return True, f"Link OK (`{tipo}`)"
-                return False, (
-                    f"O link respondeu HTTP {r.status} (`{tipo or 'sem tipo'}`). "
-                    "Use o link direto da imagem (ex.: `https://i.imgur.com/xxxx.png`)."
-                )
-    except Exception as e:  # noqa: BLE001
-        return False, f"Não consegui abrir o link ({type(e).__name__})."
-
-
-def embed_base(
-    titulo: str | None,
-    descricao: str | None = None,
-    cor: int = COR_PRINCIPAL,
-    banner: bool = False,
-) -> discord.Embed:
-    e = discord.Embed(
-        title=titulo,
-        description=descricao,
-        color=cor,
-        timestamp=datetime.now(timezone.utc),
+def staff(m: discord.Member) -> bool:
+    return m.guild_permissions.manage_guild or m.guild_permissions.administrator or any(
+        r.id in STAFF_IDS for r in m.roles
     )
-    kwargs = {"text": f"{NOME_SERVIDOR} • Central de Notificações"}
-    if ICONE_PINGS:
-        kwargs["icon_url"] = ICONE_PINGS
-    e.set_footer(**kwargs)
-    if banner and (url := banner_url()):
-        e.set_image(url=url)
-    return e
 
 
-def cargo_de(guild: discord.Guild, chave: str) -> discord.Role | None:
-    return guild.get_role(NOTIFICACOES[chave]["cargo_id"])
+def ids_ativos(member: discord.Member) -> set[str]:
+    member_ids = {r.id for r in member.roles}
+    return {k for k, value in NOTIFICACOES.items() if value['id'] in member_ids}
 
 
-def cargos_usaveis(guild: discord.Guild) -> tuple[dict[str, discord.Role], list[str]]:
-    """
-    Retorna (cargos que o bot consegue gerenciar, lista de problemas).
-    Um cargo com problema não derruba os outros: só ele fica indisponível.
-    """
+def cargos_gerenciaveis(guild: discord.Guild) -> tuple[dict[str, discord.Role], list[str]]:
     me = guild.me
-    usaveis: dict[str, discord.Role] = {}
-    problemas: list[str] = []
-
+    if me is None:
+        return {}, ['Não foi possível identificar o cargo do bot.']
     if not me.guild_permissions.manage_roles:
-        problemas.append("O bot está sem a permissão **Gerenciar Cargos**.")
-        return usaveis, problemas
-
-    for chave, n in NOTIFICACOES.items():
-        cargo = cargo_de(guild, chave)
-        if cargo is None:
-            problemas.append(f"O cargo de **{n['nome']}** (`{n['cargo_id']}`) não foi encontrado.")
-        elif cargo >= me.top_role:
-            problemas.append(
-                f"O cargo {cargo.mention} está acima (ou igual) ao cargo do bot — "
-                "mova o cargo do bot para cima dele."
-            )
+        return {}, ['O bot precisa da permissão Gerenciar Cargos.']
+    available, errors = {}, []
+    for key, info in NOTIFICACOES.items():
+        role = guild.get_role(info['id'])
+        if role is None:
+            errors.append(f"{info['nome']}: cargo {info['id']} não encontrado.")
+        elif role.managed or role >= me.top_role:
+            errors.append(f"{info['nome']}: cargo não gerenciável pela hierarquia do bot.")
         else:
-            usaveis[chave] = cargo
-    return usaveis, problemas
+            available[key] = role
+    return available, errors
 
 
-def fmt_notificacoes(chaves) -> str:
-    return ", ".join(
-        f"{NOTIFICACOES[c]['emoji']} **{NOTIFICACOES[c]['nome']}**"
-        for c in NOTIFICACOES
-        if c in chaves
-    )
+def card(title: str, body: str, *, tone: discord.Colour = COR) -> discord.ui.LayoutView:
+    view = discord.ui.LayoutView(timeout=None)
+    cont = discord.ui.Container(accent_colour=tone)
+    cont.add_item(discord.ui.TextDisplay(f'## {title}\n{body}'))
+    view.add_item(cont)
+    return view
 
 
-def status_linhas(ativas) -> str:
-    return "\n".join(
-        f"{'🟢' if c in ativas else '⚪'} {n['emoji']} {n['nome']}"
-        for c, n in NOTIFICACOES.items()
-    )
+class PreferenceEngine:
+    """Operações comuns aos painéis V2 e às mensagens antigas, sem editar mensagem pública."""
 
+    def __init__(self, cog: 'NotificacoesRoyal'):
+        self.cog = cog
 
-def embed_minhas(guild: discord.Guild, membro: discord.Member) -> discord.Embed:
-    tem = {c for c in NOTIFICACOES if (cargo := cargo_de(guild, c)) and cargo in membro.roles}
-    embed = embed_base(
-        "📋 Suas notificações",
-        f"{membro.mention}, veja o que você recebe hoje.\n{SEPARADOR}",
-        cor=COR_PRINCIPAL,
-    )
-    embed.set_thumbnail(url=membro.display_avatar.url)
-    embed.add_field(
-        name=f"📊 Seu status • {len(tem)}/{len(NOTIFICACOES)} ativas",
-        value=status_linhas(tem),
-        inline=False,
-    )
-    return embed
-
-class PingsSelect(discord.ui.Select):
-    """Menu único. Escolher uma notificação alterna: ativa se não tem, remove se já tem."""
-
-    def __init__(self):
-        opcoes = [
-            discord.SelectOption(
-                label=n["nome"], value=chave, description=n["desc"], emoji=n["emoji"]
-            )
-            for chave, n in NOTIFICACOES.items()
-        ]
-        opcoes += [
-            discord.SelectOption(
-                label="Ativar todas",
-                value=VALOR_TODAS,
-                description="Receber todas as notificações.",
-                emoji="✅",
-            ),
-            discord.SelectOption(
-                label="Desativar todas",
-                value=VALOR_NENHUMA,
-                description="Remover todas as notificações.",
-                emoji="🚫",
-            ),
-        ]
-        super().__init__(
-            custom_id="pings:select",
-            placeholder="🔔 Escolha suas notificações...",
-            min_values=1,
-            max_values=len(opcoes),
-            options=opcoes,
-        )
-
-    async def callback(self, interaction: discord.Interaction):
-        # Reseta o menu do painel (some a seleção) e libera a interação.
-        await interaction.response.edit_message(view=PainelPingsView())
-
-        guild = interaction.guild
-        membro = interaction.user
-        if guild is None or not isinstance(membro, discord.Member):
-            return
-
-        # Cooldown por pessoa
-        agora = time.monotonic()
-        if agora - _ultimo_uso.get(membro.id, -1e9) < COOLDOWN_SEG:
-            embed = embed_base(
-                "⏳ Calma aí",
-                "Aguarde alguns segundos antes de mudar de novo.",
-                cor=COR_ALERTA,
-            )
-            return await interaction.followup.send(embed=embed, ephemeral=True)
-        _ultimo_uso[membro.id] = agora
-
-        usaveis, problemas = cargos_usaveis(guild)
-        tem = {c for c in NOTIFICACOES if (cargo := cargo_de(guild, c)) and cargo in membro.roles}
-        escolhidas = set(self.values)
-
-        # Sem permissão nenhuma → nada a fazer
-        if not usaveis:
-            embed = embed_base(
-                "❌ Não consegui alterar suas notificações",
-                "Avise a administração. Detalhes:\n" + "\n".join(f"• {p}" for p in problemas),
-                cor=COR_ERRO,
-            )
-            return await interaction.followup.send(embed=embed, ephemeral=True)
-
-        # Decide o que ativar/remover
-        if VALOR_NENHUMA in escolhidas:
-            alvo_add: set[str] = set()
-            alvo_rem = set(tem)
-        elif VALOR_TODAS in escolhidas:
-            alvo_add = set(NOTIFICACOES) - tem
-            alvo_rem = set()
-        else:
-            alvo_add = {c for c in escolhidas if c not in tem}
-            alvo_rem = {c for c in escolhidas if c in tem}
-
-        # Ignora o que o bot não consegue gerenciar (e avisa)
-        indisponiveis = (alvo_add | alvo_rem) - set(usaveis)
-        alvo_add -= indisponiveis
-        alvo_rem -= indisponiveis
-
-        # Uma única chamada à API para aplicar tudo
-        if alvo_add or alvo_rem:
-            rem_cargos = {usaveis[c] for c in alvo_rem}
-            novos = [r for r in membro.roles if r not in rem_cargos]
-            novos += [usaveis[c] for c in alvo_add if usaveis[c] not in novos]
-            try:
-                await membro.edit(roles=novos, reason="Painel de notificações")
-            except discord.Forbidden:
-                embed = embed_base(
-                    "❌ Sem permissão",
-                    "Não consegui alterar seus cargos. Avise a administração.",
-                    cor=COR_ERRO,
-                )
-                return await interaction.followup.send(embed=embed, ephemeral=True)
-            except discord.HTTPException:
-                embed = embed_base(
-                    "⚠️ Falha ao falar com o Discord",
-                    "Tente novamente em alguns segundos.",
-                    cor=COR_ERRO,
-                )
-                return await interaction.followup.send(embed=embed, ephemeral=True)
-
-        ativas_agora = (tem | alvo_add) - alvo_rem
-
-        linhas = []
-        if alvo_add:
-            linhas.append(f"✅ **Ativadas:** {fmt_notificacoes(alvo_add)}")
-        if alvo_rem:
-            linhas.append(f"🚫 **Desativadas:** {fmt_notificacoes(alvo_rem)}")
-        if indisponiveis:
-            linhas.append(
-                f"⚠️ **Indisponíveis no momento:** {fmt_notificacoes(indisponiveis)} "
-                "(avise a administração)"
-            )
-        if not linhas:
-            linhas.append("Nada mudou — você já estava assim.")
-
-        embed = embed_base(
-            "🔔 Notificações atualizadas",
-            f"{membro.mention}, suas preferências foram salvas.\n{SEPARADOR}\n" + "\n".join(linhas),
-            cor=COR_ALERTA if indisponiveis else COR_SUCESSO,
-        )
-        embed.set_thumbnail(url=membro.display_avatar.url)
-        embed.add_field(
-            name=f"📊 Seu status • {len(ativas_agora)}/{len(NOTIFICACOES)} ativas",
-            value=status_linhas(ativas_agora),
-            inline=False,
-        )
-        await interaction.followup.send(embed=embed, ephemeral=True)
-
-        # Registro opcional para a staff
-        if (alvo_add or alvo_rem) and LOG_CANAL_ID:
-            canal = guild.get_channel(LOG_CANAL_ID)
-            if canal:
-                log = embed_base("🧾 Notificações alteradas", cor=COR_PRINCIPAL)
-                log.set_thumbnail(url=membro.display_avatar.url)
-                log.description = f"{membro.mention} • **{membro.display_name}** • ID `{membro.id}`"
-                if alvo_add:
-                    log.add_field(name="✅ Ativou", value=fmt_notificacoes(alvo_add), inline=True)
-                if alvo_rem:
-                    log.add_field(name="🚫 Desativou", value=fmt_notificacoes(alvo_rem), inline=True)
+    async def change(self, interaction: discord.Interaction, selected: set[str], mode: str = 'toggle'):
+        if interaction.guild is None or not isinstance(interaction.user, discord.Member):
+            return await interaction.response.send_message('❌ Utilize no servidor da Família Royal.', ephemeral=True)
+        member = interaction.user
+        now = time.monotonic()
+        async with self.cog.lock_for(member.id):
+            if now - self.cog.last_used.get(member.id, -100) < COOLDOWN:
+                return await interaction.response.send_message('⏳ Aguarde alguns segundos para alterar novamente.', ephemeral=True)
+            self.cog.last_used[member.id] = now
+            manage, problems = cargos_gerenciaveis(interaction.guild)
+            if not manage:
+                return await interaction.response.send_message('❌ Não consigo gerenciar os cargos. Avise a Diretoria.', ephemeral=True)
+            active = ids_ativos(member)
+            if mode == 'all':
+                add, remove = set(manage) - active, set()
+            elif mode == 'none':
+                add, remove = set(), set(manage) & active
+            else:
+                selected &= set(NOTIFICACOES)
+                add, remove = (selected - active) & set(manage), (selected & active) & set(manage)
+            unavailable = selected - set(manage) if mode == 'toggle' else set(NOTIFICACOES) - set(manage)
+            if add or remove:
+                # Somente os seis cargos do painel: os demais cargos do membro permanecem intocados.
                 try:
-                    await canal.send(embed=log, allowed_mentions=discord.AllowedMentions.none())
+                    if add:
+                        await member.add_roles(*(manage[k] for k in add), reason='Central Royal — ativar notificações')
+                    if remove:
+                        await member.remove_roles(*(manage[k] for k in remove), reason='Central Royal — desativar notificações')
                 except discord.HTTPException:
-                    pass
+                    LOG.exception('Falha ao alterar notificações do usuário %s', member.id)
+                    return await interaction.response.send_message(
+                        '❌ O Discord não permitiu concluir a alteração. Confira a hierarquia dos cargos.', ephemeral=True)
+            after = ids_ativos(member) | add
+            after -= remove
+            details = []
+            if add:
+                details.append('> `✅` Ativadas: ' + ', '.join(NOTIFICACOES[k]['nome'] for k in NOTIFICACOES if k in add))
+            if remove:
+                details.append('> `🔕` Desativadas: ' + ', '.join(NOTIFICACOES[k]['nome'] for k in NOTIFICACOES if k in remove))
+            if unavailable:
+                details.append('> `⚠️` Indisponíveis: ' + ', '.join(NOTIFICACOES[k]['nome'] for k in NOTIFICACOES if k in unavailable))
+            if not details:
+                details = ['Suas preferências já estavam configuradas dessa forma.']
+            details.append(f'\n-# {len(after)}/{len(NOTIFICACOES)} notificações ativas.')
+            await interaction.response.send_message(view=card('👑 PREFERÊNCIAS ATUALIZADAS', '\n'.join(details)), ephemeral=True)
+            # Não deixa um seletor marcado publicamente nem edita os painéis.
+
+    async def mine(self, interaction: discord.Interaction):
+        if interaction.guild is None or not isinstance(interaction.user, discord.Member):
+            return await interaction.response.send_message('❌ Este recurso funciona apenas no servidor.', ephemeral=True)
+        active = ids_ativos(interaction.user)
+        lines = [f"> `{'✅' if k in active else '▫️'}` **{i['nome']}** — {'Ativa' if k in active else 'Desativada'}"
+                 for k, i in NOTIFICACOES.items()]
+        await interaction.response.send_message(
+            view=card('📋 MINHAS NOTIFICAÇÕES', '\n'.join(lines) + f'\n\n-# {len(active)} de {len(NOTIFICACOES)} categorias ativas.'),
+            ephemeral=True)
 
 
-class BotaoMinhasNotificacoes(discord.ui.Button):
-    def __init__(self):
-        super().__init__(
-            label="Ver minhas notificações",
-            emoji="📋",
-            style=discord.ButtonStyle.secondary,
-            custom_id="pings:minhas",
-        )
+class PingSelect(discord.ui.Select):
+    def __init__(self, cog: 'NotificacoesRoyal', *, legacy: bool = False):
+        opts = [discord.SelectOption(label=i['nome'], value=k, description=i['desc'], emoji=i['emoji'])
+                for k, i in NOTIFICACOES.items()]
+        if legacy:
+            opts.extend([
+                discord.SelectOption(label='Ativar todas', value='__todas', emoji='✅'),
+                discord.SelectOption(label='Desativar todas', value='__nenhuma', emoji='🚫'),
+            ])
+        super().__init__(placeholder='Escolha as notificações que deseja alterar', min_values=1,
+                         max_values=len(opts) if legacy else len(NOTIFICACOES), options=opts,
+                         custom_id='pings:select' if legacy else 'royal:pings:select:v2')
+        self.cog = cog
+        self.legacy = legacy
 
     async def callback(self, interaction: discord.Interaction):
-        membro = interaction.user
-        if interaction.guild is None or not isinstance(membro, discord.Member):
-            return await interaction.response.send_message(
-                "❌ Não foi possível verificar suas notificações.", ephemeral=True
-            )
-        await interaction.response.send_message(
-            embed=embed_minhas(interaction.guild, membro), ephemeral=True
-        )
+        selected = set(self.values)
+        mode = 'none' if '__nenhuma' in selected else 'all' if '__todas' in selected else 'toggle'
+        await PreferenceEngine(self.cog).change(interaction, selected, mode)
 
 
-class PainelPingsView(discord.ui.View):
-    """View persistente (custom_id fixo): continua funcionando depois de reiniciar."""
+class OptionButton(discord.ui.Button):
+    def __init__(self, cog: 'NotificacoesRoyal', mode: str, *, legacy: bool = False):
+        items = {
+            'mine': ('Minhas notificações', '📋', 'pings:minhas' if legacy else 'royal:pings:mine:v2'),
+            'all': ('Ativar todas', '✅', 'royal:pings:all:v2'),
+            'none': ('Desativar todas', '🔕', 'royal:pings:none:v2'),
+        }
+        label, emoji, custom_id = items[mode]
+        super().__init__(label=label, emoji=emoji, custom_id=custom_id, style=discord.ButtonStyle.secondary)
+        self.cog, self.mode = cog, mode
 
-    def __init__(self):
+    async def callback(self, interaction: discord.Interaction):
+        engine = PreferenceEngine(self.cog)
+        if self.mode == 'mine':
+            return await engine.mine(interaction)
+        await engine.change(interaction, set(), self.mode)
+
+
+class RoyalPingPanel(discord.ui.LayoutView):
+    def __init__(self, cog: 'NotificacoesRoyal', banner_uri: str | None = None):
         super().__init__(timeout=None)
-        self.add_item(PingsSelect())
-        self.add_item(BotaoMinhasNotificacoes())
+        c = discord.ui.Container(accent_colour=COR)
+        if banner_uri:
+            c.add_item(discord.ui.MediaGallery(discord.MediaGalleryItem(media=banner_uri)))
+        c.add_item(discord.ui.TextDisplay(
+            '## <a:animated_Notifications:1557622860569120821> CENTRAL DE NOTIFICAÇÕES\n'
+            'Escolha quais novidades da **Família Royal** deseja acompanhar.'))
+        c.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
+        c.add_item(discord.ui.TextDisplay(
+            '> `🎁` **Sorteios** — Premiações e oportunidades.\n'
+            '> `🎉` **Eventos** — Atividades da comunidade.\n'
+            '> `📢` **Anúncios** — Novidades oficiais.\n'
+            '> `📜` **Avisos** — Informações importantes.\n'
+            '> `🎥` **Vídeos** — Conteúdos publicados.\n'
+            '> `🎨` **Artes** — Criações da Família.'))
+        c.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
+        c.add_item(discord.ui.ActionRow(PingSelect(cog)))
+        c.add_item(discord.ui.ActionRow(OptionButton(cog, 'mine'), OptionButton(cog, 'all'), OptionButton(cog, 'none')))
+        c.add_item(discord.ui.TextDisplay('-# ⚜️ Selecione uma categoria para ativar ou desativar. Suas escolhas são individuais.'))
+        self.add_item(c)
 
 
-# ════════════════════════════════════════════════════════════════
-#                                COG
-# ════════════════════════════════════════════════════════════════
+class LegacyPingPanel(discord.ui.View):
+    """Mantém interativos os embeds de notificações enviados pelo cog antigo."""
+    def __init__(self, cog: 'NotificacoesRoyal'):
+        super().__init__(timeout=None)
+        self.add_item(PingSelect(cog, legacy=True))
+        self.add_item(OptionButton(cog, 'mine', legacy=True))
 
 
-class PingsCog(commands.Cog, name="Pings"):
+class _MemberLock:
+    def __init__(self, lock: asyncio.Lock):
+        self.lock = lock
+    async def __aenter__(self):
+        await self.lock.acquire()
+    async def __aexit__(self, exc_type, exc, tb):
+        self.lock.release()
+
+
+class NotificacoesRoyal(commands.Cog, name='Pings'):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.last_used: dict[int, float] = {}
+        self.locks: dict[int, asyncio.Lock] = {}
+
+    def lock_for(self, member_id: int) -> _MemberLock:
+        return _MemberLock(self.locks.setdefault(member_id, asyncio.Lock()))
 
     @property
     def pool(self):
-        return getattr(self.bot, "pool", None)
+        return getattr(self.bot, 'pool', None)
 
     async def cog_load(self):
-        self.bot.add_view(PainelPingsView())
+        self.bot.add_view(RoyalPingPanel(self))
+        self.bot.add_view(LegacyPingPanel(self))
+        if self.pool:
+            await self.pool.execute(CREATE_TABLE)
+        LOG.info('Central de Notificações Royal inicializada.')
 
-    # ── Painel ──────────────────────────────────────────────────
-    def embed_painel(self, guild: discord.Guild | None = None) -> discord.Embed:
-        return embed_base(None, PAINEL_DESCRICAO.strip(), banner=True)
+    async def _record(self, guild_id: int, channel_id: int, message_id: int):
+        if self.pool:
+            await self.pool.execute(CREATE_TABLE)
+            await self.pool.execute('''INSERT INTO pings_paineis(guild_id,channel_id,message_id)
+                                       VALUES($1,$2,$3) ON CONFLICT DO NOTHING''', guild_id, channel_id, message_id)
 
-    # ── Painéis já enviados (PostgreSQL) ────────────────────────
-    async def _registrar_painel(self, guild_id: int, channel_id: int, message_id: int):
-        """Salva a mensagem do painel para o !atualizarpings conseguir editá-la depois."""
-        if self.pool is None:
-            return
-        try:
-            await self.pool.execute(SQL_CRIAR_TABELA)
-            await self.pool.execute(
-                """
-                INSERT INTO pings_paineis (guild_id, channel_id, message_id)
-                VALUES ($1,$2,$3) ON CONFLICT DO NOTHING
-                """,
-                guild_id, channel_id, message_id,
-            )
-        except Exception as e:  # noqa: BLE001
-            print(f"[pings] erro ao salvar painel: {type(e).__name__}: {e}")
+    @staticmethod
+    def _image_reference(message: discord.Message) -> str | None:
+        # A URL do anexo continua válida ao editar componentes, sem reenviar arquivo.
+        for attachment in message.attachments:
+            if attachment.filename == BANNER.name:
+                return attachment.url
+        return None
 
-    async def _atualizar_guild(self, gid: int) -> int:
-        """Reaplica o texto/banner em todos os painéis da guild. Retorna quantos foram atualizados."""
-        guild = self.bot.get_guild(gid)
-        if guild is None or self.pool is None:
-            return 0
+    async def _publish(self, channel: discord.TextChannel):
+        if BANNER.is_file():
+            with BANNER.open('rb') as image:
+                return await channel.send(view=RoyalPingPanel(self, f'attachment://{BANNER.name}'),
+                                          file=discord.File(image, filename=BANNER.name),
+                                          allowed_mentions=discord.AllowedMentions.none())
+        return await channel.send(view=RoyalPingPanel(self), allowed_mentions=discord.AllowedMentions.none())
 
-        try:
-            await self.pool.execute(SQL_CRIAR_TABELA)
-            rows = await self.pool.fetch(
-                "SELECT channel_id, message_id FROM pings_paineis WHERE guild_id=$1", gid
-            )
-        except Exception as e:  # noqa: BLE001
-            print(f"[pings] erro ao ler painéis: {type(e).__name__}: {e}")
-            return 0
+    @commands.command(name='painelpings', aliases=['painel_notificacoes'])
+    @commands.guild_only()
+    async def painelpings(self, ctx: commands.Context, canal: discord.TextChannel | None = None):
+        if not staff(ctx.author):
+            return await ctx.reply('⛔ Comando exclusivo da equipe Royal.', mention_author=False)
+        dest = canal or ctx.channel
+        perms = dest.permissions_for(ctx.guild.me)
+        if not perms.view_channel or not perms.send_messages or (BANNER.is_file() and not perms.attach_files):
+            return await ctx.reply('❌ Verifique as permissões de enviar mensagens e anexar arquivos.', mention_author=False)
+        msg = await self._publish(dest)
+        await self._record(ctx.guild.id, dest.id, msg.id)
+        await ctx.reply(f'✅ Central Royal publicada em {dest.mention}: {msg.jump_url}', mention_author=False)
 
-        embed = self.embed_painel(guild)
-        atualizados = 0
-        for r in rows:
-            canal = guild.get_channel(r["channel_id"])
-            if canal is None:
-                await self.pool.execute(
-                    "DELETE FROM pings_paineis WHERE guild_id=$1 AND message_id=$2",
-                    gid, r["message_id"],
-                )
-                continue
-            try:
-                # Mantém o arquivo anexado (se o banner for local); só troca o embed.
-                await canal.get_partial_message(r["message_id"]).edit(embed=embed)
-                atualizados += 1
-            except discord.NotFound:
-                await self.pool.execute(
-                    "DELETE FROM pings_paineis WHERE guild_id=$1 AND message_id=$2",
-                    gid, r["message_id"],
-                )
-            except discord.HTTPException:
-                pass
-        return atualizados
-
-    # ── Erros de comando ────────────────────────────────────────
-    async def cog_command_error(self, ctx: commands.Context, error):
-        if isinstance(error, commands.CheckFailure):
-            await ctx.send("❌ Você não tem permissão para usar este comando.", delete_after=5)
-        else:
-            raise error
-
-    # ── Comandos ────────────────────────────────────────────────
-    @commands.command(name="painelpings", aliases=["painel_notificacoes"])
-    @apenas_staff()
-    async def painelpings(self, ctx: commands.Context):
-        """Envia o painel de notificações neste canal."""
-        usaveis, problemas = cargos_usaveis(ctx.guild)
-        if problemas:
-            embed = embed_base(
-                "⚠️ Atenção antes de usar o painel",
-                "\n".join(f"• {p}" for p in problemas)
-                + ("\n\nO painel foi enviado mesmo assim." if usaveis else ""),
-                cor=COR_ERRO,
-            )
-            await ctx.send(embed=embed, delete_after=20)
-            if not usaveis:
-                return
-
-        ok, info = await testar_banner()
-        if BANNER.strip() and not ok:
-            await ctx.send(f"⚠️ **Banner com problema:** {info}", delete_after=15)
-
-        msg = await ctx.send(
-            embed=self.embed_painel(ctx.guild),
-            view=PainelPingsView(),
-            file=banner_arquivo(),
-        )
-        await self._registrar_painel(ctx.guild.id, ctx.channel.id, msg.id)
-
-        try:
-            await ctx.message.delete()
-        except discord.HTTPException:
-            pass
-
-    # Comando slash desativado — use apenas !painelpings (prefixo !)
-
-    @commands.command(name="atualizarpings")
-    @apenas_staff()
+    @commands.command(name='atualizarpings')
+    @commands.guild_only()
     async def atualizarpings(self, ctx: commands.Context):
-        """Aplica o texto e o banner atuais nos painéis já enviados."""
-        if self.pool is None:
-            return await ctx.send("❌ O pool do PostgreSQL não está configurado.", delete_after=8)
-        n = await self._atualizar_guild(ctx.guild.id)
-        await ctx.send(f"✅ {n} painel(is) atualizado(s).", delete_after=8)
-
-    @commands.command(name="statuspings")
-    @apenas_staff()
-    async def statuspings(self, ctx: commands.Context):
-        """Mostra quantas pessoas têm cada notificação e a saúde da configuração."""
-        embed = embed_base("📊 Status das notificações")
-        linhas = []
-        for chave, n in NOTIFICACOES.items():
-            cargo = cargo_de(ctx.guild, chave)
-            if cargo is None:
-                linhas.append(f"{n['emoji']} **{n['nome']}** — ❌ cargo não encontrado")
-            else:
-                linhas.append(f"{n['emoji']} {cargo.mention} — **{len(cargo.members)}** pessoas")
-        embed.description = "\n".join(linhas)
-
-        _, problemas = cargos_usaveis(ctx.guild)
-        embed.add_field(
-            name="🩺 Cargos e permissões",
-            value="✅ Tudo certo." if not problemas else "\n".join(f"• {p}" for p in problemas),
-            inline=False,
-        )
-
-        ok, info = await testar_banner()
-        embed.add_field(name="🖼️ Banner", value=f"{'✅' if ok else '⚠️'} {info}", inline=False)
-
-        if self.pool is not None:
+        if not staff(ctx.author):
+            return await ctx.reply('⛔ Comando exclusivo da equipe Royal.', mention_author=False)
+        if not self.pool:
+            return await ctx.reply('❌ PostgreSQL indisponível.', mention_author=False)
+        rows = await self.pool.fetch('SELECT channel_id,message_id FROM pings_paineis WHERE guild_id=$1', ctx.guild.id)
+        updated, old, lost = 0, 0, 0
+        for row in rows:
+            channel = ctx.guild.get_channel(row['channel_id'])
             try:
-                qtd = await self.pool.fetchval(
-                    "SELECT COUNT(*) FROM pings_paineis WHERE guild_id=$1", ctx.guild.id
-                )
-                paineis = f"**{qtd}** registrado(s)"
-            except Exception:  # noqa: BLE001
-                paineis = "❌ erro ao consultar o banco"
-        else:
-            paineis = "⚠️ sem PostgreSQL (!atualizarpings indisponível)"
+                if channel is None:
+                    channel = await ctx.guild.fetch_channel(row['channel_id'])
+                msg = await channel.fetch_message(row['message_id'])
+                # Mensagens antigas com embeds são mantidas, mas o comando pode criar a versão nova.
+                if bool(getattr(msg.flags, 'is_components_v2', False)):
+                    await msg.edit(view=RoyalPingPanel(self, self._image_reference(msg)), attachments=msg.attachments)
+                    updated += 1
+                else:
+                    old += 1
+            except discord.NotFound:
+                await self.pool.execute('DELETE FROM pings_paineis WHERE guild_id=$1 AND message_id=$2', ctx.guild.id, row['message_id'])
+                lost += 1
+            except (discord.HTTPException, AttributeError):
+                LOG.exception('Não foi possível atualizar painel %s', row['message_id'])
+        await ctx.reply(f'✅ Atualizados: **{updated}**. Legados ainda ativos: **{old}**. Removidos: **{lost}**.\n'
+                        'Use `!painelpings` para publicar o layout novo caso tenha painéis antigos.', mention_author=False)
 
-        embed.add_field(name="🗄️ Painéis", value=paineis, inline=True)
-        embed.add_field(
-            name="🧾 Log de alterações",
-            value=f"<#{LOG_CANAL_ID}>" if LOG_CANAL_ID else "desligado",
-            inline=True,
-        )
-        await ctx.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+    @commands.command(name='statuspings')
+    @commands.guild_only()
+    async def statuspings(self, ctx: commands.Context):
+        if not staff(ctx.author):
+            return await ctx.reply('⛔ Comando exclusivo da equipe Royal.', mention_author=False)
+        usable, problems = cargos_gerenciaveis(ctx.guild)
+        lines = [f"> `{n['emoji']}` **{n['nome']}** — {len(ctx.guild.get_role(n['id']).members)} integrantes"
+                 if ctx.guild.get_role(n['id']) else f"> `⚠️` {n['nome']} — cargo ausente"
+                 for n in NOTIFICACOES.values()]
+        body = '\n'.join(lines) + (f'\n\n**Atenção**\n' + '\n'.join(problems) if problems else '\n\n✅ Cargos configurados corretamente.')
+        body += f'\n-# {len(usable)}/{len(NOTIFICACOES)} cargos gerenciáveis.'
+        await ctx.reply(view=card('📊 STATUS DAS NOTIFICAÇÕES', body), mention_author=False)
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(PingsCog(bot))
+    await bot.add_cog(NotificacoesRoyal(bot))
