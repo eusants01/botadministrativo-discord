@@ -58,7 +58,7 @@ INSIGNIAS = [
 
     {"nome": "Golgos", "cargo_id": 1565443033787277394, "emoji": "🎥", "titular_id": 525837977545605132, "descricao_curta": "Criatividade e influência.", "descricao_completa": "Distinção pessoal de Golgos, editor de vídeo e influenciador, associada à criatividade e à comunicação."},
 
-    {"nome": "Dark", "cargo_id": 1565443625523880137, "emoji": "🐦‍⬛", "titular_id": 1089646065084534854, "descricao_curta": "Lealdade e consideração.", "descricao_completa": "Representa lealdade e consideração pessoal."},
+    {"nome": "Dark", "cargo_id": 1565443625523880137, "emoji": "🐦‍", "titular_id": 1089646065084534854, "descricao_curta": "Lealdade e consideração.", "descricao_completa": "Representa lealdade e consideração pessoal de um corregedor."},
 
 ]
 
