@@ -1,268 +1,148 @@
-const $ = (s, root=document) => root.querySelector(s);
-const $$ = (s, root=document) => [...root.querySelectorAll(s)];
-const esc = (s='') => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-
-let data = null, shown = 8, me = null;
-const DAMAS = new Set(['Bruna', 'Pietra', 'Kananda', 'Tatah', 'Lívia', 'Livia', 'Nathy']);
-const FALLBACK = {
-  online: false,
-  membros: [],
-  influencers: [],
-  staff: [],
-  apoio: [],
-  insignias: [],
-  beneficios: [
-    { nome: 'Sorteios exclusivos', descricao: 'Premiações reservadas aos integrantes oficiais.', emoji: '🎁' },
-    { nome: 'Indicações familiares', descricao: 'Sugestões de novos nomes para avaliação da família.', emoji: '📜' },
-    { nome: 'Perfil Royal', descricao: 'Perfil público personalizado dentro do portal.', emoji: '👑' },
-    { nome: 'Conselho Royal', descricao: 'Propostas públicas com participação e votação.', emoji: '⚖️' },
-    { nome: 'Call privada', descricao: 'Canal de voz reservado aos membros oficiais da família.', emoji: '🎙️' },
-    { nome: 'Permissões no E.B', descricao: 'Vantagens especiais por ter o cargo da Família no servidor do E.B.', emoji: '🛡️' },
-    { nome: 'Eventos privativos', descricao: 'Experiências exclusivas e convites especiais.', emoji: '🎭' }
-  ]
-};
-
-function empty(msg){ return `<p class="empty">${esc(msg)}</p>`; }
-function nameOf(m){ return m?.perfil?.display_name || m?.nome || 'Integrante'; }
-function titleOf(m){ return m?.perfil?.title || '@' + (m?.usuario || 'royal'); }
-function mottoOf(m){ return m?.perfil?.motto || 'Presença reconhecida dentro da Família Royal.'; }
-function badge(txt){ return txt ? `<span>${esc(txt)}</span>` : ''; }
-function personCard(m){
-  return `<button class="person reveal" data-person="${esc(m.id)}">
-    <img src="${esc(m.avatar)}" alt="${esc(nameOf(m))}" loading="lazy">
-    <strong>${esc(nameOf(m))}</strong>
-    <small>${esc(titleOf(m))}</small>
-    <p>${esc(mottoOf(m))}</p>
-    <em>Conhecer perfil ↗</em>
-  </button>`;
-}
-function staffCard(group){
-  return `<article class="staff-card reveal">
-    <span class="symbol">${esc(group.simbolo || '✦')}</span>
-    <h3>${esc(group.nome)}</h3>
-    <p>${esc(group.descricao || '')}</p>
-    ${group.pessoas?.length ? group.pessoas.map(m => `<div class="staff-member"><img src="${esc(m.avatar)}" alt=""><span>${esc(nameOf(m))}</span></div>`).join('') : `<div class="staff-empty">Aguardando integrantes neste cargo.</div>`}
-  </article>`;
-}
-function insigniaCard(i){
-  return `<article class="insignia-card"><span class="insignia-emoji">${esc(i.emoji || '👑')}</span><div><strong>${esc(i.nome)}</strong><small>${esc(i.descricao || '')}</small></div></article>`;
-}
-function benefitCard(b){
-  return `<article class="benefit reveal"><span class="emoji">${esc(b.emoji || '✦')}</span><h3>${esc(b.nome)}</h3><p>${esc(b.descricao)}</p></article>`;
-}
-function creatorCard(m){
-  return `<button class="creator reveal" data-person="${esc(m.id)}"><img src="${esc(m.avatar)}" alt=""><div><strong>${esc(nameOf(m))}</strong><span>${esc(titleOf(m))}</span></div></button>`;
-}
-
-function renderMembers(){
-  const q = ($('#member-search')?.value || '').trim().toLowerCase();
-  const list = (data?.membros || []).filter(m => `${nameOf(m)} ${m.usuario} ${titleOf(m)}`.toLowerCase().includes(q));
-  $('#members-grid').innerHTML = list.length ? list.slice(0, shown).map(personCard).join('') : empty(data?.online ? 'Nenhum integrante corresponde à busca.' : 'Os integrantes serão exibidos assim que a sincronização com o Discord estiver disponível.');
-  $('#show-more').classList.toggle('hidden', list.length <= shown);
-  $('#official-counter').textContent = data?.online ? `${list.length} integrantes` : 'Sincronização indisponível';
-  $('#count-members').textContent = data?.online ? (data.membros?.length || 0) : '—';
-  observeReveals();
-}
-
-function renderAll(){
-  renderMembers();
-  $('#staff-grid').innerHTML = (data?.staff || []).map(staffCard).join('') || empty('Sem cargos administrativos carregados.');
-  $('#support-grid').innerHTML = (data?.apoio || []).map(staffCard).join('') || empty('Sem cargos de apoio carregados.');
-  const staffCount = new Set([...(data?.staff || []), ...(data?.apoio || [])].flatMap(g => (g.pessoas || []).map(p => p.id))).size;
-  $('#count-staff').textContent = data?.online ? staffCount : '—';
-  const insignias = data?.insignias || [];
-  $('#insignias-damas').innerHTML = insignias.filter(i => i.destaque || DAMAS.has(i.nome)).map(insigniaCard).join('') || empty('Sem insígnias em destaque no momento.');
-  $('#insignias-cavalheiros').innerHTML = insignias.filter(i => !(i.destaque || DAMAS.has(i.nome))).map(insigniaCard).join('') || empty('Sem outras insígnias no momento.');
-  $('#benefits-grid').innerHTML = (data?.beneficios || []).map(benefitCard).join('');
-  $('#influencers-grid').innerHTML = (data?.influencers || []).length ? data.influencers.map(creatorCard).join('') : empty('Criadores serão listados automaticamente pelo cargo de influenciador.');
-  observeReveals();
-}
-
-async function loadData(){
-  try {
-    const res = await fetch('./api/royal', { cache: 'no-store' });
-    if (!res.ok) throw new Error(String(res.status));
-    data = await res.json();
-  } catch (err) {
-    console.warn('Portal Royal:', err);
-    data = JSON.parse(JSON.stringify(FALLBACK));
+(() => {
+  'use strict';
+  document.documentElement.classList.add('js-ready');
+  const $ = (selector, root=document) => root.querySelector(selector);
+  const $$ = (selector, root=document) => Array.from(root.querySelectorAll(selector));
+  const html = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+  const safeLink = url => {try {const u=new URL(String(url));return u.protocol==='https:' ? u.href : null;} catch{return null;}};
+  const DEFAULT_AVATAR='/assets/royal_logo.png';
+  const OFC_ID='1554367619463913582', INFLUENCER_ID='1565443626388164790';
+  const RESERVE_BENEFITS = [
+    ['Sorteios exclusivos','Premiações e oportunidades reservadas aos integrantes oficiais.','🎁'],
+    ['Indicações familiares','Recomende novos candidatos à avaliação dos fundadores.','📜'],
+    ['Conselho Royal','Apresente propostas e participe das votações da comunidade.','⚖️'],
+    ['Perfil Royal','Seu nome, título e apresentação personalizada no portal.','👑'],
+    ['Call privada','Um espaço de voz exclusivo no servidor da Família.','🎙️'],
+    ['Permissões no E.B','Acesso a permissões especiais pelo cargo da Família no servidor do E.B.','🛡️'],
+    ['Eventos e experiências','Atividades especiais reservadas aos integrantes oficiais.','🎭']
+  ].map(([nome,descricao,emoji])=>({nome,descricao,emoji}));
+  const cache = {data:null, shown:8, session:null};
+  function show(el,visible=true){if(el) el.classList.toggle('hidden', !visible);}
+  function observe(){
+    const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if(reduced || !('IntersectionObserver' in window)){$$('.reveal').forEach(e=>e.classList.add('is-visible'));return;}
+    if(!window.royalObserver){window.royalObserver=new IntersectionObserver(entries=>entries.forEach(entry=>{if(entry.isIntersecting){entry.target.classList.add('is-visible');window.royalObserver.unobserve(entry.target);}}),{threshold:.08,rootMargin:'0px 0px 40px 0px'});}
+    $$('.reveal:not(.is-visible)').forEach(e=>window.royalObserver.observe(e));
   }
-  renderAll();
-}
-
-async function openMember(id){
-  $('#member-modal').classList.remove('hidden');
-  $('#member-modal').setAttribute('aria-hidden','false');
-  $('#modal-body').innerHTML = '<p>Consultando integrante...</p>';
-  try {
-    const res = await fetch(`./api/royal/membro/${encodeURIComponent(id)}`);
-    if (!res.ok) throw new Error('membro');
-    const m = await res.json();
-    const p = m.perfil || {};
-    const chips = [
-      badge('👑 ' + (m.oficial ? 'Membro oficial' : 'Comunidade Royal')),
-      m.influencer ? badge('🎥 Influenciador') : '',
-      p.badge_a ? badge('✦ ' + p.badge_a) : '',
-      p.badge_b ? badge('✦ ' + p.badge_b) : ''
-    ].join('');
-    const insignias = (m.insignias || []).length ? m.insignias.map(i => `<span class="role-tag">${esc(i.emoji)} ${esc(i.nome)}</span>`).join('') : empty('Nenhuma insígnia registrada.');
-    $('#modal-body').innerHTML = `
-      <img src="${esc(m.avatar)}" alt="${esc(nameOf(m))}">
-      <h3>${esc(p.display_name || m.nome)}</h3>
-      <p class="verified">@${esc(m.usuario)}</p>
-      <div class="profile-badges">${chips}</div>
-      ${p.title ? `<p class="verified">${esc(p.title)}</p>` : ''}
-      ${p.motto ? `<p><em>${esc(p.motto)}</em></p>` : ''}
-      ${p.bio ? `<p>${esc(p.bio)}</p>` : ''}
-      <h4>Insígnias reconhecidas</h4>
-      <div class="profile-badges">${insignias}</div>
-      ${p.link ? `<p><a class="cta-button" href="${esc(p.link)}" target="_blank" rel="noopener noreferrer">Abrir link público ↗</a></p>` : ''}
-      ${p.signature ? `<p class="verified">${esc(p.signature)}</p>` : ''}
-    `;
-  } catch (err) {
-    $('#modal-body').innerHTML = '<p>Não foi possível consultar este integrante agora.</p>';
+  function memberName(m){return m?.perfil?.display_name||m?.nome||'Integrante';}
+  function memberTitle(m){return m?.perfil?.title||`@${m?.usuario||'royal'}`;}
+  function memberButton(m){return `<button type="button" class="person-card reveal" data-member="${html(m.id)}" aria-label="Abrir perfil de ${html(memberName(m))}"><img src="${html(m.avatar||DEFAULT_AVATAR)}" alt="" loading="lazy"><div class="person-info"><strong>${html(memberName(m))}</strong><small>${html(memberTitle(m))}</small><span class="person-action">CONHECER PERFIL ↗</span></div></button>`;}
+  function empty(message){return `<div class="empty-state">✦ ${html(message)}</div>`;}
+  function renderMembers(){
+    const list=cache.data?.membros||[];const q=($('#member-search')?.value||'').trim().toLowerCase();
+    const selected=list.filter(m=>[memberName(m),m.usuario,m?.perfil?.title].join(' ').toLocaleLowerCase('pt-BR').includes(q));
+    $('#members-grid').innerHTML=selected.length?selected.slice(0,cache.shown).map(memberButton).join(''):empty(cache.data?.online?'Nenhum membro encontrado para essa busca.':'A lista estará disponível quando o Discord terminar de sincronizar.');
+    show($('#load-more'),selected.length>cache.shown);
+    $('#members-number').textContent=cache.data?.online?String(list.length):'—';
+    $('#total-members').textContent=cache.data?.online?String(list.length):'—';
+    $('#directory-status').textContent=cache.data?.online?'Diretório oficial sincronizado':'Discord temporariamente indisponível';
+    observe();
   }
-}
-
-function applyTheme(theme='gold'){
-  const preview = $('#preview-card');
-  preview.classList.remove('theme-gold','theme-ivory','theme-rose','theme-onyx');
-  preview.classList.add(`theme-${theme}`);
-}
-
-function preview(profile={}, member={}){
-  const form = $('#profile-form');
-  const get = name => form?.elements?.namedItem(name)?.value?.trim?.() ?? profile?.[name] ?? '';
-  $('#profile-preview-name').textContent = get('display_name') || member.nome || 'Seu nome aqui';
-  $('#profile-preview-title').textContent = get('title') || 'Integrante da comunidade';
-  $('#profile-preview-motto').textContent = get('motto') || 'Seu lema aparece aqui.';
-  $('#profile-preview-bio').textContent = get('bio') || 'Sua descrição pública aparece aqui.';
-  const tags = [get('badge_a'), get('badge_b')].filter(Boolean);
-  $('#profile-preview-tags').innerHTML = tags.length ? tags.map(t => `<span>${esc(t)}</span>`).join('') : '<span>✦ Perfil Royal</span>';
-  const baseBadges = [member.roles?.includes('1554367619463913582') ? '👑 Membro oficial' : '✦ Comunidade Royal'];
-  if (member.roles?.includes('1565443626388164790')) baseBadges.push('🎥 Influenciador');
-  $('#profile-preview-badges').innerHTML = baseBadges.map(b => `<span>${esc(b)}</span>`).join('');
-  if (member.avatar) $('#profile-avatar').src = member.avatar;
-  const link = get('link');
-  const linkEl = $('#profile-preview-link');
-  if (link.startsWith('https://')) {
-    linkEl.href = link; linkEl.classList.remove('hidden');
-  } else { linkEl.classList.add('hidden'); linkEl.removeAttribute('href'); }
-  applyTheme(get('color') || 'gold');
-}
-
-async function loadMe(){
-  const loginBox = $('#profile-login');
-  const form = $('#profile-form');
-  try {
-    const res = await fetch('./api/royal/me', { cache: 'no-store', credentials: 'same-origin' });
-    if (!res.ok) throw new Error(String(res.status));
-    me = await res.json();
-    if (!me.authenticated) {
-      loginBox.classList.remove('hidden');
-      form.classList.add('hidden');
+  function teamCard(g){return `<article class="team-role reveal"><span class="team-symbol">${html(g.simbolo||'✦')}</span><div><h3>${html(g.nome)}</h3><p>${html(g.descricao||'')}</p><div class="team-mini-members">${(g.pessoas||[]).length?g.pessoas.map(m=>`<button type="button" data-member="${html(m.id)}"><img src="${html(m.avatar||DEFAULT_AVATAR)}" alt=""><span>${html(memberName(m))}</span></button>`).join(''):'<span class="team-placeholder">Nenhum integrante listado agora</span>'}</div></div></article>`;}
+  function insignia(i){return `<div class="insignia-item"><span class="insignia-emoji">${html(i.emoji||'✦')}</span><div><strong>${html(i.nome)}</strong><span>${html(i.descricao||'Distinção pessoal da Família Royal.')}</span></div></div>`;}
+  function renderAll(){
+    const d=cache.data||{};
+    renderMembers();
+    $('#staff-grid').innerHTML=(d.staff||[]).map(teamCard).join('')||empty('Equipe em atualização.');
+    $('#support-grid').innerHTML=(d.apoio||[]).map(teamCard).join('')||empty('Funções de apoio em atualização.');
+    const staffIds=new Set((d.staff||[]).flatMap(g=>(g.pessoas||[]).map(m=>m.id)));
+    $('#total-staff').textContent=d.online?String(staffIds.size):'—';
+    const records=d.insignias||[];const featured=records.filter(i=>i.destaque);
+    $('#insignias-damas').innerHTML=featured.length?featured.map(insignia).join(''):empty('Nenhuma distinção nesta galeria.');
+    $('#insignias-cavalheiros').innerHTML=records.filter(i=>!i.destaque).map(insignia).join('')||empty('Nenhuma distinção nesta galeria.');
+    const benefits=d.beneficios?.length?d.beneficios:RESERVE_BENEFITS;
+    $('#benefits-grid').innerHTML=benefits.map(b=>`<article class="benefit-card reveal"><span class="benefit-symbol">${html(b.emoji)}</span><h3>${html(b.nome)}</h3><p>${html(b.descricao)}</p></article>`).join('');
+    $('#influencers-grid').innerHTML=(d.influencers||[]).length?d.influencers.map(m=>`<button type="button" class="creator-card" data-member="${html(m.id)}"><img src="${html(m.avatar||DEFAULT_AVATAR)}" alt=""><span><strong>${html(memberName(m))}</strong><small>${html(memberTitle(m))}</small></span></button>`).join(''):empty('Criadores aparecerão aqui conforme seus cargos no Discord.');
+    observe();
+  }
+  async function loadCommunity(){
+    try{const res=await fetch('/api/royal',{cache:'no-store'});if(!res.ok)throw new Error(`HTTP ${res.status}`);cache.data=await res.json();}
+    catch(error){console.warn('Royal Community:',error);cache.data={online:false,membros:[],staff:[],apoio:[],influencers:[],insignias:[],beneficios:RESERVE_BENEFITS};}
+    renderAll();
+  }
+  async function openMember(id){
+    const modal=$('#member-modal');show(modal,true);document.body.style.overflow='hidden';
+    $('#modal-content').innerHTML='<p>Consultando integrante...</p>';
+    $('#modal-content').focus?.();
+    try {
+      const r=await fetch(`/api/royal/membro/${encodeURIComponent(id)}`,{cache:'no-store'});if(!r.ok)throw new Error('Membro indisponível');
+      const m=await r.json(),p=m.perfil||{};
+      const link=safeLink(p.link),insignias=m.insignias||[];
+      $('#modal-content').innerHTML=`<img class="modal-avatar" src="${html(m.avatar||DEFAULT_AVATAR)}" alt=""><h3>${html(p.display_name||m.nome)}</h3><p>@${html(m.usuario)}</p><div class="modal-chips"><span>${m.oficial?'👑 Membro oficial da Família Royal':'✦ Integrante da comunidade'}</span>${m.influencer?'<span>🎥 Influenciador Royal</span>':''}</div>${p.title?`<p><strong>${html(p.title)}</strong></p>`:''}${p.motto?`<p><em>“${html(p.motto)}”</em></p>`:''}${p.bio?`<p>${html(p.bio)}</p>`:''}<h4>Insígnias reconhecidas</h4><div class="modal-chips">${insignias.length?insignias.map(i=>`<span>${html(i.emoji)} ${html(i.nome)}</span>`).join(''):'<span>Sem insígnias registradas</span>'}</div>${link?`<p><a class="modal-link" href="${html(link)}" target="_blank" rel="noopener noreferrer">Visitar link público ↗</a></p>`:''}${p.signature?`<p>${html(p.signature)}</p>`:''}`;
+    } catch {$('#modal-content').innerHTML='<h3>Perfil indisponível</h3><p>Não foi possível consultar esse integrante agora. Tente novamente depois.</p>';}
+    $('.modal-close')?.focus();
+  }
+  function closeModal(){show($('#member-modal'),false);document.body.style.overflow='';}
+  function preview(){
+    const form=$('#profile-form'),data=form?Object.fromEntries(new FormData(form)):{};const mem=cache.session?.member||{};
+    $('#preview-name').textContent=data.display_name||mem.nome||'Seu nome Royal';
+    $('#preview-title').textContent=data.title||'Seu título especial';
+    $('#preview-motto').textContent=data.motto?`“${data.motto}”`:'“Sua história merece ser contada.”';
+    $('#preview-bio').textContent=data.bio||'Uma breve descrição sobre você aparecerá aqui.';
+    $('#preview-avatar').src=mem.avatar||DEFAULT_AVATAR;
+    const badges=[];
+    if((mem.roles||[]).includes(OFC_ID))badges.push('👑 Membro oficial');
+    else badges.push('✧ Comunidade Royal');
+    if((mem.roles||[]).includes(INFLUENCER_ID))badges.push('🎥 Influenciador oficial');
+    $('#preview-verified').textContent=badges.join(' · ');
+    $('#preview-chips').innerHTML=[data.badge_a,data.badge_b].filter(Boolean).map(s=>`<span>${html(s)}</span>`).join('');
+    $('#profile-preview').dataset.theme=data.color||'gold';
+    const link=safeLink(data.link);show($('#preview-link'),Boolean(link));if(link)$('#preview-link').href=link;
+  }
+  async function authStatus(){
+    try{
+      const r=await fetch('/api/royal/oauth-status',{cache:'no-store'});if(!r.ok)throw Error();
+      const status=await r.json();const el=$('#login-status');
+      if(!status.ready){el.textContent='O login precisa ser configurado no Railway: '+status.missing.join(', ')+'. Acesse as instruções do pacote para ativá-lo.';}
+      else el.textContent='Autenticação pronta para conectar sua conta do Discord.';
+    } catch{$('#login-status').textContent='É necessário configurar o OAuth2 do Discord no Railway para ativar o editor.';}
+  }
+  async function loadMe(){
+    try{
+      const r=await fetch('/api/royal/me',{cache:'no-store',credentials:'same-origin'});if(!r.ok)throw Error('Sessão indisponível');
+      const response=await r.json();cache.session=response;
+      show($('#profile-login'),!response.authenticated);show($('#profile-form'),!!response.authenticated);
+      if(response.authenticated){
+        const form=$('#profile-form');
+        for(const el of Array.from(form.elements))if(el.name){el.value=response.profile?.[el.name]??(el.name==='color'?'gold':'');}
+      } else authStatus();
       preview();
-      return;
-    }
-    loginBox.classList.add('hidden');
-    form.classList.remove('hidden');
-    const profile = me.profile || {};
-    ['display_name','bio','title','motto','color','link','badge_a','badge_b','signature'].forEach(key => {
-      const input = form.elements.namedItem(key);
-      if (input) input.value = profile[key] || (key === 'color' ? 'gold' : '');
-    });
-    preview(profile, me.member);
-  } catch (err) {
-    console.warn('Royal profile unavailable', err);
-    loginBox.querySelector('p').textContent = 'Não foi possível carregar sua sessão. Confira as variáveis OAuth2 e PostgreSQL no Railway e tente entrar novamente.';
-    loginBox.classList.remove('hidden');
-    form.classList.add('hidden');
-    preview();
+    }catch(err){console.warn('Royal Auth:',err);show($('#profile-login'),true);show($('#profile-form'),false);$('#login-status').textContent='Serviço de perfis temporariamente indisponível.';preview();}
   }
-}
-
-function observeReveals(){
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || !('IntersectionObserver' in window)) { $$('.reveal').forEach(el => el.classList.add('visible')); return; }
-  if (!window.__royalObserver) window.__royalObserver = new IntersectionObserver(entries => {
-    entries.forEach(entry => {
-      if (entry.isIntersecting) {
-        entry.target.classList.add('visible');
-        window.__royalObserver.unobserve(entry.target);
-      }
-    });
-  }, { threshold: .08 });
-  $$('.reveal').forEach(el => window.__royalObserver.observe(el));
-}
-
-function initTilt(){
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  $$('[data-tilt]').forEach(card => {
-    card.addEventListener('mousemove', e => {
-      const r = card.getBoundingClientRect();
-      const px = (e.clientX - r.left) / r.width;
-      const py = (e.clientY - r.top) / r.height;
-      const rx = (py - .5) * -8;
-      const ry = (px - .5) * 8;
-      card.style.transform = `perspective(900px) rotateX(${rx}deg) rotateY(${ry}deg) translateY(-2px)`;
-    });
-    card.addEventListener('mouseleave', () => { card.style.transform = ''; });
-  });
-}
-
-function initCursorGlow(){
-  const glow = $('#cursor-glow');
-  if (!glow) return;
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || matchMedia('(pointer: coarse)').matches) return;
-  window.addEventListener('pointermove', e => {
-    glow.style.left = `${e.clientX}px`;
-    glow.style.top = `${e.clientY}px`;
-  });
-}
-
-document.addEventListener('click', e => {
-  const btn = e.target.closest('[data-person]');
-  if (btn) openMember(btn.dataset.person);
-});
-$('#member-search')?.addEventListener('input', () => { shown = 8; renderMembers(); });
-$('#show-more')?.addEventListener('click', () => { shown += 8; renderMembers(); });
-const closeModal = () => { $('#member-modal').classList.add('hidden'); $('#member-modal').setAttribute('aria-hidden','true'); };
-$('#modal-close')?.addEventListener('click', closeModal);
-$('#modal-shade')?.addEventListener('click', closeModal);
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
-$('#menu-btn')?.addEventListener('click', () => {
-  const nav = $('#nav');
-  nav.classList.toggle('open');
-  $('#menu-btn').setAttribute('aria-expanded', nav.classList.contains('open') ? 'true' : 'false');
-});
-$$('#nav a').forEach(a => a.addEventListener('click', () => { $('#nav').classList.remove('open'); $('#menu-btn').setAttribute('aria-expanded','false'); }));
-$('#profile-form')?.addEventListener('input', () => preview({}, me?.member || {}));
-$('#profile-form')?.addEventListener('change', () => preview({}, me?.member || {}));
-$('#profile-form')?.addEventListener('submit', async e => {
-  e.preventDefault();
-  const feedback = $('#profile-feedback');
-  const btn = e.currentTarget.querySelector('[type="submit"]');
-  btn.disabled = true;
-  feedback.textContent = 'Salvando...';
-  try {
-    const payload = Object.fromEntries(new FormData(e.currentTarget));
-    const res = await fetch('./api/royal/me', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.detail || 'Falha ao salvar');
-    feedback.textContent = '✓ Perfil atualizado com sucesso.';
-    await loadData();
-    await loadMe();
-  } catch (err) {
-    feedback.textContent = '⚠ ' + err.message;
-  } finally { btn.disabled = false; }
-});
-$('#profile-logout')?.addEventListener('click', async () => {
-  await fetch('./auth/logout', { method: 'POST', credentials: 'same-origin' });
-  await loadMe();
-});
-$('#year').textContent = new Date().getFullYear();
-
-initCursorGlow();
-initTilt();
-loadData();
-loadMe();
-setInterval(loadData, 90000);
+  async function saveProfile(e){
+    e.preventDefault();const button=$('#profile-form button[type="submit"]'),feedback=$('#profile-feedback');
+    const data=Object.fromEntries(new FormData(e.currentTarget));button.disabled=true;feedback.textContent='Salvando alterações...';
+    try{
+      const res=await fetch('/api/royal/me',{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify(data)});
+      const result=await res.json();if(!res.ok)throw new Error(result.detail||'Não foi possível salvar');
+      feedback.textContent='✓ Seu perfil Royal foi salvo.';await loadMe();await loadCommunity();
+    }catch(error){feedback.textContent=`⚠ ${error.message}`;}finally{button.disabled=false;}
+  }
+  function setupMotion(){
+    observe();if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+    const halo=$('#cursor-halo');if(halo)window.addEventListener('pointermove',e=>{halo.style.left=e.clientX+'px';halo.style.top=e.clientY+'px';},{passive:true});
+    // 3D suave apenas em dispositivos com hover real.
+    if(matchMedia('(hover: hover) and (pointer: fine)').matches){
+      const emblem=$('#hero-crest'), area=$('.hero-emblem-wrap');
+      area?.addEventListener('pointermove',e=>{const r=area.getBoundingClientRect();const x=(e.clientX-r.left)/r.width-.5,y=(e.clientY-r.top)/r.height-.5;emblem.style.transform=`perspective(800px) rotateY(${x*14}deg) rotateX(${-y*12}deg) translateZ(12px)`;});
+      area?.addEventListener('pointerleave',()=>{emblem.style.transform='';});
+      $$('[data-tilt]').forEach(card=>{card.addEventListener('pointermove',e=>{const r=card.getBoundingClientRect();const x=(e.clientX-r.left)/r.width-.5,y=(e.clientY-r.top)/r.height-.5;card.style.transform=`perspective(950px) rotateY(${x*4}deg) rotateX(${-y*4}deg) translateY(-3px)`;});card.addEventListener('pointerleave',()=>{card.style.transform='';});});
+    }
+  }
+  function bind(){
+    $('#year').textContent=String(new Date().getFullYear());
+    $('#menu-toggle').addEventListener('click',()=>{const nav=$('#main-nav'),expanded=$('#menu-toggle').getAttribute('aria-expanded')==='true';nav.classList.toggle('open',!expanded);$('#menu-toggle').setAttribute('aria-expanded',String(!expanded));});
+    $$('#main-nav a').forEach(a=>a.addEventListener('click',()=>{$('#main-nav').classList.remove('open');$('#menu-toggle').setAttribute('aria-expanded','false');}));
+    addEventListener('scroll',()=>$('#site-header').classList.toggle('is-scrolled',scrollY>12),{passive:true});
+    $('#member-search').addEventListener('input',()=>{cache.shown=8;renderMembers();});
+    $('#load-more').addEventListener('click',()=>{cache.shown+=8;renderMembers();});
+    document.addEventListener('click',event=>{const btn=event.target.closest('[data-member]');if(btn)openMember(btn.dataset.member);if(event.target.closest('[data-close-modal]'))closeModal();});
+    document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+    $('#profile-form').addEventListener('input',preview);
+    $('#profile-form').addEventListener('change',preview);
+    $('#profile-form').addEventListener('submit',saveProfile);
+    $('#profile-logout').addEventListener('click',async()=>{await fetch('/auth/logout',{method:'POST',credentials:'same-origin'});await loadMe();});
+    setupMotion();loadCommunity();loadMe();setInterval(loadCommunity,120000);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind);else bind();
+})();

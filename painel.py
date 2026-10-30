@@ -6,6 +6,7 @@ import secrets
 import hashlib
 import base64
 import json
+import html
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlencode, urlsplit
 
@@ -57,13 +58,29 @@ def signing():
     return URLSafeTimedSerializer(key, salt='royal-profile-v2')
 
 
-def oauth_config():
-    client_id = os.getenv('DISCORD_CLIENT_ID', '').strip()
+def oauth_status():
+    client_id = os.getenv('DISCORD_CLIENT_ID', '').strip() or os.getenv('CLIENT_ID', '').strip()
     client_secret = os.getenv('DISCORD_CLIENT_SECRET', '').strip()
     redirect_uri = os.getenv('DISCORD_REDIRECT_URI', '').strip()
-    if not all((client_id, client_secret, redirect_uri)) or not redirect_uri.startswith('https://'):
-        raise HTTPException(503, 'Configure DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET e DISCORD_REDIRECT_URI HTTPS.')
-    return client_id, client_secret, redirect_uri
+    if not redirect_uri:
+        public_domain = os.getenv('RAILWAY_PUBLIC_DOMAIN', '').strip()
+        if public_domain and '/' not in public_domain:
+            redirect_uri = f'https://{public_domain}/auth/callback'
+    missing = []
+    if not client_id: missing.append('DISCORD_CLIENT_ID')
+    if not client_secret: missing.append('DISCORD_CLIENT_SECRET')
+    if not redirect_uri or not redirect_uri.startswith('https://') or not redirect_uri.endswith('/auth/callback'):
+        missing.append('DISCORD_REDIRECT_URI')
+    if len(os.getenv('ROYAL_SITE_SECRET', '').strip()) < 32: missing.append('ROYAL_SITE_SECRET')
+    return {'ready': not missing, 'missing': missing, 'redirect_uri': redirect_uri}
+
+
+def oauth_config():
+    status = oauth_status()
+    if not status['ready']:
+        raise HTTPException(503, 'A integração Discord OAuth2 ainda não foi configurada no Railway.')
+    return (os.getenv('DISCORD_CLIENT_ID', '').strip() or os.getenv('CLIENT_ID', '').strip(),
+            os.getenv('DISCORD_CLIENT_SECRET', '').strip(), status['redirect_uri'])
 
 
 async def authenticated(request: Request, require=True):
@@ -83,33 +100,69 @@ async def authenticated(request: Request, require=True):
     return None
 
 
+_profile_schema_ready = False
+_profile_schema_lock = asyncio.Lock()
+
 async def profile_db():
+    global _profile_schema_ready
     pool = getattr(_bot, 'pool', None)
-    if pool is None: raise HTTPException(503, 'PostgreSQL indisponível.')
-    await pool.execute("""CREATE TABLE IF NOT EXISTS royal_site_profiles (
-        user_id BIGINT PRIMARY KEY, display_name VARCHAR(48) NOT NULL DEFAULT '',
-        bio VARCHAR(420) NOT NULL DEFAULT '', title VARCHAR(50) NOT NULL DEFAULT '',
-        motto VARCHAR(120) NOT NULL DEFAULT '',
-        color VARCHAR(16) NOT NULL DEFAULT 'gold',
-        link VARCHAR(240) NOT NULL DEFAULT '',
-        badge_a VARCHAR(24) NOT NULL DEFAULT '',
-        badge_b VARCHAR(24) NOT NULL DEFAULT '',
-        signature VARCHAR(80) NOT NULL DEFAULT '',
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )""")
-    await pool.execute("ALTER TABLE royal_site_profiles ADD COLUMN IF NOT EXISTS motto VARCHAR(120) NOT NULL DEFAULT ''")
-    await pool.execute("ALTER TABLE royal_site_profiles ADD COLUMN IF NOT EXISTS badge_a VARCHAR(24) NOT NULL DEFAULT ''")
-    await pool.execute("ALTER TABLE royal_site_profiles ADD COLUMN IF NOT EXISTS badge_b VARCHAR(24) NOT NULL DEFAULT ''")
-    await pool.execute("ALTER TABLE royal_site_profiles ADD COLUMN IF NOT EXISTS signature VARCHAR(80) NOT NULL DEFAULT ''")
-    await pool.execute("""CREATE TABLE IF NOT EXISTS royal_site_sessions (
-        user_id BIGINT NOT NULL, token_hash VARCHAR(64) PRIMARY KEY,
-        expires_at TIMESTAMPTZ NOT NULL
-    )""")
+    if pool is None:
+        raise HTTPException(503, 'PostgreSQL temporariamente indisponível.')
+    if not _profile_schema_ready:
+        async with _profile_schema_lock:
+            if not _profile_schema_ready:
+                await pool.execute("""CREATE TABLE IF NOT EXISTS royal_site_profiles (
+                    user_id BIGINT PRIMARY KEY,
+                    display_name VARCHAR(48) NOT NULL DEFAULT '',
+                    bio VARCHAR(420) NOT NULL DEFAULT '',
+                    title VARCHAR(50) NOT NULL DEFAULT '',
+                    color VARCHAR(16) NOT NULL DEFAULT 'gold',
+                    link VARCHAR(240) NOT NULL DEFAULT '',
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )""")
+                for col, length in [('motto', 120),('badge_a',24),('badge_b',24),('signature',80)]:
+                    await pool.execute(f"ALTER TABLE royal_site_profiles ADD COLUMN IF NOT EXISTS {col} VARCHAR({length}) NOT NULL DEFAULT ''")
+                await pool.execute("""CREATE TABLE IF NOT EXISTS royal_site_sessions (
+                    user_id BIGINT NOT NULL,
+                    token_hash VARCHAR(64) PRIMARY KEY,
+                    expires_at TIMESTAMPTZ NOT NULL
+                )""")
+                _profile_schema_ready = True
     return pool
 
 
 app = FastAPI(title="Família Royal — Portal Oficial", docs_url=None, redoc_url=None, openapi_url=None)
 app.mount("/assets", StaticFiles(directory=str(BASE / "assets")), name="assets")
+
+
+@app.exception_handler(HTTPException)
+async def friendly_auth_errors(request: Request, exc: HTTPException):
+    if not request.url.path.startswith('/auth/'):
+        return JSONResponse({'detail': exc.detail}, status_code=exc.status_code)
+    hint = ''
+    if exc.status_code == 503 and request.url.path.startswith('/auth/'):
+        status = oauth_status()
+        if status['missing']:
+            hint = '<p class="tip">Faltam no Railway: <strong>' + html.escape(', '.join(status['missing'])) + '</strong>.</p>'
+    body = ('<!doctype html><html lang="pt-BR"><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            '<title>Família Royal • Conexão Discord</title>'
+            '<style>body{min-height:100vh;margin:0;background:radial-gradient(circle at top,#53331a,#110b09 63%);color:#fff2d9;font:15px/1.8 Arial,sans-serif;display:grid;place-items:center;padding:20px}'
+            'main{max-width:610px;background:#1d120dcc;border:1px solid #b58a50;padding:36px;border-radius:16px;box-shadow:0 20px 80px #0008}'
+            'h1{font:600 32px Georgia,serif;color:#ffdc9f}h2{font-size:14px;color:#cca373}.tip{padding:15px;background:#3f2b1c;border-left:3px solid #f2ba73}'
+            'a{color:#ffe0a9}.button{display:inline-block;background:#e3b36b;color:#21140c;padding:10px 18px;text-decoration:none;font-weight:bold;border-radius:5px}</style>'
+            '<main><h2>✦ FAMÍLIA ROYAL • PORTAL OFICIAL</h2><h1>Não foi possível conectar ao Discord</h1>'
+            '<p>' + html.escape(str(exc.detail)) + '</p>' + hint
+            + '<p>O restante do site continua disponível. Para ativar o editor, confira as variáveis OAuth2 no Railway e o Redirect URI no Discord Developer Portal.</p>'
+            '<a class="button" href="/#perfil">Voltar ao meu perfil ↗</a></main></html>')
+    return HTMLResponse(body, status_code=exc.status_code)
+
+
+@app.get('/api/royal/oauth-status')
+async def public_auth_status():
+    status = oauth_status()
+    return {'ready': status['ready'], 'missing': status['missing']}
+
 _bot: discord.Client | None = None
 
 
@@ -190,12 +243,15 @@ async def royal_member(user_id: int):
             m = await g.fetch_member(user_id)
         except (discord.NotFound, discord.Forbidden):
             raise HTTPException(404, "Membro não encontrado")
+        except discord.HTTPException:
+            raise HTTPException(503, "Discord temporariamente indisponível")
     data = member_data(m)
     try:
         pool = await profile_db()
         profile = await pool.fetchrow('SELECT display_name, bio, title, motto, color, link, badge_a, badge_b, signature FROM royal_site_profiles WHERE user_id=$1', user_id)
         data['perfil'] = dict(profile) if profile else None
-    except HTTPException:
+    except Exception:
+        LOG.warning('Perfil indisponível na consulta', exc_info=True)
         data['perfil'] = None
     data["oficial"] = any(r.id == OFC_ID for r in m.roles)
     data["influencer"] = any(r.id == INFLUENCER_ID for r in m.roles)
@@ -264,17 +320,16 @@ async def my_profile(request: Request):
 @app.put('/api/royal/me')
 async def update_profile(request: Request):
     uid=await authenticated(request)
-    origin=request.headers.get('origin','')
-    host=request.headers.get('host','')
-    # Compare com o domínio público do OAuth2; atrás do proxy Railway o Host interno pode variar.
-    configured = os.getenv('DISCORD_REDIRECT_URI', '').strip()
-    expected_origin = ''
-    if configured:
-        parsed = urlsplit(configured)
-        if parsed.scheme == 'https' and parsed.netloc and not parsed.username and not parsed.password:
-            expected_origin = f'{parsed.scheme}://{parsed.netloc}'
-    if not expected_origin or origin != expected_origin:
-        raise HTTPException(403,'Origem não autorizada. Verifique DISCORD_REDIRECT_URI.')
+    origin=request.headers.get('origin','').rstrip('/')
+    config_origin = ''
+    redirect_uri = oauth_status()['redirect_uri']
+    if redirect_uri.startswith('https://'):
+        u = urlsplit(redirect_uri)
+        config_origin = f'{u.scheme}://{u.netloc}'
+    # O Railway publica o serviço sob HTTPS, mas internamente usa host/proxy diferentes.
+    # A origem permitida é sempre o domínio de retorno cadastrado no Discord.
+    if not origin or not config_origin or origin != config_origin:
+        raise HTTPException(403,'Origem não autorizada. Confira DISCORD_REDIRECT_URI e o domínio do site.')
     try: data=await request.json()
     except Exception: raise HTTPException(400,'JSON inválido.')
     if not isinstance(data, dict): raise HTTPException(400,'Formato inválido.')
@@ -283,12 +338,20 @@ async def update_profile(request: Request):
         if not isinstance(value, str) or len(value)>length: raise HTTPException(422,f'Campo {key} inválido (limite: {length}).')
         return ''.join(ch for ch in value.strip() if ch.isprintable() and ch not in '<>')
     name=clean('display_name',48); bio=clean('bio',420); title=clean('title',50); motto=clean('motto',120); color=clean('color',16); link=clean('link',240); badge_a=clean('badge_a',24); badge_b=clean('badge_b',24); signature=clean('signature',80)
-    # Destaques são livres e não devem ser usados como credenciais oficiais.
     if color not in ('gold','ivory','rose','onyx'): raise HTTPException(422,'Tema inválido.')
-    if link and (not link.startswith('https://') or any(x in link for x in (' ', '\n', '\r'))): raise HTTPException(422,'Utilize um link HTTPS válido.')
+    if link:
+        try:
+            parsed = urlsplit(link)
+            if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password or any(ch.isspace() for ch in link):
+                raise ValueError('invalid URL')
+        except (ValueError, TypeError):
+            raise HTTPException(422,'Utilize um link HTTPS válido.')
     pool=await profile_db()
-    await pool.execute("""INSERT INTO royal_site_profiles (user_id,display_name,bio,title,motto,color,link,badge_a,badge_b,signature) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-      ON CONFLICT(user_id) DO UPDATE SET display_name=$2,bio=$3,title=$4,motto=$5,color=$6,link=$7,badge_a=$8,badge_b=$9,signature=$10,updated_at=NOW()""",uid,name,bio,title,motto,color,link,badge_a,badge_b,signature)
+    await pool.execute("""INSERT INTO royal_site_profiles (user_id,display_name,bio,title,motto,color,link,badge_a,badge_b,signature)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       ON CONFLICT(user_id) DO UPDATE SET display_name=$2,bio=$3,title=$4,motto=$5,color=$6,link=$7,
+       badge_a=$8,badge_b=$9,signature=$10,updated_at=NOW()""",
+       uid,name,bio,title,motto,color,link,badge_a,badge_b,signature)
     return {'ok':True}
 
 
