@@ -1,16 +1,359 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#100d0b"><meta name="description" content="Portal oficial Família Royal: membros, equipe, história, insígnias, influenciadores e seu perfil Royal."><title>Família Royal · Portal Oficial</title><link rel="icon" href="/assets/logo.webp"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="/assets/royal_site.css?v=royal-v3-layoutfix-2"><script defer src="/assets/royal_site.js?v=royal-v3-layoutfix-2"></script></head><body>
-<div class="site-top">✦ A PRIMEIRA FAMÍLIA DO E.B DO ALPHA <span>•</span> FUNDADA EM 28.01.2026 ✦</div>
-<header class="header"><a href="#inicio" class="logo"><img src="/assets/logo.webp" alt="Brasão Família Royal"><span><strong>ROYAL</strong><small>FAMÍLIA OFICIAL</small></span></a><button class="menu-btn" id="menu-btn" aria-label="Abrir navegação" aria-expanded="false">☰</button><nav id="nav"><a href="#historia">História</a><a href="#membros">Membros</a><a href="#equipe">Equipe</a><a href="#insignias">Insígnias</a><a href="#beneficios">Benefícios</a><a href="#influencers">Criadores</a><a href="#meu-perfil">Meu perfil</a></nav><a class="nav-cta" href="/#meu-perfil">MEU PERFIL ✦</a></header>
-<main><section class="hero" id="inicio"><div class="hero-pic"></div><div class="hero-shade"></div><div class="hero-inner wrap"><div class="eyebrow">✦ UM REINO DE HISTÓRIAS COMPARTILHADAS</div><h1>UM LEGADO QUE<br><em>NASCEU PARA REINAR.</em></h1><p>Bem-vindo ao universo da Família Royal. Descubra nossos integrantes, conquistas, privilégios e crie sua própria identidade.</p><div class="hero-actions"><a class="button primary" href="#meu-perfil">CRIAR MEU PERFIL ↗</a><a class="button outline" href="#membros">CONHECER A FAMÍLIA ↓</a></div><div class="hero-tally"><div><b id="count-members">—</b><span>MEMBROS OFICIAIS</span></div><div><b id="count-staff">—</b><span>INTEGRANTES DA STAFF</span></div><div><b>28/01</b><span>FUNDAÇÃO 2026</span></div></div></div><div class="scroll-hint">DESLIZE PARA EXPLORAR ↓</div></section>
-<section class="quick-section wrap" aria-label="Explore o portal"><div class="quick-grid"><a href="#historia" class="quick-card reveal"><img src="/assets/icon_history.webp" alt="" loading="lazy"><span>Nossa história</span><small>A origem do legado</small></a><a href="#membros" class="quick-card reveal"><img src="/assets/icon_members.webp" alt="" loading="lazy"><span>Membros</span><small>Conheça a família</small></a><a href="#equipe" class="quick-card reveal"><img src="/assets/icon_staff.webp" alt="" loading="lazy"><span>Equipe</span><small>A administração</small></a><a href="#insignias" class="quick-card reveal"><img src="/assets/icon_insignia.webp" alt="" loading="lazy"><span>Insígnias</span><small>Distinções reais</small></a><a href="#beneficios" class="quick-card reveal"><img src="/assets/icon_benefits.webp" alt="" loading="lazy"><span>Benefícios</span><small>Privilégios OFC</small></a><a href="#influencers" class="quick-card reveal"><img src="/assets/icon_creators.webp" alt="" loading="lazy"><span>Criadores</span><small>Talentos Royal</small></a><a href="#meu-perfil" class="quick-card reveal"><img src="/assets/icon_profile.webp" alt="" loading="lazy"><span>Meu perfil</span><small>Sua identidade</small></a></div></section>
-<section id="historia" class="section history"><div class="wrap split"><div class="reveal"><div class="kicker">01 / NOSSA ESSÊNCIA</div><h2>Mais que um nome.<br><em>Uma história viva.</em></h2><p>Desde 28 de janeiro de 2026, a Família Royal representa a união, a confiança e o respeito de uma comunidade construída por seus integrantes.</p><p>Nossas origens no E.B do ALPHA abriram caminho para amizades, projetos, eventos e novas conquistas.</p><a href="https://discord.gg/EfRaFAXgHb" target="_blank" rel="noopener noreferrer" class="text-link">CONHEÇA NOSSA COMUNIDADE ↗</a></div><div class="image-panel reveal"><img src="/assets/anuncio_royal.png" loading="lazy" alt="Emblema e história da Família Royal"></div></div></section>
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f0906">
+  <meta name="description" content="Portal oficial da Família Royal com membros oficiais, staff, insígnias, benefícios, criadores e personalização de perfil.">
+  <title>Família Royal • Portal Oficial</title>
+  <link rel="icon" href="./assets/royal_emblem.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./assets/royal_site.css?v=royal-v5-premium">
+  <script defer src="./assets/royal_site.js?v=royal-v5-premium"></script>
+</head>
+<body>
+  <div class="cursor-glow" id="cursor-glow"></div>
+  <div class="site-ribbon">✦ A PRIMEIRA FAMÍLIA DO E.B DO ALPHA • FUNDADA EM 28.01.2026 ✦</div>
 
-<section id="legado" class="section legacy-section"><div class="wrap"><div class="section-heading reveal"><div><div class="kicker">NOSSO LEGADO / UMA HISTÓRIA EM MOVIMENTO</div><h2>Os capítulos de<br><em>uma família real.</em></h2><p>Mais que um servidor: amizades, responsabilidades e conquistas construídas em conjunto.</p></div><img class="section-icon" src="/assets/icon_history.webp" alt=""></div><div class="legacy-grid"><article class="legacy-card reveal"><span>01 · ORIGEM</span><h3>28 de janeiro de 2026</h3><p>O início da trajetória da família, que cresceu com dedicação e união.</p></article><article class="legacy-card reveal"><span>02 · UMA NOVA IDENTIDADE</span><h3>Família Royal</h3><p>Uma nova fase marcada pela coroa, pelas asas da Fênix Real e pelo compromisso com os integrantes.</p></article><article class="legacy-card reveal"><span>03 · O PRESENTE</span><h3>O reino continua</h3><p>Insígnias, atividades, criadores, benefícios e uma comunidade sempre em evolução.</p></article></div></div></section>
-<section id="experiencias" class="section experiences-section"><div class="wrap"><div class="section-heading reveal"><div><div class="kicker">EXPLORE / UNIVERSO ROYAL</div><h2>Experiências dignas<br><em>da nossa coroa.</em></h2><p>Uma visão das iniciativas que dão vida ao servidor e aproximam nossos integrantes.</p></div></div><div class="experience-grid"><a href="#beneficios" class="experience-card reveal"><img src="/assets/icon_benefits.webp" loading="lazy" alt=""><span>PRIVILÉGIOS</span><h3>Círculo Royal</h3><p>Sorteios, indicações, experiências e oportunidades exclusivas.</p><b>EXPLORAR ↗</b></a><a href="#insignias" class="experience-card reveal"><img src="/assets/icon_insignia.webp" loading="lazy" alt=""><span>RECONHECIMENTO</span><h3>Insígnias reais</h3><p>Distinções concedidas pessoalmente por seus titulares.</p><b>CONHECER ↗</b></a><a href="#influencers" class="experience-card reveal"><img src="/assets/icon_creators.webp" loading="lazy" alt=""><span>CRIATIVIDADE</span><h3>Talentos Royal</h3><p>Criações e vídeos produzidos pelos influenciadores da comunidade.</p><b>DESCOBRIR ↗</b></a><a href="#equipe" class="experience-card reveal"><img src="/assets/icon_staff.webp" loading="lazy" alt=""><span>ORGANIZAÇÃO</span><h3>Nossa equipe</h3><p>As pessoas que dedicam tempo à organização e segurança do servidor.</p><b>VER EQUIPE ↗</b></a></div></div></section>
-<section id="membros" class="section dark"><div class="wrap"><div class="section-heading reveal"><div><div class="kicker">02 / QUEM FAZ PARTE</div><h2>Os rostos do<br><em>nosso legado.</em></h2><p>Integrantes reconhecidos oficialmente pelo cargo Família Royal no Discord.</p></div><div class="section-counter" id="official-counter">SINCRONIZANDO…</div></div><div class="member-toolbar"><label class="search">⌕ <input id="member-search" placeholder="Buscar integrante..." aria-label="Buscar integrante"></label></div><div class="people-grid" id="members-grid"><p class="loading">Consultando o Discord...</p></div><div class="section-bottom"><button id="show-more" class="button outline hidden">MOSTRAR MAIS ↓</button></div></div></section>
-<section id="equipe" class="section"><div class="wrap"><div class="section-heading reveal"><div><div class="kicker">03 / QUEM CUIDA DO REINO</div><h2>Nossa equipe,<br><em>nosso compromisso.</em></h2><p>Conheça os responsáveis pelo funcionamento e pela segurança da comunidade.</p></div><img class="section-icon" src="/assets/icon_staff.webp" alt=""></div><div class="staff-groups" id="staff-grid"></div><div class="support-heading"><h3>Funções especializadas</h3><p>Contribuições valiosas que não compõem necessariamente a hierarquia administrativa.</p></div><div class="staff-groups" id="support-grid"></div></div></section>
-<section id="insignias" class="section insignias-section"><div class="wrap"><div class="section-heading reveal"><div><div class="kicker">04 / DISTINÇÕES DA COROA</div><h2>Uma marca de<br><em>reconhecimento.</em></h2><p>Insígnias pessoais concedidas por seus titulares, com significados próprios.</p></div><img class="section-icon" src="/assets/icon_insignia.webp" alt=""></div><div class="mini-label">✦ DAMAS DA COROA</div><div class="insignia-grid" id="insignias-damas"></div><div class="mini-label spaced">✦ NOBRES CAVALHEIROS</div><div class="insignia-grid" id="insignias-cavalheiros"></div><p class="insignia-note">As insígnias dependem da aprovação individual de seus titulares no Discord.</p></div></section>
-<section id="beneficios" class="section"><div class="wrap"><div class="section-heading reveal"><div><div class="kicker">05 / PRIVILÉGIOS OFICIAIS</div><h2>Pertencer é ter<br><em>novas possibilidades.</em></h2><p>Experiências e oportunidades exclusivas dos membros oficiais.</p></div><img class="section-icon" src="/assets/icon_benefits.webp" alt=""></div><div class="benefit-grid" id="benefits-grid"></div><div class="wide-visual reveal"><img src="/assets/beneficios_royal.png" alt="Benefícios Royal" loading="lazy"><div><b>EXCLUSIVO PARA MEMBROS OFICIAIS</b><h3>PRIVILÉGIOS DA COROA</h3><a class="button primary" href="https://discord.gg/EfRaFAXgHb" target="_blank" rel="noopener noreferrer">ACESSAR DISCORD ↗</a></div></div></div></section>
-<section id="influencers" class="section creators"><div class="wrap split"><div class="reveal"><div class="kicker">06 / TALENTOS EM DESTAQUE</div><h2>Quem cria também<br><em>faz história.</em></h2><p>Conheça os influenciadores e criadores reconhecidos oficialmente pela Família Royal.</p><div class="creator-cards" id="influencers-grid"></div></div><div class="image-panel reveal"><img src="/assets/notificacoes_royal.png" loading="lazy" alt="Criadores e comunicação Royal"></div></div></section>
-<section id="meu-perfil" class="section profile-section"><div class="wrap"><div class="section-heading reveal"><div><div class="kicker">07 / SUA IDENTIDADE</div><h2>Seu nome.<br><em>Seu legado Royal.</em></h2><p>Personalize sua presença no portal com nome, biografia, título, cor e link público. Suas insígnias e cargos são verificados pelo Discord.</p></div><img class="section-icon" src="/assets/icon_profile.webp" alt=""></div><div class="profile-shell"><div class="profile-preview"><div class="profile-banner"></div><img class="profile-avatar" id="profile-avatar" src="/assets/logo.webp" alt="Avatar"><div class="profile-preview-body"><span class="profile-stamp">✦ IDENTIDADE ROYAL</span><h3 id="profile-preview-name">Seu nome aqui</h3><p id="profile-preview-title">Membro da comunidade</p><p id="profile-preview-bio">Sua biografia aparece aqui.</p><div class="profile-badges" id="profile-preview-badges"></div><a href="#" class="profile-public-link hidden" id="profile-preview-link" target="_blank" rel="noopener noreferrer">VISITAR LINK ↗</a></div></div><div class="profile-editor"><div id="profile-login"><h3>Entre com o Discord</h3><p>Conecte sua conta para editar um perfil vinculado ao seu usuário real no servidor.</p><a href="/auth/discord" class="button primary">CONECTAR DISCORD ↗</a><p class="profile-note">É necessário participar do servidor para editar seu perfil. O login não solicita seu token de bot.</p></div><form id="profile-form" class="hidden"><div class="edit-heading"><h3>Editar minha identidade</h3><button type="button" id="profile-logout" class="logout">SAIR</button></div><label>Nome de exibição<input name="display_name" maxlength="48" placeholder="Como você quer aparecer"></label><label>Título pessoal<input name="title" maxlength="50" placeholder="Ex.: Guardião da Coroa"></label><label>Descrição / biografia<textarea name="bio" maxlength="420" rows="4" placeholder="Conte algo sobre você..."></textarea></label><label>Link público (HTTPS)<input name="link" maxlength="240" placeholder="https://..."></label><label>Estilo visual<select name="color"><option value="gold">Ouro imperial</option><option value="ivory">Marfim</option><option value="rose">Rosa real</option><option value="onyx">Ônix</option></select></label><button type="submit" class="button primary">SALVAR PERFIL ✦</button><p id="profile-feedback" role="status" aria-live="polite"></p></form></div></div></div></section>
-<section class="section profile-directory"><div class="wrap split"><div class="reveal"><div class="kicker">IDENTIDADE / PERFIS PÚBLICOS</div><h2>Seu perfil, seu<br><em>próprio legado.</em></h2><p>Entre com o Discord e personalize seu cartão Royal. Seu nome, título e apresentação poderão ser vistos por outros integrantes no quadro público.</p><a href="#meu-perfil" class="button primary">PERSONALIZAR AGORA ↗</a></div><div class="profile-directory-art reveal"><img src="/assets/icon_profile.webp" alt="Emblema dos perfis Royal"></div></div></section><section class="final-cta"><div class="wrap reveal"><span>HONRA, UNIÃO E LEALDADE</span><h2>O próximo capítulo<br><em>começa com você.</em></h2><a href="https://discord.gg/EfRaFAXgHb" class="button primary" target="_blank" rel="noopener noreferrer">ENTRAR NO DISCORD ↗</a></div></section></main><footer><div class="wrap footer-content"><div class="footer-brand"><img src="/assets/logo.webp" alt=""><div><b>FAMÍLIA ROYAL</b><small>DIFERENTES HISTÓRIAS, O MESMO LAR.</small></div></div><div class="footer-links"><a href="#inicio">INÍCIO</a><a href="#membros">MEMBROS</a><a href="#equipe">EQUIPE</a><a href="#meu-perfil">MEU PERFIL</a><a href="https://discord.gg/EfRaFAXgHb" target="_blank" rel="noopener noreferrer">DISCORD ↗</a></div></div><div class="wrap copyright">© <span id="year"></span> FAMÍLIA ROYAL · PORTAL OFICIAL</div></footer><div class="modal hidden" id="member-modal"><div class="modal-shade" id="modal-shade"></div><div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-name"><button class="modal-close" id="modal-close" aria-label="Fechar">✕</button><div id="modal-body"></div></div></div></body></html>
+  <header class="site-header" id="topo">
+    <div class="shell header-shell">
+      <a class="brand" href="#inicio" aria-label="Família Royal">
+        <img src="./assets/royal_emblem.png" alt="Emblema da Família Royal">
+        <span>
+          <strong>Família Royal</strong>
+          <small>Portal Oficial</small>
+        </span>
+      </a>
+
+      <button class="nav-toggle" id="menu-btn" aria-label="Abrir menu" aria-expanded="false">☰</button>
+
+      <nav class="site-nav" id="nav">
+        <a href="#historia">História</a>
+        <a href="#salas">Explorar</a>
+        <a href="#membros">Membros</a>
+        <a href="#equipe">Equipe</a>
+        <a href="#insignias">Insígnias</a>
+        <a href="#beneficios">Benefícios</a>
+        <a href="#criadores">Criadores</a>
+        <a href="#perfil">Meu perfil</a>
+      </nav>
+
+      <div class="header-actions">
+        <a class="header-chip" href="https://discord.gg/EfRaFAXgHb" target="_blank" rel="noopener noreferrer">Discord ↗</a>
+        <a class="cta-button" href="#perfil">Personalizar perfil</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero" id="inicio">
+      <div class="hero-backdrop"></div><div class="hero-noise" aria-hidden="true"></div>
+      <div class="hero-orb orb-a"></div>
+      <div class="hero-orb orb-b"></div>
+      <div class="shell hero-grid">
+        <div class="hero-copy reveal">
+          <div class="eyebrow">✦ Realeza, identidade e comunidade em um só lugar</div>
+          <h1>Um portal digno da <span>Família Royal</span>.</h1>
+          <p>Conheça os membros oficiais, acompanhe os criadores, explore insígnias e benefícios exclusivos e monte sua própria presença pública dentro do universo Royal.</p>
+          <div class="hero-buttons">
+            <a class="cta-button" href="#membros">Conhecer a família</a>
+            <a class="ghost-button" href="#perfil">Criar meu perfil</a>
+          </div>
+          <div class="hero-stats">
+            <article>
+              <b id="count-members">—</b>
+              <span>Membros oficiais</span>
+            </article>
+            <article>
+              <b id="count-staff">—</b>
+              <span>Staff e apoio</span>
+            </article>
+            <article>
+              <b>2026</b>
+              <span>Fundação Royal</span>
+            </article>
+          </div>
+        </div>
+
+        <div class="hero-panel reveal tilt-card" data-tilt>
+          <img class="hero-panel-banner" src="./assets/royal_banner_portal.png" alt="Portal da Família Royal">
+          <div class="hero-panel-content">
+            <div class="mini-kicker">Royal Experience</div>
+            <h3>Visual moderno com alma de realeza</h3>
+            <ul>
+              <li>✦ Layout dinâmico em seções vivas</li>
+              <li>✦ Perfil personalizável para membros</li>
+              <li>✦ Destaque para staff, OFC, insígnias e criadores</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="feature-bento shell" id="salas">
+      <article class="bento bento-wide reveal" data-tilt>
+        <div>
+          <span class="kicker">01 / Essência Royal</span>
+          <h2>Um site com presença, animação e identidade.</h2>
+          <p>Nova navegação, visual refinado, cards interativos, destaques visuais e uma experiência mais profissional para representar a Família Royal.</p>
+        </div>
+        <img src="./assets/royal_emblem.png" alt="Emblema Royal">
+      </article>
+
+      <a class="bento reveal" href="#beneficios" data-tilt>
+        <img src="./assets/royal_icon_benefits.png" alt="Ícone benefícios">
+        <span class="kicker">Privilégios</span>
+        <h3>Círculo Royal</h3>
+        <p>Sorteios, call privada, permissões especiais no E.B, indicações e experiências exclusivas.</p>
+      </a>
+
+      <a class="bento reveal" href="#insignias" data-tilt>
+        <img src="./assets/royal_icon_insignias.png" alt="Ícone insígnias">
+        <span class="kicker">Reconhecimento</span>
+        <h3>Insígnias Reais</h3>
+        <p>Catálogo organizado com as damas da coroa em destaque e os demais titulares em uma galeria elegante.</p>
+      </a>
+
+      <a class="bento reveal" href="#criadores" data-tilt>
+        <img src="./assets/royal_icon_creators.png" alt="Ícone criadores">
+        <span class="kicker">Talentos</span>
+        <h3>Criadores & Influencers</h3>
+        <p>Um espaço pensado para vídeos, artes e pessoas que ajudam a levar o nome Royal ainda mais longe.</p>
+      </a>
+
+      <a class="bento reveal" href="#membros" data-tilt>
+        <img src="./assets/royal_icon_members.png" alt="Ícone membros">
+        <span class="kicker">Comunidade</span>
+        <h3>Membros Oficiais</h3>
+        <p>Mostre quem faz parte oficialmente da família e navegue pelos perfis de forma mais bonita e organizada.</p>
+      </a>
+    </section>
+
+    <section class="section section-story" id="historia">
+      <div class="shell section-grid story-grid">
+        <div class="section-copy reveal">
+          <span class="kicker">02 / Nossa história</span>
+          <h2>Uma família construída por <span>lealdade, presença e evolução</span>.</h2>
+          <p>A Família Royal nasceu para transformar a comunidade em algo maior: uma identidade marcante, uma rede de pessoas reconhecidas e um ambiente onde cada integrante deixa sua própria marca.</p>
+          <div class="timeline-list">
+            <article><b>28.01.2026</b><span>Fundação da família e início do legado.</span></article>
+            <article><b>Nova fase</b><span>Consolidação da identidade Royal e ampliação dos sistemas.</span></article>
+            <article><b>Portal</b><span>Presença digital com membros, equipe, insígnias, criadores e benefícios.</span></article>
+          </div>
+        </div>
+
+        <div class="section-visual reveal tilt-card" data-tilt>
+          <img src="./assets/anuncio_royal.png" alt="História da Família Royal">
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-members" id="membros">
+      <div class="shell">
+        <div class="section-heading reveal">
+          <div>
+            <span class="kicker">03 / Membros oficiais</span>
+            <h2>O quadro público da <span>Família Royal</span>.</h2>
+            <p>Quem possui o cargo oficial da família pode aparecer aqui com sua identidade, seu título e sua presença dentro do reino.</p>
+          </div>
+          <div class="heading-badge" id="official-counter">Sincronizando…</div>
+        </div>
+
+        <div class="members-hero reveal">
+          <img src="./assets/royal_banner_members.png" alt="Membros oficiais da Família Royal">
+          <div class="members-hero-text">
+            <strong>Galeria Oficial</strong>
+            <span>Perfis, títulos e destaque para quem carrega o nome da família.</span>
+          </div>
+        </div>
+
+        <div class="toolbar reveal"><span class="toolbar-hint">✦ Selecione um integrante para conhecer o perfil</span>
+          <label class="search-box">
+            <span>⌕</span>
+            <input id="member-search" placeholder="Buscar membro oficial..." aria-label="Buscar membro oficial">
+          </label>
+        </div>
+
+        <div class="people-grid royal-grid" id="members-grid"><p class="loading">Consultando o Discord...</p></div>
+        <div class="section-actions"><button class="ghost-button hidden" id="show-more">Mostrar mais</button></div>
+      </div>
+    </section>
+
+    <section class="section section-staff" id="equipe">
+      <div class="shell">
+        <div class="section-heading reveal">
+          <div>
+            <span class="kicker">04 / Equipe e apoio</span>
+            <h2>Quem sustenta a <span>estrutura do reino</span>.</h2>
+            <p>Da administração aos cargos de apoio, cada função contribui para a organização, segurança e crescimento da comunidade.</p>
+          </div>
+        </div>
+        <div class="staff-layout">
+          <div class="staff-column">
+            <h3 class="block-title reveal">Hierarquia administrativa</h3>
+            <div class="staff-groups" id="staff-grid"></div>
+          </div>
+          <div class="staff-column">
+            <h3 class="block-title reveal">Cargos de apoio</h3>
+            <div class="staff-groups" id="support-grid"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-insignias" id="insignias">
+      <div class="shell">
+        <div class="section-heading reveal">
+          <div>
+            <span class="kicker">05 / Insígnias reais</span>
+            <h2>Distinções que carregam <span>valor pessoal</span>.</h2>
+            <p>Organizadas com mais destaque visual, separando as damas da coroa dos demais titulares do reino.</p>
+          </div>
+        </div>
+
+        <div class="insignia-columns">
+          <article class="insignia-group reveal" data-tilt>
+            <div class="mini-label">✦ Damas da Coroa</div>
+            <div class="insignia-grid" id="insignias-damas"></div>
+          </article>
+          <article class="insignia-group reveal" data-tilt>
+            <div class="mini-label">✦ Nobre Galeria</div>
+            <div class="insignia-grid" id="insignias-cavalheiros"></div>
+          </article>
+        </div>
+        <p class="insignia-note">A concessão de cada insígnia depende exclusivamente da autorização do seu titular.</p>
+      </div>
+    </section>
+
+    <section class="section section-benefits" id="beneficios">
+      <div class="shell">
+        <div class="section-heading reveal">
+          <div>
+            <span class="kicker">06 / Benefícios Royal</span>
+            <h2>Vantagens reservadas a quem faz parte <span>do círculo oficial</span>.</h2>
+            <p>O site agora também valoriza os benefícios internos dos membros oficiais da Família Royal.</p>
+          </div>
+        </div>
+
+        <div class="benefit-showcase reveal">
+          <img src="./assets/royal_banner_benefits.png" alt="Benefícios da Família Royal">
+          <div class="benefit-showcase-copy">
+            <strong>Benefícios oficiais</strong>
+            <p>Call privada no servidor da família, permissões especiais por ter o cargo no E.B, sorteios exclusivos, propostas públicas, perfil personalizado e muito mais.</p>
+          </div>
+        </div>
+
+        <div class="benefit-grid" id="benefits-grid"></div>
+      </div>
+    </section>
+
+    <section class="section section-creators" id="criadores">
+      <div class="shell creators-layout">
+        <div class="creators-copy reveal">
+          <span class="kicker">07 / Criadores & Influenciadores</span>
+          <h2>Quem cria, grava e divulga também <span>faz a história Royal</span>.</h2>
+          <p>Agora a área de criadores possui um banner próprio e uma proposta visual ligada à criatividade, produção e influência.</p>
+          <div class="creator-cards" id="influencers-grid"></div>
+        </div>
+        <div class="section-visual reveal tilt-card" data-tilt>
+          <img src="./assets/royal_banner_creators.png" alt="Criadores em destaque da Família Royal">
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-profile" id="perfil">
+      <div class="shell">
+        <div class="section-heading reveal">
+          <div>
+            <span class="kicker">08 / Meu perfil</span>
+            <h2>Crie uma identidade pública à altura <span>da sua presença no reino</span>.</h2>
+            <p>Edite seu nome exibido, título, lema, descrição, link e detalhes de destaque. O preview muda ao vivo para você visualizar seu perfil Royal.</p>
+          </div>
+        </div>
+
+        <div class="profile-shell">
+          <article class="profile-preview reveal tilt-card" data-tilt>
+            <div class="profile-topline">✦ Sua identidade no reino · Prévia em tempo real</div>
+            <div class="profile-card" id="preview-card">
+              <div class="profile-banner-glow"></div>
+              <img class="profile-avatar" id="profile-avatar" src="./assets/royal_emblem.png" alt="Avatar">
+              <div class="profile-badges" id="profile-preview-badges"></div>
+              <h3 id="profile-preview-name">Seu nome aqui</h3>
+              <p class="profile-title" id="profile-preview-title">Integrante da comunidade</p>
+              <p class="profile-motto" id="profile-preview-motto">Seu lema aparece aqui.</p>
+              <p class="profile-bio" id="profile-preview-bio">Sua descrição pública aparece aqui.</p>
+              <div class="profile-tags" id="profile-preview-tags"></div>
+              <a class="profile-link hidden" id="profile-preview-link" href="#" target="_blank" rel="noopener noreferrer">Acessar link ↗</a>
+            </div>
+          </article>
+
+          <article class="profile-editor reveal">
+            <div id="profile-login" class="profile-login hidden">
+              <h3>Seu perfil Royal começa aqui</h3>
+              <p>Para editar seu perfil, entre com a conta que está no servidor da Família Royal.</p>
+              <a class="cta-button" href="./auth/discord">Entrar com Discord</a>
+            </div>
+
+            <form id="profile-form" class="profile-form hidden"><div class="form-intro"><b>Personalização Royal</b><p>Os títulos abaixo são decorativos. Cargos, insígnias e privilégios são reconhecidos apenas pelo Discord.</p></div>
+              <div class="form-grid">
+                <label><span>Nome exibido</span><input name="display_name" maxlength="48" placeholder="Ex.: Sant's"></label>
+                <label><span>Título</span><input name="title" maxlength="50" placeholder="Ex.: Fundador da Família"></label>
+                <label class="span-2"><span>Lema</span><input name="motto" maxlength="120" placeholder="Ex.: Lealdade acima de tudo"></label>
+                <label class="span-2"><span>Descrição</span><textarea name="bio" maxlength="420" rows="5" placeholder="Conte um pouco sobre você..."></textarea></label>
+                <label><span>Link público</span><input name="link" maxlength="240" placeholder="https://..." inputmode="url"></label>
+                <label><span>Tema</span>
+                  <select name="color">
+                    <option value="gold">Dourado Royal</option>
+                    <option value="ivory">Marfim Imperial</option>
+                    <option value="rose">Rosé Nobre</option>
+                    <option value="onyx">Ônix Real</option>
+                  </select>
+                </label>
+                <label><span>Destaque 1</span><input name="badge_a" maxlength="24" placeholder="Ex.: OFC"></label>
+                <label><span>Destaque 2</span><input name="badge_b" maxlength="24" placeholder="Ex.: Influencer"></label>
+                <label class="span-2"><span>Assinatura curta</span><input name="signature" maxlength="80" placeholder="Ex.: Honra a coroa. Fortaleça a família."></label>
+              </div>
+              <div class="form-actions">
+                <button class="cta-button" type="submit">Salvar perfil</button>
+                <button class="ghost-button" type="button" id="profile-logout">Sair</button>
+                <span id="profile-feedback" class="profile-feedback"></span>
+              </div>
+            </form>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section final-call">
+      <div class="shell final-card reveal">
+        <div>
+          <span class="kicker">09 / Família Royal</span>
+          <h2>Um portal mais vivo, visual e moderno para representar o reino.</h2>
+          <p>Seja para mostrar os membros oficiais, valorizar criadores, destacar insígnias ou fortalecer a identidade da comunidade, este site foi pensado para deixar a Royal mais profissional.</p>
+        </div>
+        <a class="cta-button" href="https://discord.gg/EfRaFAXgHb" target="_blank" rel="noopener noreferrer">Entrar no Discord</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="shell footer-shell">
+      <div>
+        <strong>Família Royal</strong>
+        <p>Honra a coroa. Lealdade à família.</p>
+      </div>
+      <span>© <span id="year"></span> • Portal Oficial</span>
+    </div>
+  </footer>
+
+  <div class="modal hidden" id="member-modal" aria-hidden="true">
+    <div class="modal-shade" id="modal-shade"></div>
+    <div class="modal-card">
+      <button class="modal-close" id="modal-close" aria-label="Fechar">✕</button>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+</body>
+</html>

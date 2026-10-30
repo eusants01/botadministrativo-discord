@@ -7,7 +7,7 @@ import hashlib
 import base64
 import json
 from datetime import datetime, timezone, timedelta
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 import aiohttp
 import logging
@@ -89,9 +89,18 @@ async def profile_db():
     await pool.execute("""CREATE TABLE IF NOT EXISTS royal_site_profiles (
         user_id BIGINT PRIMARY KEY, display_name VARCHAR(48) NOT NULL DEFAULT '',
         bio VARCHAR(420) NOT NULL DEFAULT '', title VARCHAR(50) NOT NULL DEFAULT '',
+        motto VARCHAR(120) NOT NULL DEFAULT '',
         color VARCHAR(16) NOT NULL DEFAULT 'gold',
-        link VARCHAR(240) NOT NULL DEFAULT '', updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        link VARCHAR(240) NOT NULL DEFAULT '',
+        badge_a VARCHAR(24) NOT NULL DEFAULT '',
+        badge_b VARCHAR(24) NOT NULL DEFAULT '',
+        signature VARCHAR(80) NOT NULL DEFAULT '',
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )""")
+    await pool.execute("ALTER TABLE royal_site_profiles ADD COLUMN IF NOT EXISTS motto VARCHAR(120) NOT NULL DEFAULT ''")
+    await pool.execute("ALTER TABLE royal_site_profiles ADD COLUMN IF NOT EXISTS badge_a VARCHAR(24) NOT NULL DEFAULT ''")
+    await pool.execute("ALTER TABLE royal_site_profiles ADD COLUMN IF NOT EXISTS badge_b VARCHAR(24) NOT NULL DEFAULT ''")
+    await pool.execute("ALTER TABLE royal_site_profiles ADD COLUMN IF NOT EXISTS signature VARCHAR(80) NOT NULL DEFAULT ''")
     await pool.execute("""CREATE TABLE IF NOT EXISTS royal_site_sessions (
         user_id BIGINT NOT NULL, token_hash VARCHAR(64) PRIMARY KEY,
         expires_at TIMESTAMPTZ NOT NULL
@@ -144,8 +153,8 @@ async def royal_data():
         pool = await profile_db()
         ids = list({int(m['id']) for m in members + influencers})
         if ids:
-            profiles = await pool.fetch('SELECT user_id,display_name,bio,title,color,link FROM royal_site_profiles WHERE user_id=ANY($1::bigint[])',ids)
-            indexed = {str(p['user_id']): {k:p[k] for k in ('display_name','bio','title','color','link')} for p in profiles}
+            profiles = await pool.fetch('SELECT user_id,display_name,bio,title,motto,color,link,badge_a,badge_b,signature FROM royal_site_profiles WHERE user_id=ANY($1::bigint[])',ids)
+            indexed = {str(p['user_id']): {k:p[k] for k in ('display_name','bio','title','motto','color','link','badge_a','badge_b','signature')} for p in profiles}
             for m in members + influencers:
                 m['perfil'] = indexed.get(m['id'])
     except Exception:
@@ -184,7 +193,7 @@ async def royal_member(user_id: int):
     data = member_data(m)
     try:
         pool = await profile_db()
-        profile = await pool.fetchrow('SELECT display_name, bio, title, color, link FROM royal_site_profiles WHERE user_id=$1', user_id)
+        profile = await pool.fetchrow('SELECT display_name, bio, title, motto, color, link, badge_a, badge_b, signature FROM royal_site_profiles WHERE user_id=$1', user_id)
         data['perfil'] = dict(profile) if profile else None
     except HTTPException:
         data['perfil'] = None
@@ -248,8 +257,8 @@ async def my_profile(request: Request):
     try: member=g.get_member(uid) or await g.fetch_member(uid)
     except discord.HTTPException: raise HTTPException(403,'Membro não encontrado no servidor.')
     pool=await profile_db()
-    row=await pool.fetchrow('SELECT display_name,bio,title,color,link FROM royal_site_profiles WHERE user_id=$1',uid)
-    return {'authenticated':True,'member':member_data(member),'profile':dict(row) if row else {'display_name':'','bio':'','title':'','color':'gold','link':''}}
+    row=await pool.fetchrow('SELECT display_name,bio,title,motto,color,link,badge_a,badge_b,signature FROM royal_site_profiles WHERE user_id=$1',uid)
+    return {'authenticated':True,'member':member_data(member),'profile':dict(row) if row else {'display_name':'','bio':'','title':'','motto':'','color':'gold','link':'','badge_a':'','badge_b':'','signature':''}}
 
 
 @app.put('/api/royal/me')
@@ -257,8 +266,15 @@ async def update_profile(request: Request):
     uid=await authenticated(request)
     origin=request.headers.get('origin','')
     host=request.headers.get('host','')
-    if not origin or not origin.startswith('https://') or origin.rstrip('/').split('://',1)[1] != host:
-        raise HTTPException(403,'Origem não autorizada.')
+    # Compare com o domínio público do OAuth2; atrás do proxy Railway o Host interno pode variar.
+    configured = os.getenv('DISCORD_REDIRECT_URI', '').strip()
+    expected_origin = ''
+    if configured:
+        parsed = urlsplit(configured)
+        if parsed.scheme == 'https' and parsed.netloc and not parsed.username and not parsed.password:
+            expected_origin = f'{parsed.scheme}://{parsed.netloc}'
+    if not expected_origin or origin != expected_origin:
+        raise HTTPException(403,'Origem não autorizada. Verifique DISCORD_REDIRECT_URI.')
     try: data=await request.json()
     except Exception: raise HTTPException(400,'JSON inválido.')
     if not isinstance(data, dict): raise HTTPException(400,'Formato inválido.')
@@ -266,12 +282,13 @@ async def update_profile(request: Request):
         value=data.get(key, '')
         if not isinstance(value, str) or len(value)>length: raise HTTPException(422,f'Campo {key} inválido (limite: {length}).')
         return ''.join(ch for ch in value.strip() if ch.isprintable() and ch not in '<>')
-    name=clean('display_name',48); bio=clean('bio',420); title=clean('title',50); color=clean('color',16); link=clean('link',240)
+    name=clean('display_name',48); bio=clean('bio',420); title=clean('title',50); motto=clean('motto',120); color=clean('color',16); link=clean('link',240); badge_a=clean('badge_a',24); badge_b=clean('badge_b',24); signature=clean('signature',80)
+    # Destaques são livres e não devem ser usados como credenciais oficiais.
     if color not in ('gold','ivory','rose','onyx'): raise HTTPException(422,'Tema inválido.')
     if link and (not link.startswith('https://') or any(x in link for x in (' ', '\n', '\r'))): raise HTTPException(422,'Utilize um link HTTPS válido.')
     pool=await profile_db()
-    await pool.execute("""INSERT INTO royal_site_profiles (user_id,display_name,bio,title,color,link) VALUES($1,$2,$3,$4,$5,$6)
-      ON CONFLICT(user_id) DO UPDATE SET display_name=$2,bio=$3,title=$4,color=$5,link=$6,updated_at=NOW()""",uid,name,bio,title,color,link)
+    await pool.execute("""INSERT INTO royal_site_profiles (user_id,display_name,bio,title,motto,color,link,badge_a,badge_b,signature) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      ON CONFLICT(user_id) DO UPDATE SET display_name=$2,bio=$3,title=$4,motto=$5,color=$6,link=$7,badge_a=$8,badge_b=$9,signature=$10,updated_at=NOW()""",uid,name,bio,title,motto,color,link,badge_a,badge_b,signature)
     return {'ok':True}
 
 
