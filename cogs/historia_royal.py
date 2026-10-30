@@ -13,7 +13,7 @@ LOGGER = logging.getLogger("royal.historia")
 BASE_DIR = Path(__file__).resolve().parent.parent
 BANNER_PATH = BASE_DIR / "assets" / "historia_royal.png"
 BANNER_NAME = "historia_royal.png"
-COR_ROYAL = discord.Colour.from_rgb(187, 145, 81)
+COR_ROYAL = discord.Colour.from_rgb(184, 50, 128)
 
 
 
@@ -81,8 +81,7 @@ class HistoriaRoyal(commands.Cog):
         )
         painel.add_item(
             discord.ui.TextDisplay(
-                "-# ✦ **Família Royal** • Fundada em 28/01/2026 • "
-                "Diferentes histórias, o mesmo lar."
+                "-# <:regras2:1564669595904901250> **Família Royal** "
             )
         )
         view.add_item(painel)
