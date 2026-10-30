@@ -124,7 +124,7 @@ def members_of(g, role_id):
 
 @app.get("/", response_class=HTMLResponse)
 async def home():
-    return (BASE / "royal_site.html").read_text(encoding="utf-8")
+    return HTMLResponse((BASE / "royal_site.html").read_text(encoding="utf-8"),headers={'Cache-Control':'no-store'})
 
 
 @app.get("/api/royal")
@@ -138,8 +138,20 @@ async def royal_data():
         name, rid, desc, symbol = entry
         return {"nome": name, "id": str(rid), "descricao": desc, "simbolo": symbol,
                 "pessoas": members_of(g, rid)}
+    members = members_of(g, OFC_ID)
+    influencers = members_of(g, INFLUENCER_ID)
+    try:
+        pool = await profile_db()
+        ids = list({int(m['id']) for m in members + influencers})
+        if ids:
+            profiles = await pool.fetch('SELECT user_id,display_name,bio,title,color,link FROM royal_site_profiles WHERE user_id=ANY($1::bigint[])',ids)
+            indexed = {str(p['user_id']): {k:p[k] for k in ('display_name','bio','title','color','link')} for p in profiles}
+            for m in members + influencers:
+                m['perfil'] = indexed.get(m['id'])
+    except Exception:
+        LOG.warning('Perfis públicos temporariamente indisponíveis',exc_info=True)
     return {"online": True, "guild": g.name,
-            "membros": members_of(g, OFC_ID), "influencers": members_of(g, INFLUENCER_ID),
+            "membros": members, "influencers": influencers,
             "staff": [group(r) for r in STAFF], "apoio": [group(r) for r in OTHER],
             "beneficios": [{"nome": n, "descricao": d, "emoji": e} for n,d,e in BENEFITS],
             "insignias": insignias()}
