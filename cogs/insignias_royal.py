@@ -10,7 +10,8 @@ from discord.ext import commands
 
 LOG = logging.getLogger("royal.insignias")
 
-COR_ROYAL = discord.Colour.from_rgb(188, 148, 86)
+COR_ROYAL = discord.Colour.from_rgb(212, 175, 55)
+
 
 PASTA_ASSETS = Path(__file__).resolve().parent.parent / "assets"
 
@@ -27,38 +28,24 @@ BANNERS = {
 INSIGNIAS = [
 
     {"nome": "Bruna", "cargo_id": 1554376484637122591, "emoji": "🌹", "titular_id": 697068974323793921, "descricao_curta": "Fundadora · Lealdade e acolhimento.", "descricao_completa": "Fundadora da Família Royal, integrante mais antiga e esposa de Sant's. Sua insígnia simboliza acolhimento, confiança e lealdade."},
-
     {"nome": "Pietra", "cargo_id": 1556147238852628562, "emoji": "💐", "titular_id": 1295645409082867732, "descricao_curta": "Apreço e reconhecimento.", "descricao_completa": "Simboliza apreço, reconhecimento e consideração pessoal."},
-
     {"nome": "Kananda", "cargo_id": 1556147239179518022, "emoji": "🪽", "titular_id": 1430221798389059584, "descricao_curta": "Companheirismo e proteção.", "descricao_completa": "Reconhece laços de companheirismo, cuidado e proteção."},
-
     {"nome": "Tatah", "cargo_id": 1555370356343312486, "emoji": "🌙", "titular_id": 1032084016196763688, "descricao_curta": "Confiança e proximidade.", "descricao_completa": "Distinção de confiança e proximidade, concedida a critério de Tatah."},
-
     {"nome": "Lívia", "cargo_id": 1565443617651294278, "emoji": "🎀", "titular_id": 1399464764760920145, "descricao_curta": "Lealdade e consideração.", "descricao_completa": "Expressa lealdade, consideração e vínculos pessoais."},
-
-    {"nome": "Nathy", "cargo_id": 1565443626002026526, "emoji": "💖", "titular_id": 775086637386301524, "descricao_curta": "Amizade e lealdade.", "descricao_completa": "Simboliza amizade, proximidade e lealdade."},
-
+    {"nome": "Nathy", "cargo_id": 1565443626002026526, "emoji": "🌵", "titular_id": 775086637386301524, "descricao_curta": "Tengo lengo tengo", "descricao_completa": "Simboliza amizade, proximidade e lealdade."},
+    {"nome": "Soso", "cargo_id": 1565942565767745699, "emoji": "🌺", "titular_id": 1525265476425355337, "descricao_curta": "Lealdade e consideração.", "descricao_completa": "Representa lealdade e consideração pessoal de um corregedor."},
     {"nome": "Sant's", "cargo_id": 1554376496196493342, "emoji": "👑", "titular_id": 925863471902503033, "descricao_curta": "Criador da Família Royal.", "descricao_completa": "Distinção pessoal de Sant's, criador da Família Royal. Sua concessão depende de sua autorização."},
-
     {"nome": "Kael", "cargo_id": 1554376496787886090, "emoji": "⚔️", "titular_id": 1541150632554135724, "descricao_curta": "Honra de um dos fundadores.", "descricao_completa": "Reconhecimento ligado a Kael, um dos fundadores da Família Royal, associado à honra e à confiança."},
-
     {"nome": "Ruan", "cargo_id": 1554376496548941894, "emoji": "🛡️", "titular_id": 1348504492345397358, "descricao_curta": "Lealdade e consideração.", "descricao_completa": "Símbolo de lealdade e consideração pessoal."},
-
     {"nome": "Pato", "cargo_id": 1556147238986711070, "emoji": "🦆", "titular_id": 1459320617852731635, "descricao_curta": "quack quack.", "descricao_completa": "Expressa amizade e estima pessoal, concedida a critério de Pato."},
-
-    {"nome": "Violets", "cargo_id": 1562498973787230339, "emoji": "✨", "titular_id": 969628191268421672, "descricao_curta": "Vínculo e reconhecimento.", "descricao_completa": "Representa vínculo especial e reconhecimento."},
-
+    {"nome": "Violets", "cargo_id": 1562498973787230339, "emoji": "🪐", "titular_id": 969628191268421672, "descricao_curta": "Vínculo e reconhecimento.", "descricao_completa": "Representa vínculo especial e reconhecimento."},
     {"nome": "Diniz", "cargo_id": 1563986618207965246, "emoji": "🌟", "titular_id": 1546524499430604891, "descricao_curta": "Proximidade e apreço.", "descricao_completa": "Símbolo de proximidade e apreço pessoal."},
-
     {"nome": "Mateus", "cargo_id": 1564494650327437363, "emoji": "🔍", "titular_id": 1481369480482394223, "descricao_curta": "Confiança e consideração.", "descricao_completa": "Representa confiança e consideração pessoal."},
-
     {"nome": "Hanz", "cargo_id": 1564041775000064060, "emoji": "🔥", "titular_id": 1004088774810144859, "descricao_curta": "Lealdade e consideração.", "descricao_completa": "Representa lealdade e consideração pessoal."},
-
-    {"nome": "Teteu", "cargo_id": 1565441465243541625, "emoji": "⚖️", "titular_id": 529781932976898058, "descricao_curta": "Justiça e integridade.", "descricao_completa": "Insígnia pessoal de Teteu, juiz do Poder Judiciário, símbolo de justiça, integridade e respeito."},
-
+    {"nome": "Gostosãodanaty", "cargo_id": 1565441465243541625, "emoji": "⚖️", "titular_id": 529781932976898058, "descricao_curta": "Justiça e integridade.", "descricao_completa": "Insígnia pessoal de Teteu, juiz do Poder Judiciário, símbolo de justiça, integridade e respeito."},
     {"nome": "Golgos", "cargo_id": 1565443033787277394, "emoji": "🎥", "titular_id": 525837977545605132, "descricao_curta": "Criatividade e influência.", "descricao_completa": "Distinção pessoal de Golgos, editor de vídeo e influenciador, associada à criatividade e à comunicação."},
-
     {"nome": "Dark", "cargo_id": 1565443625523880137, "emoji": "🐦‍⬛", "titular_id": 1089646065084534854, "descricao_curta": "Lealdade e consideração.", "descricao_completa": "Representa lealdade e consideração pessoal de um corregedor."},
+    {"nome": "PH", "cargo_id": 1565942574676705330, "emoji": "❄️", "titular_id": 896496513251962992, "descricao_curta": "Esperança e perseverança", "descricao_completa": "Representa lealdade e consideração pessoal de um corregedor."},
 
 ]
 
