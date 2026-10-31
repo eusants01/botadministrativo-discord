@@ -9,6 +9,7 @@ from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
 from painel import start_painel
+from royal_features import award_message
 from utils.components_v2 import install_components_v2
 from utils.monitoring import install_monitor
 
@@ -67,6 +68,16 @@ async def antes_status():
 async def on_ready():
     logger.info('✅ Bot %s online | ID: %s', bot.user, bot.user.id)
     logger.info('📊 Servidores conectados: %s', len(bot.guilds))
+
+
+@bot.listen('on_message')
+async def royal_xp_listener(message):
+    if getattr(bot, 'pool', None) is None:
+        return
+    try:
+        await award_message(bot, message)
+    except Exception:
+        logger.exception('Falha no registro de experiência Royal')
 
 
 @bot.event

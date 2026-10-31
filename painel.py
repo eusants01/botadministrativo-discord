@@ -20,6 +20,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from royal_features import install as install_royal_features
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 LOG = logging.getLogger("royal.site")
@@ -154,8 +155,40 @@ async def friendly_auth_errors(request: Request, exc: HTTPException):
             '<main><h2>✦ FAMÍLIA ROYAL • PORTAL OFICIAL</h2><h1>Não foi possível conectar ao Discord</h1>'
             '<p>' + html.escape(str(exc.detail)) + '</p>' + hint
             + '<p>O restante do site continua disponível. Para ativar o editor, confira as variáveis OAuth2 no Railway e o Redirect URI no Discord Developer Portal.</p>'
-            '<a class="button" href="/#perfil">Voltar ao meu perfil ↗</a></main></html>')
+            '<a class="button" href="/#meu-perfil">Voltar ao meu perfil ↗</a></main></html>')
     return HTMLResponse(body, status_code=exc.status_code)
+
+
+@app.get('/membro/{slug}', response_class=HTMLResponse)
+async def public_member_page(slug: str, request: Request):
+    """OG tags geradas no servidor para prévias ricas ao compartilhar no Discord."""
+    if not slug or len(slug)>64 or not all(ch.isalnum() or ch == '-' for ch in slug):
+        raise HTTPException(404, 'Perfil não encontrado.')
+    p = await profile_db()
+    from royal_features import initialize as ensure_features
+    await ensure_features(p)
+    if slug.isdecimal():
+        r = await p.fetchrow('SELECT * FROM royal_site_profiles WHERE user_id=$1',int(slug))
+    else:
+        r = await p.fetchrow('SELECT * FROM royal_site_profiles WHERE slug=$1',slug)
+    if not r or not r['is_public'] or r['suspended']:
+        raise HTTPException(404, 'Perfil indisponível.')
+    safe_name=html.escape(r['display_name'] or 'Integrante Royal', quote=True)
+    safe_text=html.escape((r['motto'] or r['bio'] or 'Uma identidade no Reino Royal.')[:180], quote=True)
+    image = f'/api/kingdom/media/{r["banner_id"]}' if r['banner_id'] else '/assets/royal_portal_banner.png'
+    origin_url = oauth_status()['redirect_uri']
+    parsed = urlsplit(origin_url)
+    absolute_origin = f'{parsed.scheme}://{parsed.netloc}' if parsed.scheme=='https' else str(request.base_url).rstrip('/')
+    image = html.escape(absolute_origin+image, quote=True)
+    markup=(BASE / 'royal_site.html').read_text(encoding='utf-8')
+    markup=markup.replace('<title>Família Royal | Um legado real</title>',
+        f'<title>{safe_name} | Família Royal</title>')
+    markup=markup.replace('content="Família Royal · Mais que uma família. Um legado real."',
+        f'content="{safe_name} · Família Royal"')
+    markup=markup.replace('content="Honra · União · Lealdade · Fundada em 28.01.2026, com raízes no E.B do ALPHA."',
+        f'content="{safe_text}"')
+    markup=markup.replace('content="/assets/royal_portal_banner.png"',f'content="{image}"')
+    return HTMLResponse(markup,headers={'Cache-Control':'no-store'})
 
 
 @app.get('/api/royal/oauth-status')
@@ -174,6 +207,7 @@ def member_data(m: discord.Member):
     return {"id": str(m.id), "nome": m.display_name,
             "usuario": m.name, "avatar": str(m.display_avatar.replace(size=128).url),
             "roles": [str(r.id) for r in m.roles],
+            "cargos": [r.name for r in m.roles if not r.is_default() and not r.managed][:12],
             "ingresso_servidor": m.joined_at.isoformat() if m.joined_at else None}
 
 
@@ -212,6 +246,15 @@ async def royal_data():
                 m['perfil'] = indexed.get(m['id'])
     except Exception:
         LOG.warning('Perfis públicos temporariamente indisponíveis',exc_info=True)
+    try:
+        from royal_features import initialize as royal_initialize
+        pool=await profile_db()
+        await royal_initialize(pool)
+        unique_staff={m['id'] for r in STAFF for m in members_of(g,r[1])}
+        await pool.execute("""INSERT INTO royal_growth_snapshots(day,members,staff)
+            VALUES(CURRENT_DATE,$1,$2) ON CONFLICT(day) DO UPDATE SET members=EXCLUDED.members,staff=EXCLUDED.staff""",len(members),len(unique_staff))
+    except Exception:
+        LOG.warning('Não foi possível registrar a evolução da comunidade.',exc_info=True)
     return {"online": True, "guild": g.name,
             "membros": members, "influencers": influencers,
             "staff": [group(r) for r in STAFF], "apoio": [group(r) for r in OTHER],
@@ -376,6 +419,12 @@ for legacy, target in [('/membros', '/#membros'), ('/hierarquia', '/#equipe'),
     async def redirect(destination=target):
         return RedirectResponse(destination, status_code=302)
     app.add_api_route(legacy, redirect, methods=['GET'], include_in_schema=False)
+
+
+install_royal_features(app, get_pool=profile_db, authenticated=authenticated,
+    guild=guild, member_data=member_data, insignias=insignias,
+    staff_ids={r[1] for r in STAFF},
+    public_redirect=lambda: oauth_status()['redirect_uri'])
 
 
 async def start_painel(client: discord.Client):
