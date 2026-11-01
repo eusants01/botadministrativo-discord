@@ -61,7 +61,7 @@ EXILIO_RE = re.compile(r"\b(exilad[oa]s?|ex[ií]lio|foi\s+exilad[oa])\b", flags=
 STATUS_RE = re.compile(r"\b(status|situa[cç][aã]o|andamento|protocolo|caso)\b", flags=re.I)
 
 MENSAGENS_PERIODICAS = (
-    "Olá, <@1560374403051684012>! Se houver algum comunicado de exílio, estou disponível para registrar o protocolo e encaminhá-lo à revisão da Diretoria.",
+    "Olá, <@&1560374403051684012>! Se houver algum comunicado de exílio, estou disponível para registrar o protocolo e encaminhá-lo à revisão da Diretoria.",
     "Saudações, CGEx! Caso precisem analisar um exílio, podem me enviar o ID do usuário e o registro oficial para abrir um protocolo institucional.",
     "Central CGEx ativa. Se precisarem consultar um protocolo ou registrar um novo caso, estou à disposição para auxiliar a Corregedoria.",
 )
@@ -148,13 +148,13 @@ def montar_painel_boasvindas(mensagem: str) -> discord.ui.LayoutView:
     view = discord.ui.LayoutView(timeout=None)
     caixa = montar_container_base(com_banner=True)
     caixa.add_item(discord.ui.TextDisplay(
-        "# ⚖️・CENTRAL CGEx\n"
-        "**⌜ Assistente Institucional Royal ⌟**"
+        "# <:CGEx:1560374896138256524>・CENTRAL CGEx\n"
+        "**Assistente Institucional Royal**"
     ))
     caixa.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
     caixa.add_item(discord.ui.TextDisplay(
         f"{mensagem}\n\n"
-        "**✦ Posso auxiliar com:**\n"
+        "**Posso auxiliar com:**\n"
         "> `📜` Registro de comunicados de exílio.\n"
         "> `🧾` Consulta de protocolos e andamento dos casos.\n"
         "> `⚖️` Encaminhamento para revisão da Diretoria.\n"
