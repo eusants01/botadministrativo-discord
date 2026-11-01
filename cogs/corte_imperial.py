@@ -44,11 +44,11 @@ CANAL_LEVEL_ID = 1559311428459171880
 LIMITE_LEVEL_ADMIN = 500
 
 TITULOS: tuple[tuple[int, str, str], ...] = (
-    (5, "Plebeu", ""),
-    (15, "Escudeiro", "◇"),
-    (30, "Cavaleiro Real", "✧"),
-    (60, "Duque", "◆"),
-    (100, "Arquiduque", "⚜️"),
+    (5, "<@&1565942575062450316>", "<:plebeu:1566330924495274064>"),
+    (15, "<@&1566326355661160560>", "<:escudeiro:1566331170914959402>"),
+    (30, "<@&1566326356738965504>", "<:cavaleiro:1566331288888888888>"),
+    (60, "<@&1566326356256759828>", "<:duque:1566331234110410762>"),
+    (100, "<@&1566326355811897484>", "<:arquiduque:1566331300000000000>"),
 )
 
 
@@ -129,7 +129,7 @@ class PainelImperial(discord.ui.LayoutView):
         caixa.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
         caixa.add_item(discord.ui.TextDisplay(
             "**PAINEL DA NOBREZA**\n"
-            "- `👑` Consulte seu progresso, a classificação e as honrarias da Corte. "
+            "- `👑` Consulte seu progresso, a classificação e as honrarias da Corte.\"\n"
             "- `👑` As consultas aparecem somente para você."
         ))
         caixa.add_item(discord.ui.ActionRow(
@@ -149,7 +149,7 @@ def painel_privado(titulo: str, corpo: str) -> discord.ui.LayoutView:
     bloco = discord.ui.Container(accent_colour=COR_OURO)
     bloco.add_item(discord.ui.TextDisplay(f"## {titulo}\n{corpo[:3500]}"))
     bloco.add_item(discord.ui.TextDisplay(
-        "-# <a:coroa:1564000189167960177> Família Royal • Sistema Oficial de Prestígio"
+        "-# Família Royal • Sistema Oficial de Prestígio"
     ))
     view.add_item(bloco)
     return view
