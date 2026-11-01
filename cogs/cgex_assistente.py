@@ -8,12 +8,16 @@ import json
 import logging
 import os
 import re
+import time
+from datetime import datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo
 from typing import Any
 
 import aiohttp
 from aiohttp import web
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 LOG = logging.getLogger("royal.cgex")
 COR_OURO = discord.Colour.from_rgb(212, 175, 55)
@@ -29,21 +33,27 @@ CANAL_REVISAO_ID = 1553834996488339547
 CANAL_LOGS_ID = 1553834996488339547
 
 # IDs de cargos e usuários autorizados da CGEx no SERVIDOR DA FAMÍLIA.
-CARGOS_CGEX: set[int] = set(1560374403051684012,1553944794957615175)
+CARGOS_CGEX: set[int] = {1560374403051684012, 1553944794957615175}
 USUARIOS_CGEX: set[int] = set()
 # IDs de integrantes autorizados que acessam SOMENTE o portal (OAuth autenticado).
 # Não precisam estar no servidor da Família; não podem aprovar banimentos.
 USUARIOS_CGEX_PORTAL: set[int] = set()
 # Só estes cargos e os administradores da Família podem APROVAR banimento.
-CARGOS_REVISORES: set[int] = set(1553944794957615175)
+CARGOS_REVISORES: set[int] = {1553944794957615175}
+
+# Mensagem institucional ocasional no canal reservado. Uma por dia, entre 10h e 19h.
+SAUDACOES_AUTOMATICAS = os.getenv("CGEX_SAUDACOES", "1").strip() == "1"
+FUSO_CGEX = ZoneInfo("America/Sao_Paulo")
+BANNER_PROTOCOLOS = Path(__file__).resolve().parent.parent / "assets" / "protocolos_royal.png"
+
 
 NOME_ASSISTENTE = "Assistente Royal"
-MODELO_IA = os.getenv("CGEX_OPENAI_MODEL", "gpt-5-mini")
+MODELO_IA = os.getenv("CGEX_OPENAI_MODEL", "gpt-4o-mini")
 API_KEY_IA = os.getenv("OPENAI_API_KEY", "").strip()
-# API HTTP para integração com o backend do portal (opcional).
 PORTA_BRIDGE = int(os.getenv("CGEX_BRIDGE_PORT", "0"))
 SEGREDO_BRIDGE = os.getenv("CGEX_BRIDGE_TOKEN", "").strip()
 HOST_BRIDGE = os.getenv("CGEX_BRIDGE_HOST", "127.0.0.1")
+
 # =======================================================================
 
 ID_RE = re.compile(r"(?<!\d)(\d{15,22})(?!\d)")
@@ -99,9 +109,13 @@ class RevisarBotao(discord.ui.Button):
 
 
 class PainelRevisao(discord.ui.LayoutView):
-    def __init__(self, cog: "AssistenteCGEx", caso: Any, ativo: bool = True):
+    def __init__(self, cog: "AssistenteCGEx", caso: Any, ativo: bool = True, com_banner: bool = False):
         super().__init__(timeout=None if ativo else 180)
         caixa = discord.ui.Container(accent_colour=COR_OURO)
+        if com_banner:
+            caixa.add_item(discord.ui.MediaGallery(
+                discord.MediaGalleryItem(media=f"attachment://{BANNER_PROTOCOLOS.name}")
+            ))
         caixa.add_item(discord.ui.TextDisplay(
             f"## ⚖️ PROTOCOLO CGEX-{caso['id']:06d}\n"
             f"**Situação:** {resumo_status(caso['status'])}\n"
@@ -124,6 +138,7 @@ class AssistenteCGEx(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self._conversa: dict[int, deque[dict[str, str]]] = defaultdict(lambda: deque(maxlen=8))
+        self._ultimo_atendimento: dict[int, float] = {}
         self._session: aiohttp.ClientSession | None = None
         self._bridge_runner: web.AppRunner | None = None
 
@@ -190,6 +205,14 @@ class AssistenteCGEx(commands.Cog):
             WHERE status IN ('needs_evidence','pending_review','processing')
         """)
         await pool.execute("""
+            CREATE TABLE IF NOT EXISTS royal_cgex_greetings (
+                guild_id BIGINT NOT NULL,
+                day DATE NOT NULL,
+                sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (guild_id, day)
+            )
+        """)
+        await pool.execute("""
             CREATE TABLE IF NOT EXISTS royal_cgex_audit (
                 id BIGSERIAL PRIMARY KEY,
                 case_id BIGINT NOT NULL REFERENCES royal_cgex_cases(id),
@@ -210,14 +233,65 @@ class AssistenteCGEx(commands.Cog):
             if not SEGREDO_BRIDGE or len(SEGREDO_BRIDGE) < 32:
                 LOG.warning("API do portal desativada: configure CGEX_BRIDGE_TOKEN com >=32 caracteres.")
             else:
-                await self.iniciar_bridge()
+                try:
+                    await self.iniciar_bridge()
+                except Exception:
+                    LOG.exception("API separada da CGEx indisponível; o portal integrado continua disponível.")
+        if SAUDACOES_AUTOMATICAS and not self.saudacao_programada.is_running():
+            self.saudacao_programada.start()
         LOG.info("CGEx pronto (%d protocolos pendentes restaurados).", len(rows))
 
     async def cog_unload(self):
+        if self.saudacao_programada.is_running():
+            self.saudacao_programada.cancel()
         if self._bridge_runner is not None:
             await self._bridge_runner.cleanup()
         if self._session is not None:
             await self._session.close()
+
+    @tasks.loop(minutes=55)
+    async def saudacao_programada(self):
+        """Mensagem cordial e discreta, uma vez ao dia no canal reservado.
+
+        Nunca solicita provas ou executa punições por iniciativa própria.
+        A chave (guild_id, day) evita mensagens duplicadas após reiniciar o bot.
+        """
+        agora = datetime.now(FUSO_CGEX)
+        if not (10 <= agora.hour < 19):
+            return
+        guild = self.guild()
+        canal = guild.get_channel(CANAL_CONVERSA_ID) if guild else None
+        if not isinstance(canal, discord.TextChannel):
+            return
+        me = guild.me
+        if not me or not canal.permissions_for(me).send_messages:
+            return
+        mensagens = (
+            "👑 **Assistente Royal • CGEx**\nBom dia, equipe! Precisam de apoio para consultar algum protocolo ou esclarecer um procedimento? Estou à disposição.",
+            "⚖️ **Central CGEx**\nOlá, integrantes da Corregedoria! Se houver um comunicado de exílio, podem me enviar o ID e o registro oficial para análise da Diretoria.",
+            "📜 **Atendimento Institucional**\nComo estão, membros da CGEx? Posso ajudar com o andamento dos protocolos e os procedimentos da Família Royal.",
+            "🏰 **Família Royal**\nSaudações, Corregedoria! Quando precisarem, basta me mencionar aqui para conversar ou solicitar o registro de um caso.",
+        )
+        dia = agora.date()
+        gravado = await self.pool().fetchrow("""
+            INSERT INTO royal_cgex_greetings(guild_id,day)
+            VALUES ($1,$2) ON CONFLICT DO NOTHING RETURNING day
+        """, guild.id, dia)
+        if gravado is None:
+            return
+        try:
+            await canal.send(mensagens[dia.toordinal() % len(mensagens)],
+                             allowed_mentions=discord.AllowedMentions.none())
+        except discord.HTTPException:
+            # Libera uma nova tentativa quando o Discord estiver disponível.
+            await self.pool().execute(
+                "DELETE FROM royal_cgex_greetings WHERE guild_id=$1 AND day=$2", guild.id, dia
+            )
+            LOG.exception("Falha ao enviar saudação CGEx")
+
+    @saudacao_programada.before_loop
+    async def antes_saudacao_programada(self):
+        await self.bot.wait_until_ready()
 
     async def auditoria(self, case_id: int, actor_id: int | None, evento: str, detalhe: str = ""):
         await self.pool().execute("""
@@ -353,8 +427,19 @@ class AssistenteCGEx(commands.Cog):
         if caso["review_message_id"] or caso["status"] != "pending_review":
             return
         try:
-            mensagem = await canal.send(view=PainelRevisao(self, caso), allowed_mentions=discord.AllowedMentions.none())
-        except discord.HTTPException:
+            if BANNER_PROTOCOLOS.is_file():
+                with BANNER_PROTOCOLOS.open("rb") as arquivo:
+                    mensagem = await canal.send(
+                        view=PainelRevisao(self, caso, com_banner=True),
+                        file=discord.File(arquivo, filename=BANNER_PROTOCOLOS.name),
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+            else:
+                mensagem = await canal.send(
+                    view=PainelRevisao(self, caso),
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+        except (discord.HTTPException, OSError):
             LOG.exception("Falha ao publicar revisão CGEX-%06d", case_id)
             return
         # Se duas publicações simultâneas ocorrerem, conserva apenas a primeira.
@@ -366,6 +451,12 @@ class AssistenteCGEx(commands.Cog):
             await mensagem.delete()
             return
         self.bot.add_view(PainelRevisao(self, caso), message_id=mensagem.id)
+
+    @staticmethod
+    def extrair_link_publico(texto: str) -> str | None:
+        """Retorna URL https; nunca busca automaticamente o documento informado."""
+        link = extrair_link(texto)
+        return link if link and link.lower().startswith('https://') else None
 
     async def processar_texto(self, actor_id: int, texto: str, mencoes: list[int] | None,
                              origem: str, prova_explicita: str | None = None,
@@ -381,7 +472,7 @@ class AssistenteCGEx(commands.Cog):
                 return ("⚖️ Posso registrar o pedido, mas preciso da menção válida ou ID do Discord "
                         "do usuário e de um comprovante do exílio. Ex.: `@Assistente banir 111111111111111111 "
                         "https://link-do-registro`.")
-            comprovante = prova_explicita or extrair_link(texto)
+            comprovante = self.extrair_link_publico(prova_explicita or texto)
             try:
                 protocolo, detail = await self.criar_caso(actor_id, alvo, texto, comprovante, origem)
             except (ValueError, RuntimeError) as exc:
@@ -422,6 +513,10 @@ class AssistenteCGEx(commands.Cog):
         bot_mention = bool(self.bot.user and self.bot.user.mentioned_in(msg))
         if not (bot_mention or BOT_RE.search(msg.content)):
             return
+        agora = time.monotonic()
+        if agora - self._ultimo_atendimento.get(msg.author.id, -1e9) < 5:
+            return
+        self._ultimo_atendimento[msg.author.id] = agora
         texto = re.sub(r"<@!?\d+>", " ", msg.content).strip()
         alvo_mencionado = [m.id for m in msg.mentions if m.id != self.bot.user.id]
         if not texto:
@@ -438,6 +533,16 @@ class AssistenteCGEx(commands.Cog):
     async def decidir(self, interaction: discord.Interaction, case_id: int, aprovar: bool):
         if not isinstance(interaction.user, discord.Member) or not self.revisor(interaction.user):
             return await interaction.response.send_message("⛔ Apenas revisores autorizados podem decidir.", ephemeral=True)
+        # Impede que a mesma pessoa que registrou um caso valide sua própria solicitação.
+        original = await self.pool().fetchrow(
+            "SELECT requester_id FROM royal_cgex_cases WHERE id=$1 AND guild_id=$2",
+            case_id, ROYAL_GUILD_ID,
+        )
+        if original and original["requester_id"] == interaction.user.id:
+            return await interaction.response.send_message(
+                "⛔ O comunicante não pode aprovar ou recusar seu próprio protocolo. Solicite a outro revisor.",
+                ephemeral=True,
+            )
         await interaction.response.defer(ephemeral=True, thinking=True)
         caso = await self.pool().fetchrow("""
             UPDATE royal_cgex_cases SET status='processing'
@@ -449,7 +554,8 @@ class AssistenteCGEx(commands.Cog):
         guild = self.guild()
         if aprovar:
             try:
-                assert guild is not None
+                if guild is None:
+                    raise PermissionError("Servidor Royal indisponível.")
                 alvo = await self.membro_por_id(caso["target_user_id"])
                 me = guild.me
                 if not me or not me.guild_permissions.ban_members:
@@ -502,9 +608,31 @@ class AssistenteCGEx(commands.Cog):
             "`!cgex boasvindas` • `!cgex abrir <ID> <link-comprovante>`\n"
             "`!cgex prova <protocolo> <link>` • `!cgex status <protocolo>`\n"
             "`!cgex cancelar <protocolo>` • `!cgex revisar <protocolo>` (revisores)\n"
-            "`!cgex relatorio` (revisores)\n"
+            "`!cgex relatorio` • `!cgex diagnostico` (revisores)\n"
             "Ou converse comigo: `@Bot o usuário 111... foi exilado, comprovante https://...`\n"
             "-# Um banimento exige prova registrada e confirmação de revisor.", mention_author=False,
+        )
+
+    @cgex.command(name="diagnostico", aliases=["diag"])
+    async def diagnostico(self, ctx: commands.Context):
+        if not self.revisor(ctx.author):
+            return await ctx.reply("⛔ Apenas revisores podem consultar o diagnóstico.", mention_author=False)
+        canal = ctx.guild.get_channel(CANAL_CONVERSA_ID)
+        revisao = ctx.guild.get_channel(CANAL_REVISAO_ID)
+        banner = BANNER_PROTOCOLOS.is_file()
+        me = ctx.guild.me
+        pode_banir = bool(me and me.guild_permissions.ban_members)
+        await ctx.reply(
+            "**🩺 Diagnóstico do Assistente CGEx**\n"
+            f"• Canal de conversa: {'✅' if isinstance(canal, discord.TextChannel) else '❌'}\n"
+            f"• Canal de revisão: {'✅' if isinstance(revisao, discord.TextChannel) else '❌'}\n"
+            f"• PostgreSQL: {'✅' if getattr(self.bot, 'pool', None) else '❌'}\n"
+            f"• Banner de protocolos: {'✅' if banner else '⚠️'}\n"
+            f"• Chave de IA configurada: {'✅' if API_KEY_IA else '⚠️ (respostas básicas)'}\n"
+            f"• Permissão Banir membros: {'✅' if pode_banir else '❌'}\n"
+            f"• Saudações programadas: {'✅' if self.saudacao_programada.is_running() else '⏸️'}\n"
+            "-# Nenhum segredo ou token é exibido.",
+            mention_author=False,
         )
 
     @cgex.command(name="boasvindas", aliases=["saudacao"])
@@ -523,11 +651,11 @@ class AssistenteCGEx(commands.Cog):
     async def abrir(self, ctx: commands.Context, target_id: int, comprovante: str):
         if not self.autorizado(ctx.author):
             return await ctx.reply("⛔ Acesso restrito.", mention_author=False)
-        if not extrair_link(comprovante):
+        if not self.extrair_link_publico(comprovante):
             return await ctx.reply("Informe um link `https://...` válido de registro oficial.", mention_author=False)
         try:
             ident, result = await self.criar_caso(ctx.author.id, target_id, "Exílio comunicado via !cgex abrir",
-                                                   extrair_link(comprovante), "discord")
+                                                   self.extrair_link_publico(comprovante), "discord")
         except (ValueError, RuntimeError) as exc:
             return await ctx.reply(f"⚠️ {exc}", mention_author=False)
         await ctx.reply(f"⚖️ **CGEX-{ident:06d}** — {result}", mention_author=False)
@@ -536,7 +664,7 @@ class AssistenteCGEx(commands.Cog):
     async def prova(self, ctx: commands.Context, protocolo: int, link: str):
         if not self.autorizado(ctx.author):
             return await ctx.reply("⛔ Acesso restrito.", mention_author=False)
-        comprovante = extrair_link(link)
+        comprovante = self.extrair_link_publico(link)
         if not comprovante:
             return await ctx.reply("Informe um link `https://...` válido.", mention_author=False)
         caso = await self.pool().fetchrow("SELECT * FROM royal_cgex_cases WHERE id=$1 AND guild_id=$2",
@@ -632,7 +760,7 @@ class AssistenteCGEx(commands.Cog):
             actor_id = int(body["actor_id"])
             texto = str(body["message"])[:1200]
             prova_recebida = str(body.get("proof_url") or "")
-            prova = extrair_link(prova_recebida)
+            prova = self.extrair_link_publico(prova_recebida)
             if prova_recebida and not prova:
                 return web.json_response({"error": "invalid_proof_url"}, status=400)
             alvo = int(body["target_user_id"]) if body.get("target_user_id") else None

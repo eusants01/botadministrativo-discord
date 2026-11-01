@@ -336,12 +336,17 @@ async def oauth_callback(request: Request, code: str = '', state: str = ''):
     try:
         member = g.get_member(uid) or await g.fetch_member(uid)
     except (discord.HTTPException, discord.NotFound, discord.Forbidden):
-        raise HTTPException(403, 'Entre no servidor da Família Royal para editar seu perfil.')
+        # Integrantes da CGEx que não participam da Família somente entram
+        # quando foram autorizados por ID explicitamente no módulo CGEx.
+        from cogs.cgex_assistente import USUARIOS_CGEX_PORTAL
+        if uid not in USUARIOS_CGEX_PORTAL:
+            raise HTTPException(403, 'Entre no servidor da Família Royal ou solicite acesso à CGEx.')
+        member = None
     pool = await profile_db()
     raw = secrets.token_urlsafe(48)
     await pool.execute("INSERT INTO royal_site_sessions (user_id, token_hash, expires_at) VALUES ($1,$2,NOW()+INTERVAL '7 days')", uid, hashlib.sha256(raw.encode()).hexdigest())
     cookie = signing().dumps({'id':str(uid),'secret':raw})
-    result = RedirectResponse('/#meu-perfil',status_code=303)
+    result = RedirectResponse('/cgex' if member is None else '/#meu-perfil',status_code=303)
     result.set_cookie('royal_session', cookie, httponly=True, secure=True, samesite='lax', max_age=604800, path='/')
     result.delete_cookie('royal_oauth_state',path='/')
     return result
@@ -411,6 +416,130 @@ async def logout(request:Request):
     resp.delete_cookie('royal_session',path='/')
     return resp
 
+
+# ====================== PORTAL CGEx (OAuth já existente) ======================
+# Somente sessões autenticadas com cargo da Corregedoria ou Diretoria.
+# Os IDs dos cargos/autorização continuam definidos em cogs/cgex_assistente.py.
+_cgex_last_requests: dict[int, float] = {}
+
+
+async def cgex_authenticated(request: Request):
+    user_id = await authenticated(request)
+    bot = _bot
+    cog = bot.get_cog('AssistenteCGEx') if bot else None
+    if cog is None:
+        raise HTTPException(503, 'Assistente CGEx indisponível. Confira os logs do bot.')
+    if not await cog.autorizado_portal(user_id):
+        raise HTTPException(403, 'Sua conta não possui acesso ao Assistente da CGEx.')
+    return cog, user_id
+
+
+@app.get('/cgex', response_class=HTMLResponse)
+async def cgex_portal(request: Request):
+    await cgex_authenticated(request)
+    return HTMLResponse((BASE / 'cgex.html').read_text(encoding='utf-8'),
+                        headers={'Cache-Control': 'no-store'})
+
+
+@app.get('/api/cgex/me')
+async def cgex_me(request: Request):
+    cog, user_id = await cgex_authenticated(request)
+    member = await cog.membro_por_id(user_id)
+    return {'ok': True, 'user_id': str(user_id),
+            'is_revisor': bool(member and cog.revisor(member))}
+
+
+@app.post('/api/cgex/chat')
+async def cgex_chat(request: Request):
+    # Cabeçalho específico impede POST cross-site via formulário simples.
+    if request.headers.get('X-Royal-CGEx') != '1':
+        raise HTTPException(403, 'Requisição inválida.')
+    cog, user_id = await cgex_authenticated(request)
+    import time as _time
+    now = _time.monotonic()
+    if now - _cgex_last_requests.get(user_id, -1e9) < 4:
+        raise HTTPException(429, 'Aguarde alguns segundos antes de enviar outra mensagem.')
+    _cgex_last_requests[user_id] = now
+    try:
+        body = await request.json()
+        texto = str(body.get('message', '')).strip()
+        if not (1 <= len(texto) <= 1200):
+            raise ValueError('invalid length')
+        comprovante = body.get('proof_url')
+        if comprovante is not None:
+            comprovante = str(comprovante).strip()
+            if comprovante and not cog.extrair_link_publico(comprovante):
+                raise ValueError('invalid proof')
+        alvo = body.get('target_user_id')
+        if alvo is not None and str(alvo).strip():
+            alvo = int(alvo)
+            if not (10**14 <= alvo < 2**63):
+                raise ValueError('invalid target')
+        else:
+            alvo = None
+    except (ValueError, TypeError, AttributeError, KeyError):
+        raise HTTPException(400, 'Verifique a mensagem, o ID do alvo e a URL do comprovante.')
+    answer = await cog.processar_texto(user_id, texto, None, 'portal',
+                                     comprovante or None, alvo)
+    return JSONResponse({'reply': answer}, headers={'Cache-Control': 'no-store'})
+
+
+@app.get('/api/cgex/cases')
+async def cgex_cases(request: Request):
+    cog, user_id = await cgex_authenticated(request)
+    member = await cog.membro_por_id(user_id)
+    reviewer = bool(member and cog.revisor(member))
+    if reviewer:
+        rows = await cog.pool().fetch("""SELECT id,target_user_id,status,source,created_at
+            FROM royal_cgex_cases WHERE guild_id=$1 ORDER BY id DESC LIMIT 40""",cog.guild().id)
+    else:
+        rows = await cog.pool().fetch("""SELECT id,target_user_id,status,source,created_at
+            FROM royal_cgex_cases WHERE guild_id=$1 AND requester_id=$2
+            ORDER BY id DESC LIMIT 40""",cog.guild().id,user_id)
+    return JSONResponse({'cases':[{'id':r['id'], 'target_user_id':str(r['target_user_id']),
+       'status':r['status'], 'source':r['source'], 'created_at':r['created_at'].isoformat()}
+       for r in rows]},headers={'Cache-Control':'no-store'})
+
+
+@app.get('/api/cgex/cases/{case_id}')
+async def cgex_case_status(request: Request, case_id: int):
+    cog, user_id = await cgex_authenticated(request)
+    if case_id < 1:
+        raise HTTPException(400, 'Protocolo inválido.')
+    return JSONResponse({'reply': await cog.consultar_status(user_id,case_id)},
+                        headers={'Cache-Control':'no-store'})
+
+
+@app.post('/api/cgex/proof')
+async def cgex_add_proof(request: Request):
+    if request.headers.get('X-Royal-CGEx') != '1':
+        raise HTTPException(403, 'Requisição inválida.')
+    cog, user_id = await cgex_authenticated(request)
+    try:
+        body=await request.json()
+        case_id=int(body['case_id'])
+        proof=cog.extrair_link_publico(str(body['proof_url']))
+        if not proof or case_id < 1: raise ValueError('proof')
+    except (KeyError, ValueError, TypeError):
+        raise HTTPException(400, 'Informe o protocolo e uma URL https válida.')
+    case=await cog.pool().fetchrow("""SELECT requester_id,status FROM royal_cgex_cases
+       WHERE id=$1 AND guild_id=$2""", case_id,cog.guild().id)
+    member=await cog.membro_por_id(user_id)
+    if not case or case['status']!='needs_evidence':
+        raise HTTPException(409,'O protocolo não está aguardando comprovante.')
+    if case['requester_id']!=user_id and not (member and cog.revisor(member)):
+        raise HTTPException(403,'Somente comunicante ou revisor pode anexar prova.')
+    updated=await cog.pool().fetchrow("""UPDATE royal_cgex_cases
+        SET evidence_url=$2,status='pending_review'
+        WHERE id=$1 AND guild_id=$3 AND status='needs_evidence' RETURNING id""",
+        case_id,proof,cog.guild().id)
+    if not updated:
+        raise HTTPException(409,'O protocolo foi alterado por outra solicitação.')
+    await cog.auditoria(case_id,user_id,'evidence_added','Via portal autenticado')
+    await cog.publicar_revisao(case_id)
+    return {'ok':True,'protocol':f'CGEX-{case_id:06d}'}
+
+# ==========================================================================
 
 # Endereços legados: sem autenticação administrativa, apenas redirecionamento público.
 for legacy, target in [('/membros', '/#membros'), ('/hierarquia', '/#equipe'),
