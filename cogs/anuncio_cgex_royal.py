@@ -67,11 +67,11 @@ ATENDIMENTO = (
 
 CONSIDERACOES = (
     "**<:cavalheiroreal:1566331202737152091>・DISPOSIÇÕES FINAIS**\n"
-    "Ressaltamos que os procedimentos de banimento permanecem sujeitos à "
+    "> `⚜️` Ressaltamos que os procedimentos de banimento permanecem sujeitos à "
     "apresentação de comprovação e à análise de um representante autorizado "
     "da Diretoria, garantindo maior segurança, transparência e responsabilidade "
     "administrativa.\n\n"
-    "Esta implementação representa mais um avanço no processo de modernização "
+    "> `⚜️` Esta implementação representa mais um avanço no processo de modernização "
     "da Família Royal e reafirma nosso compromisso com a organização, a inovação "
     "e o fortalecimento das relações institucionais."
 )

@@ -52,7 +52,7 @@ class AnuncioAdminAbuse(discord.ui.LayoutView):
             discord.ui.TextDisplay(
                 "### <a:Presenteghost:1553872045492797550> Possíveis Premiações\n"
                 "> - `🎖️` **Candidato Divisional**: Qualquer divisão no jogo.\n"
-                "> - `🤡` **Cargo exclusivo**: <@&1553837456585920624>\n"
+                "> - `🤡` **Cargos exclusivos**: <@&1553851603528974346> e <@&1553837456585920624>.\n"
                 "> - `👑` **Vaga na Família**\n"
                 "> - `💰` **Robux**"
             )
@@ -61,8 +61,8 @@ class AnuncioAdminAbuse(discord.ui.LayoutView):
         painel.add_item(
             discord.ui.TextDisplay(
                 "### ⚠️ Observações Importantes\n"
-                "> - `🎲` A premiação de **Candidato Divisional** exige, "
-                "obrigatoriamente, a patente mínima de **Aspirante a Oficial**.\n"
+                "> - `🎲` **Candidato Divisional** exige,"
+                "obrigatoriamente, a patente **Aspirante a Oficial**.\n"
                 "> - `🎲` A participação no evento não garante o recebimento de premiações.\n"
                 "> - `🎲` Todas as recompensas estarão sujeitas a alterações."
             )
@@ -70,15 +70,15 @@ class AnuncioAdminAbuse(discord.ui.LayoutView):
         painel.add_item(
             discord.ui.ActionRow(
                 discord.ui.Button(
-                    label="Acessar canal de drops",
-                    emoji="🎁",
+                    label="Dropzinhos do Evento",
+                    emoji="<a:Presenteghost:1553872045492797550>",
                     style=discord.ButtonStyle.link,
                     url=CANAL_DROPS_URL,
                 )
             )
         )
         painel.add_item(
-            discord.ui.TextDisplay("-# 👑 Família Royal • Honra · União · Lealdade")
+            discord.ui.TextDisplay("-# <:pi_bow:1565454181207244820> i love bruna")
         )
         self.add_item(painel)
 
