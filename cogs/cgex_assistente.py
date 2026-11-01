@@ -765,7 +765,7 @@ class AssistenteCGEx(commands.Cog):
         await self.auditoria(caso_id, actor_id, "created", f"source={origem}; has_evidence={bool(prova)}")
         if prova:
             await self.publicar_revisao(caso_id)
-        return caso_id, "Protocolo encaminhado para revisão." if prova else "Protocolo aberto; falta comprovante de exílio."
+        return caso_id, "Protocolo encaminhado para revisão." if prova else "Protocolo aberto - falta comprovante de exílio."
 
     async def publicar_revisao(self, case_id: int):
         caso = await self.pool().fetchrow("SELECT * FROM royal_cgex_cases WHERE id=$1", case_id)
@@ -815,7 +815,7 @@ class AssistenteCGEx(commands.Cog):
             alvo = alvo_explicito or extrair_id(texto, mencoes)
             if not alvo:
                 return (
-                    "⚖️ **Solicitação identificada**\n"
+                    "<:CGEx:1560374896138256524> **Solicitação identificada**\n"
                     "Para registrar o protocolo, preciso da menção válida ou do ID do Discord do usuário, além de um comprovante oficial do exílio.\n"
                     "-# Exemplo: `@Assistente banir 111111111111111111 https://link-do-registro`."
                 )
@@ -829,9 +829,9 @@ class AssistenteCGEx(commands.Cog):
                 if not comprovante else "A Diretoria decidirá após verificar o documento informado."
             )
             return (
-                f"⚖️ **CGEX-{protocolo:06d}** ・ {detail}\n"
-                f"**⌜ Alvo ⌟** `{alvo}`\n"
-                f"**⌜ Situação atual ⌟** {resumo_status('pending_review' if comprovante else 'needs_evidence')}\n"
+                f"<:CGEx:1560374896138256524> **CGEX-{protocolo:06d}** ・ {detail}\n"
+                f"**Alvo** `{alvo}`\n"
+                f"**Situação atual** {resumo_status('pending_review' if comprovante else 'needs_evidence')}\n"
                 f"{pendencia}\n"
                 "-# Nenhum banimento foi executado nesta etapa."
             )
@@ -853,10 +853,10 @@ class AssistenteCGEx(commands.Cog):
         if not (caso["requester_id"] == actor_id or (membro and self.revisor(membro))):
             return "Você não tem permissão para consultar este protocolo."
         return (
-            f"⚖️ **CGEX-{case_id:06d}**\n"
-            f"**⌜ Situação ⌟** {resumo_status(caso['status'])}\n"
-            f"**⌜ Alvo ⌟** `{caso['target_user_id']}`\n"
-            f"**⌜ Registro ⌟** <t:{int(caso['created_at'].timestamp())}:f>"
+            f"<:CGEx:1560374896138256524> **CGEX-{case_id:06d}**\n"
+            f"**Situação** {resumo_status(caso['status'])}\n"
+            f"**Alvo** `{caso['target_user_id']}`\n"
+            f"**Registro** <t:{int(caso['created_at'].timestamp())}:f>"
         )
 
     @commands.Cog.listener()
