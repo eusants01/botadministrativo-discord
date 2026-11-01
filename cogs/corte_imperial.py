@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import hashlib
@@ -17,36 +16,39 @@ LOG = logging.getLogger("royal.corte_imperial")
 COR_OURO = discord.Colour.from_rgb(212, 175, 55)
 FUSO = ZoneInfo("America/Sao_Paulo")
 PASTA_ASSETS = Path(__file__).resolve().parent.parent / "assets"
-BANNER = PASTA_ASSETS / "corte_imperial_royal.png"  # Opcional
+BANNER = PASTA_ASSETS / "corte_imperial_royal.png"  
 
 CHAT_XP_PADRAO = 15
 CALL_XP_PADRAO = 25
 CALL_INTERVALO_SEGUNDOS = 180
 CHAT_COOLDOWN_PADRAO = 30
-
-# Canais que não rendem XP. Preencha apenas se necessário.
 IGNORAR_TEXTO_IDS: set[int] = set()
 IGNORAR_VOZ_IDS: set[int] = set()
 
-# Níveis de entrada e títulos em ordem crescente.
-TITULOS: tuple[tuple[int, str, str], ...] = (
-    (5, "Barão da Corte", "♜"),
-    (15, "Visconde da Coroa", "◇"),
-    (30, "Conde Imperial", "✧"),
-    (45, "Marquês do Trono", "◆"),
-    (60, "Duque da Coroa", "⚜️"),
-    (80, "Grão-Duque do Império", "✦"),
-    (100, "Príncipe Imperial", "♛"),
-)
+CARGOS_TITULOS: dict[int, int] = {
+    5: 1565942575062450316,   # Plebeu
+    15: 1566326355661160560,  # Escudeiro
+    30: 1566326356738965504,  # Cavaleiro Real
+    60: 1566326356256759828,  # Duque
+    100: 1566326355811897484, # Arquiduque
+}
 
-PRIVILEGIOS: tuple[str, ...] = (
-    "**Barão:** acesso ao Salão da Nobreza.",
-    "**Visconde:** sorteios especiais da Corte.",
-    "**Conde:** recompensas e experiências exclusivas.",
-    "**Marquês:** personalização do perfil imperial.",
-    "**Duque:** eventos VIP e desafios reservados.",
-    "**Grão-Duque:** Conselho de Prestígio e honrarias especiais.",
-    "**Príncipe Imperial:** insígnia suprema e registro no Museu.",
+CARGOS_BONUS_XP: dict[int, int] = {
+    1554367619463913582: 20, # Oficiais da Família Royal
+    1553852246104477898: 10, # Booster da Família
+    1565942574957600798: 10, # VIP da Família Royal
+    1565443626388164790: 5,  # Influencer
+}
+
+CANAL_LEVEL_ID = 1559311428459171880
+LIMITE_LEVEL_ADMIN = 500
+
+TITULOS: tuple[tuple[int, str, str], ...] = (
+    (5, "Plebeu", ""),
+    (15, "Escudeiro", "◇"),
+    (30, "Cavaleiro Real", "✧"),
+    (60, "Duque", "◆"),
+    (100, "Arquiduque", "⚜️"),
 )
 
 
@@ -113,35 +115,31 @@ class PainelImperial(discord.ui.LayoutView):
                 discord.MediaGalleryItem(media=f"attachment://{BANNER.name}")
             ))
         caixa.add_item(discord.ui.TextDisplay(
-            "# ♛ CORTE IMPERIAL\n"
+            "# <:escudeiro:1566331170914959402> CORTE IMPERIAL\n"
             "**FAMÍLIA ROYAL • Honra · União · Lealdade**\n\n"
             "Ascenda na hierarquia da nobreza por sua presença e dedicação à Família."
         ))
         caixa.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
         caixa.add_item(discord.ui.TextDisplay(
-            "**⚜️ COMO CONQUISTAR PRESTÍGIO**\n"
-            "• Mensagens válidas no chat, respeitando o intervalo de XP.\n"
-            "• A cada **3 minutos** em call elegível, com ao menos duas pessoas.\n"
-            "• Cargos selecionados pela Diretoria podem receber bônus de XP.\n\n"
-            "-# O bot desconsidera spam, bots, salas AFK e chamadas inativas."
+            "**COMO CONQUISTAR PRESTÍGIO**\n"
+            "- `👑` Mensagens válidas no chat, respeitando o intervalo de XP.\n"
+            "- `👑` A cada **3 minutos** em call elegível, com ao menos duas pessoas.\n"
+            "- `👑` Cargos selecionados pela Diretoria podem receber bônus de XP.\n\n"
         ))
         caixa.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
         caixa.add_item(discord.ui.TextDisplay(
-            "**<a:coroa:1564000189167960177> PAINEL DA NOBREZA**\n"
-            "Consulte seu progresso, a classificação e as honrarias da Corte. "
-            "As consultas aparecem somente para você."
+            "**PAINEL DA NOBREZA**\n"
+            "- `👑` Consulte seu progresso, a classificação e as honrarias da Corte. "
+            "- `👑` As consultas aparecem somente para você."
         ))
         caixa.add_item(discord.ui.ActionRow(
             BotaoCorte(cog, "perfil", "Meu Perfil", "👤"),
             BotaoCorte(cog, "ranking", "Ranking Real", "🏆"),
             BotaoCorte(cog, "titulos", "Hierarquia", "👑"),
-        ))
-        caixa.add_item(discord.ui.ActionRow(
-            BotaoCorte(cog, "beneficios", "Benefícios", "💎"),
             BotaoCorte(cog, "historico", "Histórico", "📜"),
         ))
         caixa.add_item(discord.ui.TextDisplay(
-            "-# <a:coroa:1564000189167960177> Família Royal"
+            "-# Família Royal"
         ))
         self.add_item(caixa)
 
@@ -166,20 +164,19 @@ class CorteImperial(commands.Cog):
             "**👑 Administração da Corte Imperial**\n"
             "`!corte publicar #canal`\n"
             "`!corte ajustar_xp <chat> <voz> <cooldown>`\n"
-            "`!corte bonus_definir @cargo <percentual>`\n"
-            "`!corte bonus_remover @cargo`\n"
-            "`!corte vincular_titulo <nivel> @cargo`\n"
-            "`!corte canal_ascensao #canal`\n"
+            "`!level [@membro]` • `!rank [@membro]` • `!top [geral|mensal|call]`\n"
+            "`!darlevel @membro <quantidade>` • `!setlevel @membro <nivel>`\n"
+            "`!tirarlevel @membro <quantidade>`\n"
+            "`!corte canal_ascensao #canal` (anúncios de nível)\n"
             "`!corte sincronizar @membro`\n\n"
-            "-# É necessário ter a permissão Gerenciar Servidor para executar as ações.",
+            "-# Comandos de gerenciamento exigem Gerenciar Servidor; "
+            "ajustes de nível exigem Administrador. IDs de títulos e bônus ficam no código.",
             mention_author=False,
         )
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self._configs: dict[int, dict] = {}
-        self._bonus: dict[int, dict[int, int]] = {}
-        self._titulos_cargos: dict[int, dict[int, int]] = {}
         # Usuários em call elegível: timestamp da última verificação + segundos parciais.
         self._voz_ultimo: dict[tuple[int, int], float] = {}
         self._voz_parcial: dict[tuple[int, int], float] = {}
@@ -255,6 +252,14 @@ class CorteImperial(commands.Cog):
             CREATE INDEX IF NOT EXISTS royal_corte_ranking_idx
             ON royal_corte_members (guild_id, xp_total DESC)
         """)
+        await pool.execute("""
+            CREATE TABLE IF NOT EXISTS royal_corte_level_notices (
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                highest_level INTEGER NOT NULL,
+                PRIMARY KEY (guild_id, user_id)
+            )
+        """)
         # Custom IDs fixos: botões continuam funcionando após reinicializações.
         self.bot.add_view(PainelImperial(self))
         self.verificar_voz.start()
@@ -277,23 +282,16 @@ class CorteImperial(commands.Cog):
         return self._configs[guild_id]
 
     async def bonus_pct(self, membro: discord.Member) -> int:
-        guild_id = membro.guild.id
-        if guild_id not in self._bonus:
-            rows = await self.pool().fetch("""
-                SELECT role_id, bonus_percent FROM royal_corte_role_bonus
-                WHERE guild_id=$1
-            """, guild_id)
-            self._bonus[guild_id] = {r["role_id"]: r["bonus_percent"] for r in rows}
-        tabela = self._bonus[guild_id]
-        return max((tabela.get(role.id, 0) for role in membro.roles), default=0)
+        """Bônus configurado SOMENTE no dicionário CARGOS_BONUS_XP."""
+        return max((
+            max(0, min(100, CARGOS_BONUS_XP.get(cargo.id, 0)))
+            for cargo in membro.roles
+        ), default=0)
 
     async def mapa_titulos(self, guild_id: int) -> dict[int, int]:
-        if guild_id not in self._titulos_cargos:
-            rows = await self.pool().fetch("""
-                SELECT title_level, role_id FROM royal_corte_titles WHERE guild_id=$1
-            """, guild_id)
-            self._titulos_cargos[guild_id] = {r["title_level"]: r["role_id"] for r in rows}
-        return self._titulos_cargos[guild_id]
+        """IDs de títulos configurados SOMENTE no arquivo Python."""
+        return {nivel: role_id for nivel, role_id in CARGOS_TITULOS.items()
+                if isinstance(role_id, int) and role_id > 0}
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -455,38 +453,71 @@ class CorteImperial(commands.Cog):
     async def _esperar_bot(self):
         await self.bot.wait_until_ready()
 
-    async def _apos_xp(self, membro: discord.Member, antigo: int, novo: int):
-        n1, n2 = nivel_por_xp(antigo), nivel_por_xp(novo)
-        promovidos = [t for t in TITULOS if n1 < t[0] <= n2]
-        if not promovidos:
+    async def _apos_xp(self, membro: discord.Member, antigo: int, novo: int,
+                      *, administrativo: bool = False):
+        """Anuncia CADA nível alcançado (uma mensagem por ganho, mesmo se pular níveis)."""
+        nivel_antigo, nivel_novo = nivel_por_xp(antigo), nivel_por_xp(novo)
+        if nivel_novo <= nivel_antigo:
             return
         try:
-            promovido = None
-            for nivel, nome, simbolo in promovidos:
-                row = await self.pool().fetchrow("""
+            titulos_alcancados = [t for t in TITULOS if nivel_antigo < t[0] <= nivel_novo]
+            for nivel_titulo, nome, _ in titulos_alcancados:
+                await self.pool().execute("""
                     INSERT INTO royal_corte_history (guild_id, user_id, title_level, title_name)
-                    VALUES ($1, $2, $3, $4)
-                    ON CONFLICT DO NOTHING RETURNING title_level
-                """, membro.guild.id, membro.id, nivel, nome)
-                if row:
-                    promovido = (nivel, nome, simbolo)
-            if promovido is not None:
-                await self._sincronizar_cargo(membro, n2)
-                conf = await self.config(membro.guild.id)
-                canal = membro.guild.get_channel(conf.get("promo_channel_id") or 0)
-                if isinstance(canal, discord.TextChannel):
-                    try:
-                        await canal.send(
-                            f"👑 **CERIMÔNIA DE ASCENSÃO**\n"
-                            f"{membro.mention} conquistou o título **{promovido[2]} {promovido[1]}** "
-                            f"e alcançou o **nível {n2}** da Corte Imperial.\n"
-                            f"*Honra · União · Lealdade*",
-                            allowed_mentions=discord.AllowedMentions(users=False, roles=False, everyone=False),
-                        )
-                    except discord.HTTPException:
-                        LOG.exception("Falha ao anunciar ascensão no servidor %s", membro.guild.id)
+                    VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING
+                """, membro.guild.id, membro.id, nivel_titulo, nome)
+
+            if titulos_alcancados:
+                # Considera o nível ATUAL no banco para evitar atribuir um cargo
+                # inferior caso chat/call/admin atualizem XP simultaneamente.
+                atual = await self.pool().fetchval("""
+                    SELECT xp_total FROM royal_corte_members
+                    WHERE guild_id=$1 AND user_id=$2
+                """, membro.guild.id, membro.id)
+                await self._sincronizar_cargo(membro, nivel_por_xp(atual if atual is not None else novo))
+
+            # Reserva atômica do nível anunciado; evita avisos duplicados.
+            reservado = await self.pool().fetchrow("""
+                INSERT INTO royal_corte_level_notices (guild_id, user_id, highest_level)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (guild_id, user_id) DO UPDATE
+                SET highest_level=EXCLUDED.highest_level
+                WHERE royal_corte_level_notices.highest_level < EXCLUDED.highest_level
+                RETURNING highest_level
+            """, membro.guild.id, membro.id, nivel_novo)
+            if reservado is None:
+                return
+
+            conf = await self.config(membro.guild.id)
+            canal_id = CANAL_LEVEL_ID or conf.get("promo_channel_id")
+            canal = membro.guild.get_channel(canal_id) if canal_id else None
+            if not isinstance(canal, discord.TextChannel):
+                LOG.info("Sem canal de level configurado no servidor %s.", membro.guild.id)
+                return
+
+            titulo_novo = titulo_atual(nivel_novo)
+            conquistou_titulo = bool(titulos_alcancados)
+            faixa = (f"do nível **{nivel_antigo}** para o **{nivel_novo}**"
+                     if nivel_novo > nivel_antigo + 1 else f"para o **nível {nivel_novo}**")
+            corpo = (
+                f"🎉 {membro.mention} avançou {faixa}!\n"
+                f"**XP total:** `{novo:,}`\n"
+            )
+            if conquistou_titulo and titulo_novo:
+                corpo += f"👑 **Novo título:** {titulo_novo[2]} {titulo_novo[1]}\n"
+            if administrativo:
+                corpo += "-# Progressão ajustada pela administração.\n"
+            corpo += "-# Honra · União · Lealdade"
+            titulo_cabecalho = "👑 CERIMÔNIA DE ASCENSÃO" if conquistou_titulo else "✨ NOVO NÍVEL IMPERIAL"
+            try:
+                await canal.send(
+                    view=painel_privado(titulo_cabecalho, corpo),
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+            except discord.HTTPException:
+                LOG.exception("Falha ao anunciar novo nível de %s", membro.id)
         except Exception:
-            LOG.exception("Falha ao processar nova ascensão de %s", membro.id)
+            LOG.exception("Falha ao processar nível de %s", membro.id)
 
     async def _sincronizar_cargo(self, membro: discord.Member, nivel: int):
         titulos = await self.mapa_titulos(membro.guild.id)
@@ -574,13 +605,6 @@ class CorteImperial(commands.Cog):
                     "\n\n-# Após o nível 100, a cada 10 níveis surge uma Estrela de Prestígio."
                 )
                 view = painel_privado("👑 HIERARQUIA IMPERIAL", corpo)
-            elif secao == "beneficios":
-                corpo = (
-                    "**Privilégios sugeridos, liberados conforme a configuração da Diretoria:**\n\n"
-                    + "\n".join(f"⚜️ {linha}" for linha in PRIVILEGIOS)
-                    + "\n\n-# Benefícios não concedem permissões administrativas."
-                )
-                view = painel_privado("💎 PRIVILÉGIOS DA COROA", corpo)
             elif secao == "historico":
                 rows = await self.pool().fetch("""
                     SELECT title_name, title_level, achieved_at
@@ -659,84 +683,18 @@ class CorteImperial(commands.Cog):
             mention_author=False,
         )
 
-    @corte.command(name="bonus_definir")
-    @commands.guild_only()
-    @commands.has_guild_permissions(manage_guild=True)
-    async def bonus_definir(self, ctx: commands.Context, cargo: discord.Role, percentual: int):
-        """!corte bonus_definir @cargo 20 — define bônus por cargo."""
-        if not 1 <= percentual <= 100:
-            await ctx.reply("❌ Informe um percentual entre 1 e 100.", mention_author=False)
-            return
-        await self.pool().execute("""
-            INSERT INTO royal_corte_role_bonus (guild_id, role_id, bonus_percent)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (guild_id, role_id) DO UPDATE
-            SET bonus_percent=EXCLUDED.bonus_percent
-        """, ctx.guild.id, cargo.id, percentual)
-        self._bonus.pop(ctx.guild.id, None)
-        await ctx.reply(
-            f"✅ {cargo.mention} agora concede **+{percentual}% de XP**. "
-            "Se houver mais de um cargo com bônus, apenas o maior vale.",
-            mention_author=False,
-            allowed_mentions=discord.AllowedMentions.none(),
-        )
-
-    @corte.command(name="bonus_remover")
-    @commands.guild_only()
-    @commands.has_guild_permissions(manage_guild=True)
-    async def bonus_remover(self, ctx: commands.Context, cargo: discord.Role):
-        """!corte bonus_remover @cargo — remove bônus do cargo."""
-        await self.pool().execute("""
-            DELETE FROM royal_corte_role_bonus WHERE guild_id=$1 AND role_id=$2
-        """, ctx.guild.id, cargo.id)
-        self._bonus.pop(ctx.guild.id, None)
-        await ctx.reply(
-            f"✅ Bônus removido de {cargo.mention}.", mention_author=False,
-            allowed_mentions=discord.AllowedMentions.none(),
-        )
-
-    @corte.command(name="vincular_titulo")
-    @commands.guild_only()
-    @commands.has_guild_permissions(manage_guild=True)
-    async def vincular_titulo(self, ctx: commands.Context, nivel: int, cargo: discord.Role):
-        """!corte vincular_titulo 5 @cargo — vincula nível a cargo do Discord."""
-        titulo = next((t for t in TITULOS if t[0] == nivel), None)
-        if titulo is None:
-            niveis = ", ".join(str(t[0]) for t in TITULOS)
-            await ctx.reply(f"❌ Níveis válidos: **{niveis}**.", mention_author=False)
-            return
-        if cargo.is_default() or cargo.managed:
-            await ctx.reply("❌ Escolha um cargo normal, não gerenciado.", mention_author=False)
-            return
-        if cargo in (ctx.guild.me.roles if ctx.guild.me else []):
-            # O cargo do próprio bot também poderia ser escolhido, mas não deve ser gerenciado como título.
-            await ctx.reply("❌ Escolha um cargo de título que não seja o cargo do bot.", mention_author=False)
-            return
-        await self.pool().execute("""
-            INSERT INTO royal_corte_titles (guild_id, title_level, role_id)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (guild_id, title_level) DO UPDATE SET role_id=EXCLUDED.role_id
-        """, ctx.guild.id, nivel, cargo.id)
-        self._titulos_cargos.pop(ctx.guild.id, None)
-        await ctx.reply(
-            f"✅ **{titulo[1]}** (nível {nivel}) agora concede {cargo.mention}. "
-            "Deixe esse cargo abaixo do cargo do bot na hierarquia.",
-            mention_author=False,
-            allowed_mentions=discord.AllowedMentions.none(),
-        )
-
     @corte.command(name="canal_ascensao")
     @commands.guild_only()
     @commands.has_guild_permissions(manage_guild=True)
     async def canal_ascensao(self, ctx: commands.Context, canal: discord.TextChannel):
-        """!corte canal_ascensao #canal — define onde anunciar promoções."""
+        """!corte canal_ascensao #canal — define onde anunciar níveis e títulos."""
         await self.pool().execute("""
             INSERT INTO royal_corte_config (guild_id, promo_channel_id) VALUES ($1, $2)
             ON CONFLICT (guild_id) DO UPDATE SET promo_channel_id=EXCLUDED.promo_channel_id
         """, ctx.guild.id, canal.id)
         self._configs.pop(ctx.guild.id, None)
         await ctx.reply(
-            f"✅ Cerimônias de ascensão serão anunciadas em {canal.mention}.",
+            f"✅ Subidas de nível e cerimônias de ascensão serão anunciadas em {canal.mention}.",
             mention_author=False,
             allowed_mentions=discord.AllowedMentions.none(),
         )
@@ -758,19 +716,182 @@ class CorteImperial(commands.Cog):
             allowed_mentions=discord.AllowedMentions.none(),
         )
 
+    # --- Consultas públicas de nível e ranking -------------------------------
+    @commands.command(name="level", aliases=["nivel", "xp"])
+    @commands.guild_only()
+    @commands.cooldown(2, 12, commands.BucketType.user)
+    async def level(self, ctx: commands.Context, membro: discord.Member = None):
+        """!level [@membro] — mostra nível, XP, progresso e título."""
+        membro = membro or ctx.author
+        registro = await self.pool().fetchrow("""
+            SELECT xp_total, chat_messages, voice_seconds FROM royal_corte_members
+            WHERE guild_id=$1 AND user_id=$2
+        """, ctx.guild.id, membro.id)
+        xp = registro["xp_total"] if registro else 0
+        nivel = nivel_por_xp(xp)
+        titulo = titulo_atual(nivel)
+        inicio, fim = xp_para_nivel(nivel), xp_para_nivel(nivel + 1)
+        pct = round(100 * (xp - inicio) / max(1, fim - inicio))
+        bonus = await self.bonus_pct(membro)
+        embed = discord.Embed(title="👑 Identidade Imperial", colour=COR_OURO)
+        embed.description = (
+            f"**{membro.mention}**\n"
+            f"⚜️ **Título:** {titulo[2] + ' ' + titulo[1] if titulo else 'Membro da Corte'}\n"
+            f"✨ **Nível:** `{nivel}`  •  **XP:** `{xp:,}`\n"
+            f"`{barra_progresso(xp - inicio, fim - inicio)}` **{pct}%**\n"
+            f"**Próximo nível:** `{fim - xp:,} XP`\n"
+            f"💬 **Mensagens válidas:** `{registro['chat_messages'] if registro else 0:,}`\n"
+            f"🎧 **Call elegível:** `{registro['voice_seconds'] // 60 if registro else 0:,} min`\n"
+            f"💎 **Bônus de XP:** `+{bonus}%`"
+        )
+        embed.set_footer(text="Família Royal • Corte Imperial")
+        await ctx.reply(embed=embed, mention_author=False,
+                        allowed_mentions=discord.AllowedMentions.none())
+
+    @commands.command(name="rank", aliases=["posicao"])
+    @commands.guild_only()
+    @commands.cooldown(2, 12, commands.BucketType.user)
+    async def rank(self, ctx: commands.Context, membro: discord.Member = None):
+        """!rank [@membro] — posição no ranking geral."""
+        membro = membro or ctx.author
+        xp = await self.pool().fetchval("""
+            SELECT xp_total FROM royal_corte_members
+            WHERE guild_id=$1 AND user_id=$2
+        """, ctx.guild.id, membro.id)
+        if xp is None:
+            return await ctx.reply("📜 Este membro ainda não possui XP registrado.", mention_author=False)
+        posicao = await self.pool().fetchval("""
+            SELECT COUNT(*) + 1 FROM royal_corte_members
+            WHERE guild_id=$1 AND (xp_total > $2 OR (xp_total=$2 AND user_id < $3))
+        """, ctx.guild.id, xp, membro.id)
+        await ctx.reply(f"🏆 {membro.mention} ocupa a posição **#{posicao}** "
+                        f"com **{xp:,} XP** (nível **{nivel_por_xp(xp)}**).",
+                        mention_author=False, allowed_mentions=discord.AllowedMentions.none())
+
+    @commands.command(name="top", aliases=["ranking"])
+    @commands.guild_only()
+    @commands.cooldown(2, 12, commands.BucketType.user)
+    async def top(self, ctx: commands.Context, tipo: str = "geral"):
+        """!top [geral|mensal|call] — mostra os 10 maiores."""
+        tipo = tipo.casefold()
+        if tipo not in ("geral", "mensal", "call", "voz"):
+            return await ctx.reply("❌ Use `!top`, `!top mensal` ou `!top call`.", mention_author=False)
+        if tipo == "mensal":
+            rows = await self.pool().fetch("""
+                SELECT user_id, xp AS valor FROM royal_corte_monthly
+                WHERE guild_id=$1 AND month_date=$2
+                ORDER BY xp DESC, user_id ASC LIMIT 10
+            """, ctx.guild.id, mes_atual())
+            titulo, unidade = "Ranking Mensal", "XP"
+        elif tipo in ("call", "voz"):
+            rows = await self.pool().fetch("""
+                SELECT user_id, voice_seconds AS valor FROM royal_corte_members
+                WHERE guild_id=$1 AND voice_seconds > 0
+                ORDER BY voice_seconds DESC, user_id ASC LIMIT 10
+            """, ctx.guild.id)
+            titulo, unidade = "Ranking de Call", "min"
+        else:
+            rows = await self.pool().fetch("""
+                SELECT user_id, xp_total AS valor FROM royal_corte_members
+                WHERE guild_id=$1 ORDER BY xp_total DESC, user_id ASC LIMIT 10
+            """, ctx.guild.id)
+            titulo, unidade = "Ranking Geral", "XP"
+        linhas = [
+            f"`{i:02}.` <@{r['user_id']}> — **{(r['valor'] // 60 if unidade == 'min' else r['valor']):,} {unidade}**"
+            for i, r in enumerate(rows, 1)
+        ] or ["Ainda não há participantes neste ranking."]
+        embed = discord.Embed(title=f"🏆 Corte Imperial • {titulo}",
+                              description="\n".join(linhas), colour=COR_OURO)
+        embed.set_footer(text="Família Royal • Honra · União · Lealdade")
+        await ctx.reply(embed=embed, mention_author=False,
+                        allowed_mentions=discord.AllowedMentions.none())
+
+    # --- Ajustes manuais, restritos a administradores -------------------------
+    async def _alterar_level_admin(self, ctx: commands.Context, membro: discord.Member,
+                                 quantidade: int, modo: str):
+        if membro.bot:
+            return await ctx.reply("❌ Bots não podem receber níveis.", mention_author=False)
+        if modo == "setar" and not (1 <= quantidade <= LIMITE_LEVEL_ADMIN):
+            return await ctx.reply(f"❌ Informe um nível de 1 a {LIMITE_LEVEL_ADMIN}.", mention_author=False)
+        if modo != "setar" and not (1 <= quantidade <= 100):
+            return await ctx.reply("❌ Informe de 1 a 100 níveis por operação.", mention_author=False)
+
+        async with self.pool().acquire() as conn:
+            async with conn.transaction():
+                await conn.execute("""
+                    INSERT INTO royal_corte_members (guild_id, user_id)
+                    VALUES ($1, $2) ON CONFLICT DO NOTHING
+                """, ctx.guild.id, membro.id)
+                xp_antigo = await conn.fetchval("""
+                    SELECT xp_total FROM royal_corte_members
+                    WHERE guild_id=$1 AND user_id=$2 FOR UPDATE
+                """, ctx.guild.id, membro.id)
+                nivel_antigo = nivel_por_xp(xp_antigo)
+                if modo == "dar":
+                    destino = min(LIMITE_LEVEL_ADMIN, nivel_antigo + quantidade)
+                    # Conserva o XP já acumulado dentro do nível atual.
+                    xp_novo = xp_antigo + xp_para_nivel(destino) - xp_para_nivel(nivel_antigo)
+                elif modo == "tirar":
+                    destino = max(1, nivel_antigo - quantidade)
+                    xp_novo = max(0, xp_para_nivel(destino))
+                else:
+                    destino = quantidade
+                    xp_novo = xp_para_nivel(destino)
+                if xp_novo != xp_antigo:
+                    await conn.execute("""
+                        UPDATE royal_corte_members
+                        SET xp_total=$3, updated_at=NOW()
+                        WHERE guild_id=$1 AND user_id=$2
+                    """, ctx.guild.id, membro.id, xp_novo)
+
+        if xp_novo == xp_antigo:
+            return await ctx.reply("ℹ️ O membro já está no nível solicitado.", mention_author=False)
+        nivel_novo = nivel_por_xp(xp_novo)
+        if nivel_novo > nivel_antigo:
+            await self._apos_xp(membro, xp_antigo, xp_novo, administrativo=True)
+        else:
+            await self._sincronizar_cargo(membro, nivel_novo)
+        await ctx.reply(
+            f"✅ **{membro.display_name}**: nível **{nivel_antigo} → {nivel_novo}** "
+            f"(`{xp_antigo:,} → {xp_novo:,} XP`).",
+            mention_author=False,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
+    @commands.command(name="darlevel", aliases=["addlevel"])
+    @commands.guild_only()
+    @commands.has_guild_permissions(administrator=True)
+    async def darlevel(self, ctx: commands.Context, membro: discord.Member, quantidade: int):
+        """!darlevel @membro 5 — adiciona 5 níveis, exigindo Administrador."""
+        await self._alterar_level_admin(ctx, membro, quantidade, "dar")
+
+    @commands.command(name="setlevel")
+    @commands.guild_only()
+    @commands.has_guild_permissions(administrator=True)
+    async def setlevel(self, ctx: commands.Context, membro: discord.Member, nivel: int):
+        """!setlevel @membro 30 — define exatamente o nível 30."""
+        await self._alterar_level_admin(ctx, membro, nivel, "setar")
+
+    @commands.command(name="tirarlevel", aliases=["removelevel"])
+    @commands.guild_only()
+    @commands.has_guild_permissions(administrator=True)
+    async def tirarlevel(self, ctx: commands.Context, membro: discord.Member, quantidade: int):
+        """!tirarlevel @membro 2 — remove 2 níveis, exigindo Administrador."""
+        await self._alterar_level_admin(ctx, membro, quantidade, "tirar")
+
     async def cog_command_error(self, ctx: commands.Context, erro: commands.CommandError):
         """Mostra erros de permissão e de uso para todos os subcomandos."""
         if isinstance(erro, commands.MissingPermissions):
-            await ctx.reply("⛔ Apenas quem possui **Gerenciar Servidor** pode usar esse comando.", mention_author=False)
+            await ctx.reply("⛔ Você não possui a permissão necessária (Administrador ou Gerenciar Servidor).", mention_author=False)
         elif isinstance(erro, commands.MissingRequiredArgument):
             await ctx.reply(
                 f"❌ Argumento ausente. Use `!corte {ctx.command.name}` com os parâmetros necessários. "
-                "Digite `!corte` para consultar os exemplos.", mention_author=False,
+                "Use `!corte` para consultar os comandos disponíveis.", mention_author=False,
             )
         elif isinstance(erro, commands.BadArgument):
             await ctx.reply(
                 "❌ Argumento inválido. Confira a menção do cargo/canal/membro ou os valores numéricos. "
-                "Digite `!corte` para consultar os exemplos.", mention_author=False,
+                "Use `!corte` para consultar os comandos disponíveis.", mention_author=False,
             )
         else:
             LOG.error("Falha no comando da Corte Imperial", exc_info=(type(erro), erro, erro.__traceback__))
