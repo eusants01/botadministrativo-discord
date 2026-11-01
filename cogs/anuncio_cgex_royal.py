@@ -22,7 +22,6 @@ BANNER = ROOT / "assets" / "anuncio_cgex_royal.png"
 BANNER_FILENAME = "anuncio_cgex_royal.png"
 COR_DOURADA = discord.Colour.from_rgb(212, 175, 55)
 
-# Mantém o canal de conversa do Assistente Royal já existente.
 CANAL_CGEX = 1566470789178331286
 BOT_ASSISTENTE_ID = 1554370626343542784
 
@@ -67,7 +66,7 @@ ATENDIMENTO = (
 )
 
 CONSIDERACOES = (
-    "**<:coroa:1556097709906067499>・DISPOSIÇÕES FINAIS**\n"
+    "**<:cavalheiroreal:1566331202737152091>・DISPOSIÇÕES FINAIS**\n"
     "Ressaltamos que os procedimentos de banimento permanecem sujeitos à "
     "apresentação de comprovação e à análise de um representante autorizado "
     "da Diretoria, garantindo maior segurança, transparência e responsabilidade "
