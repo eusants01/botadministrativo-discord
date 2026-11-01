@@ -135,7 +135,7 @@ def montar_painel_ajuda() -> discord.ui.LayoutView:
     ))
     caixa.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
     caixa.add_item(discord.ui.TextDisplay(
-        "**✦ Comandos principais**\n"
+        "**<:escudeiro:1566331170914959402> Comandos principais**\n"
         "> `!cgex boasvindas` ・ Envia a apresentação institucional.\n"
         "> `!cgex abrir <ID> <link-comprovante>` ・ Abre um protocolo com prova.\n"
         "> `!cgex prova <protocolo> <link>` ・ Anexa um comprovante a um caso pendente.\n"
@@ -147,9 +147,9 @@ def montar_painel_ajuda() -> discord.ui.LayoutView:
     ))
     caixa.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
     caixa.add_item(discord.ui.TextDisplay(
-        "**✦ Conversa natural**\n"
-        "> `@Bot o usuário 111111111111111111 foi exilado, comprovante https://...`\n"
-        "> `@Bot dá ban nesse cara @teste`\n"
+        "**<:duque:1566331234110410762> Conversa natural**\n"
+        "> `@Bot o @user foi exilado, comprovante https://...`\n"
+        "> `@Bot dá ban nesse cara @exemplo`\n"
         "> `ei bot, consulta o protocolo CGEX-12`\n\n"
         "-# <:regras2:1564669595904901250> Todo banimento exige comprovante registrado e confirmação de um revisor autorizado."
     ))
