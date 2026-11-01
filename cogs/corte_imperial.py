@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 import hashlib
@@ -10,23 +11,24 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import discord
-from discord import app_commands
 from discord.ext import commands, tasks
 
 LOG = logging.getLogger("royal.corte_imperial")
 COR_OURO = discord.Colour.from_rgb(212, 175, 55)
 FUSO = ZoneInfo("America/Sao_Paulo")
 PASTA_ASSETS = Path(__file__).resolve().parent.parent / "assets"
-BANNER = PASTA_ASSETS / "corte_imperial_royal.png" 
+BANNER = PASTA_ASSETS / "corte_imperial_royal.png"  # Opcional
 
 CHAT_XP_PADRAO = 15
 CALL_XP_PADRAO = 25
 CALL_INTERVALO_SEGUNDOS = 180
 CHAT_COOLDOWN_PADRAO = 30
 
+# Canais que não rendem XP. Preencha apenas se necessário.
 IGNORAR_TEXTO_IDS: set[int] = set()
 IGNORAR_VOZ_IDS: set[int] = set()
 
+# Níveis de entrada e títulos em ordem crescente.
 TITULOS: tuple[tuple[int, str, str], ...] = (
     (5, "Barão da Corte", "♜"),
     (15, "Visconde da Coroa", "◇"),
@@ -156,7 +158,22 @@ def painel_privado(titulo: str, corpo: str) -> discord.ui.LayoutView:
 
 
 class CorteImperial(commands.Cog):
-    corte = app_commands.Group(name="corte", description="Gerenciar a Corte Imperial da Família Royal")
+    @commands.group(name="corte", invoke_without_command=True)
+    @commands.guild_only()
+    async def corte(self, ctx: commands.Context):
+        """Comandos de gerenciamento da Corte Imperial (prefixo !)."""
+        await ctx.reply(
+            "**👑 Administração da Corte Imperial**\n"
+            "`!corte publicar #canal`\n"
+            "`!corte ajustar_xp <chat> <voz> <cooldown>`\n"
+            "`!corte bonus_definir @cargo <percentual>`\n"
+            "`!corte bonus_remover @cargo`\n"
+            "`!corte vincular_titulo <nivel> @cargo`\n"
+            "`!corte canal_ascensao #canal`\n"
+            "`!corte sincronizar @membro`\n\n"
+            "-# É necessário ter a permissão Gerenciar Servidor para executar as ações.",
+            mention_author=False,
+        )
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -581,38 +598,53 @@ class CorteImperial(commands.Cog):
             LOG.exception("Falha ao abrir seção %s da Corte Imperial", secao)
             await interaction.followup.send("❌ Não foi possível consultar a Corte Imperial agora.", ephemeral=True)
 
-    # --- Administração (slash commands) ---------------------------------------
-    @corte.command(name="publicar", description="Publica o painel V2 da Corte Imperial em um canal")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def publicar(self, interaction: discord.Interaction, canal: discord.TextChannel):
-        await interaction.response.defer(ephemeral=True, thinking=True)
+    # --- Administração via prefixo ! -----------------------------------------
+    @corte.command(name="publicar")
+    @commands.guild_only()
+    @commands.has_guild_permissions(manage_guild=True)
+    async def publicar(self, ctx: commands.Context, canal: discord.TextChannel):
+        """!corte publicar #canal — publica um painel V2 com um único banner."""
+        me = ctx.guild.me
+        if me is None:
+            await ctx.reply("❌ Não consegui identificar o bot no servidor.", mention_author=False)
+            return
+        perms = canal.permissions_for(me)
+        if not (perms.view_channel and perms.send_messages):
+            await ctx.reply("❌ Preciso de permissão para acessar e enviar mensagens nesse canal.", mention_author=False)
+            return
+
+        tem_banner = BANNER.is_file()
+        if tem_banner and not perms.attach_files:
+            await ctx.reply("❌ Preciso da permissão Anexar Arquivos nesse canal.", mention_author=False)
+            return
+
         try:
-            tem_banner = BANNER.is_file()
             view = PainelImperial(self, com_banner=tem_banner)
             if tem_banner:
-                with BANNER.open("rb") as file:
-                    await canal.send(view=view, file=discord.File(file, filename=BANNER.name))
+                with BANNER.open("rb") as arquivo:
+                    await canal.send(view=view, file=discord.File(arquivo, filename=BANNER.name))
             else:
                 await canal.send(view=view)
-            await interaction.followup.send(
+            await ctx.reply(
                 f"✅ Painel único da Corte Imperial publicado em {canal.mention}."
                 + ("" if tem_banner else " Para adicionar o banner, salve assets/corte_imperial_royal.png."),
-                ephemeral=True,
+                mention_author=False,
             )
         except (discord.HTTPException, OSError):
             LOG.exception("Falha ao publicar painel imperial")
-            await interaction.followup.send("❌ Não foi possível publicar. Confira permissões de mensagem/anexo.", ephemeral=True)
+            await ctx.reply("❌ Não foi possível publicar. Confira as permissões e os logs.", mention_author=False)
 
-    @corte.command(name="ajustar_xp", description="Ajusta XP de chat, call e cooldown")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def ajustar_xp(
-        self, interaction: discord.Interaction,
-        chat_xp: app_commands.Range[int, 1, 100],
-        voz_xp: app_commands.Range[int, 1, 200],
-        cooldown_segundos: app_commands.Range[int, 30, 600],
-    ):
-        if interaction.guild_id is None:
-            return await interaction.response.send_message("Use no servidor.", ephemeral=True)
+    @corte.command(name="ajustar_xp")
+    @commands.guild_only()
+    @commands.has_guild_permissions(manage_guild=True)
+    async def ajustar_xp(self, ctx: commands.Context, chat_xp: int, voz_xp: int, cooldown_segundos: int):
+        """!corte ajustar_xp 15 25 30 — ajusta XP do chat, voz e intervalo."""
+        if not (1 <= chat_xp <= 100 and 1 <= voz_xp <= 200 and 30 <= cooldown_segundos <= 600):
+            await ctx.reply(
+                "❌ Valores aceitos: chat de 1 a 100 XP; voz de 1 a 200 XP; cooldown de 30 a 600 segundos.",
+                mention_author=False,
+            )
+            return
         await self.pool().execute("""
             INSERT INTO royal_corte_config (guild_id, chat_xp, voice_xp, cooldown_seconds)
             VALUES ($1, $2, $3, $4)
@@ -620,93 +652,129 @@ class CorteImperial(commands.Cog):
                 chat_xp=EXCLUDED.chat_xp,
                 voice_xp=EXCLUDED.voice_xp,
                 cooldown_seconds=EXCLUDED.cooldown_seconds
-        """, interaction.guild_id, chat_xp, voz_xp, cooldown_segundos)
-        self._configs.pop(interaction.guild_id, None)
-        await interaction.response.send_message(
-            f"✅ Chat: {chat_xp} XP; call: {voz_xp} XP/3 min; cooldown: {cooldown_segundos}s.", ephemeral=True
+        """, ctx.guild.id, chat_xp, voz_xp, cooldown_segundos)
+        self._configs.pop(ctx.guild.id, None)
+        await ctx.reply(
+            f"✅ Chat: **{chat_xp} XP**; call: **{voz_xp} XP/3 min**; cooldown: **{cooldown_segundos}s**.",
+            mention_author=False,
         )
 
-    @corte.command(name="bonus_definir", description="Define o bônus percentual de XP de um cargo")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def bonus_definir(
-        self, interaction: discord.Interaction, cargo: discord.Role,
-        percentual: app_commands.Range[int, 1, 100],
-    ):
-        if interaction.guild_id is None:
-            return await interaction.response.send_message("Use no servidor.", ephemeral=True)
+    @corte.command(name="bonus_definir")
+    @commands.guild_only()
+    @commands.has_guild_permissions(manage_guild=True)
+    async def bonus_definir(self, ctx: commands.Context, cargo: discord.Role, percentual: int):
+        """!corte bonus_definir @cargo 20 — define bônus por cargo."""
+        if not 1 <= percentual <= 100:
+            await ctx.reply("❌ Informe um percentual entre 1 e 100.", mention_author=False)
+            return
         await self.pool().execute("""
             INSERT INTO royal_corte_role_bonus (guild_id, role_id, bonus_percent)
             VALUES ($1, $2, $3)
             ON CONFLICT (guild_id, role_id) DO UPDATE
             SET bonus_percent=EXCLUDED.bonus_percent
-        """, interaction.guild_id, cargo.id, percentual)
-        self._bonus.pop(interaction.guild_id, None)
-        await interaction.response.send_message(
+        """, ctx.guild.id, cargo.id, percentual)
+        self._bonus.pop(ctx.guild.id, None)
+        await ctx.reply(
             f"✅ {cargo.mention} agora concede **+{percentual}% de XP**. "
-            "Se houver mais de um cargo com bônus, apenas o maior vale.", ephemeral=True,
+            "Se houver mais de um cargo com bônus, apenas o maior vale.",
+            mention_author=False,
+            allowed_mentions=discord.AllowedMentions.none(),
         )
 
-    @corte.command(name="bonus_remover", description="Remove um bônus de XP de um cargo")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def bonus_remover(self, interaction: discord.Interaction, cargo: discord.Role):
-        if interaction.guild_id is None:
-            return await interaction.response.send_message("Use no servidor.", ephemeral=True)
+    @corte.command(name="bonus_remover")
+    @commands.guild_only()
+    @commands.has_guild_permissions(manage_guild=True)
+    async def bonus_remover(self, ctx: commands.Context, cargo: discord.Role):
+        """!corte bonus_remover @cargo — remove bônus do cargo."""
         await self.pool().execute("""
             DELETE FROM royal_corte_role_bonus WHERE guild_id=$1 AND role_id=$2
-        """, interaction.guild_id, cargo.id)
-        self._bonus.pop(interaction.guild_id, None)
-        await interaction.response.send_message(f"✅ Bônus removido de {cargo.mention}.", ephemeral=True)
+        """, ctx.guild.id, cargo.id)
+        self._bonus.pop(ctx.guild.id, None)
+        await ctx.reply(
+            f"✅ Bônus removido de {cargo.mention}.", mention_author=False,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
 
-    @corte.command(name="vincular_titulo", description="Vincula um título da Corte a um cargo do Discord")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def vincular_titulo(self, interaction: discord.Interaction, nivel: int, cargo: discord.Role):
-        if interaction.guild_id is None:
-            return await interaction.response.send_message("Use no servidor.", ephemeral=True)
+    @corte.command(name="vincular_titulo")
+    @commands.guild_only()
+    @commands.has_guild_permissions(manage_guild=True)
+    async def vincular_titulo(self, ctx: commands.Context, nivel: int, cargo: discord.Role):
+        """!corte vincular_titulo 5 @cargo — vincula nível a cargo do Discord."""
         titulo = next((t for t in TITULOS if t[0] == nivel), None)
         if titulo is None:
-            niveis = ", ".join(map(str, (t[0] for t in TITULOS)))
-            return await interaction.response.send_message(f"Níveis válidos: {niveis}.", ephemeral=True)
+            niveis = ", ".join(str(t[0]) for t in TITULOS)
+            await ctx.reply(f"❌ Níveis válidos: **{niveis}**.", mention_author=False)
+            return
         if cargo.is_default() or cargo.managed:
-            return await interaction.response.send_message("Escolha um cargo normal, não gerenciado.", ephemeral=True)
+            await ctx.reply("❌ Escolha um cargo normal, não gerenciado.", mention_author=False)
+            return
+        if cargo in (ctx.guild.me.roles if ctx.guild.me else []):
+            # O cargo do próprio bot também poderia ser escolhido, mas não deve ser gerenciado como título.
+            await ctx.reply("❌ Escolha um cargo de título que não seja o cargo do bot.", mention_author=False)
+            return
         await self.pool().execute("""
             INSERT INTO royal_corte_titles (guild_id, title_level, role_id)
             VALUES ($1, $2, $3)
             ON CONFLICT (guild_id, title_level) DO UPDATE SET role_id=EXCLUDED.role_id
-        """, interaction.guild_id, nivel, cargo.id)
-        self._titulos_cargos.pop(interaction.guild_id, None)
-        await interaction.response.send_message(
+        """, ctx.guild.id, nivel, cargo.id)
+        self._titulos_cargos.pop(ctx.guild.id, None)
+        await ctx.reply(
             f"✅ **{titulo[1]}** (nível {nivel}) agora concede {cargo.mention}. "
-            "Deixe esse cargo abaixo do cargo do bot na hierarquia.", ephemeral=True,
+            "Deixe esse cargo abaixo do cargo do bot na hierarquia.",
+            mention_author=False,
+            allowed_mentions=discord.AllowedMentions.none(),
         )
 
-    @corte.command(name="canal_ascensao", description="Define onde anunciar as promoções imperiais")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def canal_ascensao(self, interaction: discord.Interaction, canal: discord.TextChannel):
-        if interaction.guild_id is None:
-            return await interaction.response.send_message("Use no servidor.", ephemeral=True)
+    @corte.command(name="canal_ascensao")
+    @commands.guild_only()
+    @commands.has_guild_permissions(manage_guild=True)
+    async def canal_ascensao(self, ctx: commands.Context, canal: discord.TextChannel):
+        """!corte canal_ascensao #canal — define onde anunciar promoções."""
         await self.pool().execute("""
             INSERT INTO royal_corte_config (guild_id, promo_channel_id) VALUES ($1, $2)
             ON CONFLICT (guild_id) DO UPDATE SET promo_channel_id=EXCLUDED.promo_channel_id
-        """, interaction.guild_id, canal.id)
-        self._configs.pop(interaction.guild_id, None)
-        await interaction.response.send_message(
-            f"✅ Cerimônias de ascensão serão anunciadas em {canal.mention}.", ephemeral=True,
+        """, ctx.guild.id, canal.id)
+        self._configs.pop(ctx.guild.id, None)
+        await ctx.reply(
+            f"✅ Cerimônias de ascensão serão anunciadas em {canal.mention}.",
+            mention_author=False,
+            allowed_mentions=discord.AllowedMentions.none(),
         )
 
-    @corte.command(name="sincronizar", description="Atualiza o cargo imperial de um membro pelo XP acumulado")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def sincronizar(self, interaction: discord.Interaction, membro: discord.Member):
-        if interaction.guild_id is None:
-            return await interaction.response.send_message("Use no servidor.", ephemeral=True)
+    @corte.command(name="sincronizar")
+    @commands.guild_only()
+    @commands.has_guild_permissions(manage_guild=True)
+    async def sincronizar(self, ctx: commands.Context, membro: discord.Member):
+        """!corte sincronizar @membro — atualiza cargo pelo XP acumulado."""
         registro = await self.pool().fetchrow("""
             SELECT xp_total FROM royal_corte_members WHERE guild_id=$1 AND user_id=$2
-        """, interaction.guild_id, membro.id)
+        """, ctx.guild.id, membro.id)
         nivel = nivel_por_xp(registro["xp_total"] if registro else 0)
         await self._sincronizar_cargo(membro, nivel)
-        await interaction.response.send_message(
-            f"✅ Sincronização solicitada para {membro.mention} no nível {nivel}. "
-            "Confira os cargos e a hierarquia do bot.", ephemeral=True,
+        await ctx.reply(
+            f"✅ Sincronização solicitada para {membro.mention} no nível **{nivel}**. "
+            "Confira os cargos e a hierarquia do bot.",
+            mention_author=False,
+            allowed_mentions=discord.AllowedMentions.none(),
         )
+
+    async def cog_command_error(self, ctx: commands.Context, erro: commands.CommandError):
+        """Mostra erros de permissão e de uso para todos os subcomandos."""
+        if isinstance(erro, commands.MissingPermissions):
+            await ctx.reply("⛔ Apenas quem possui **Gerenciar Servidor** pode usar esse comando.", mention_author=False)
+        elif isinstance(erro, commands.MissingRequiredArgument):
+            await ctx.reply(
+                f"❌ Argumento ausente. Use `!corte {ctx.command.name}` com os parâmetros necessários. "
+                "Digite `!corte` para consultar os exemplos.", mention_author=False,
+            )
+        elif isinstance(erro, commands.BadArgument):
+            await ctx.reply(
+                "❌ Argumento inválido. Confira a menção do cargo/canal/membro ou os valores numéricos. "
+                "Digite `!corte` para consultar os exemplos.", mention_author=False,
+            )
+        else:
+            LOG.error("Falha no comando da Corte Imperial", exc_info=(type(erro), erro, erro.__traceback__))
+            await ctx.reply("❌ Falha ao executar o comando. Consulte os logs do bot.", mention_author=False)
 
 
 async def setup(bot: commands.Bot):
