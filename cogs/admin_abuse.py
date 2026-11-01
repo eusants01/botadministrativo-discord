@@ -12,7 +12,7 @@ LOG = logging.getLogger("royal.admin_abuse")
 FAMILIA_GUILD_ID = 1553803921514963075
 CANAL_DROPS_URL = "https://discord.com/channels/1553803921514963075/1553820479582769323"
 BANNER = Path(__file__).resolve().parent.parent / "assets" / "admin_abuse_royal.png"
-COR_ROYAL = discord.Colour.from_rgb(212, 175, 55)
+COR_ROYAL = discord.Colour.from_rgb(138, 43, 226)
 
 
 class AnuncioAdminAbuse(discord.ui.LayoutView):
@@ -41,7 +41,7 @@ class AnuncioAdminAbuse(discord.ui.LayoutView):
         painel.add_item(
             discord.ui.TextDisplay(
                 "### <:versustrophy:1564669597440016485> Informações Básicas\n"
-                "> - `📅` **Data:** Domingo, 08 de novembro de 2026  \n"
+                "> - `📅` **Data:** <t:1794157200:R>  \n"
                 "> - `⏰` **Horário:** 14h00  \n"
                 "> - `🤔` **Onde:** Drops que serão lançados em "
                 f"[dropzinhos]({CANAL_DROPS_URL})"
