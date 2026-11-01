@@ -39,9 +39,22 @@ USUARIOS_CGEX_PORTAL: set[int] = set()
 # Só estes cargos e os administradores da Família podem APROVAR banimento.
 CARGOS_REVISORES: set[int] = {1553944794957615175}
 
+# Cargo que o assistente MARCA nas saudações (não é a lista de autorização).
+# Ajuste somente este ID se o cargo de Corregedoria for outro.
+CARGO_MENCAO_CGEX_ID = int(os.getenv("CGEX_ROLE_MENTION_ID", "1560374403051684012"))
+SAUDACOES_AUTOMATICAS = os.getenv("CGEX_SAUDACOES", "1").strip() == "1"
+# Evita marcar a equipe repetidamente via comando de teste.
+MENCIONAR_CGEX_NO_TESTE = os.getenv("CGEX_PING_TESTE", "0").strip() == "1"
+
 NOME_ASSISTENTE = "Assistente Royal"
 MODELO_IA = os.getenv("CGEX_OPENAI_MODEL", "gpt-4o-mini")
 API_KEY_IA = os.getenv("OPENAI_API_KEY", "").strip()
+# GPT-6 Luna usa esforço médio por padrão, gastando parte dos tokens
+# com raciocínio. Para bate-papo curto em JSON, 'none' é mais adequado.
+ESFORCO_IA = os.getenv(
+    "CGEX_REASONING_EFFORT",
+    "none" if MODELO_IA.startswith("gpt-6-luna") else "",
+).strip().lower()
 PORTA_BRIDGE = int(os.getenv("CGEX_BRIDGE_PORT", "0"))
 SEGREDO_BRIDGE = os.getenv("CGEX_BRIDGE_TOKEN", "").strip()
 HOST_BRIDGE = os.getenv("CGEX_BRIDGE_HOST", "127.0.0.1")
@@ -61,7 +74,7 @@ EXILIO_RE = re.compile(r"\b(exilad[oa]s?|ex[ií]lio|foi\s+exilad[oa])\b", flags=
 STATUS_RE = re.compile(r"\b(status|situa[cç][aã]o|andamento|protocolo|caso)\b", flags=re.I)
 
 MENSAGENS_PERIODICAS = (
-    "Olá, <@&1560374403051684012>! Se houver algum comunicado de exílio, estou disponível para registrar o protocolo e encaminhá-lo à revisão da Diretoria.",
+    "Olá, integrantes da Corregedoria! Se houver algum comunicado de exílio, estou disponível para registrar o protocolo e encaminhá-lo à revisão da Diretoria.",
     "Saudações, CGEx! Caso precisem analisar um exílio, podem me enviar o ID do usuário e o registro oficial para abrir um protocolo institucional.",
     "Central CGEx ativa. Se precisarem consultar um protocolo ou registrar um novo caso, estou à disposição para auxiliar a Corregedoria.",
 )
@@ -117,7 +130,7 @@ def montar_painel_ajuda() -> discord.ui.LayoutView:
     view = discord.ui.LayoutView(timeout=None)
     caixa = montar_container_base(com_banner=True)
     caixa.add_item(discord.ui.TextDisplay(
-        "# ⚖️・ASSISTENTE INSTITUCIONAL ROYAL\n"
+        "# <:CGEx:1560374896138256524>・ASSISTENTE INSTITUCIONAL ROYAL\n"
         "**Central CGEx** • Protocolos • Comunicação • Revisão"
     ))
     caixa.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
@@ -144,12 +157,16 @@ def montar_painel_ajuda() -> discord.ui.LayoutView:
     return view
 
 
-def montar_painel_boasvindas(mensagem: str) -> discord.ui.LayoutView:
+def montar_painel_boasvindas(
+    mensagem: str, *, mencao_cargo: str = "", com_banner: bool = True
+) -> discord.ui.LayoutView:
     view = discord.ui.LayoutView(timeout=None)
-    caixa = montar_container_base(com_banner=True)
+    caixa = montar_container_base(com_banner=com_banner)
+    linha_mencao = f"\n{mencao_cargo}" if mencao_cargo else ""
     caixa.add_item(discord.ui.TextDisplay(
         "# <:CGEx:1560374896138256524>・CENTRAL CGEx\n"
         "**Assistente Institucional Royal**"
+        f"{linha_mencao}"
     ))
     caixa.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
     caixa.add_item(discord.ui.TextDisplay(
@@ -198,14 +215,14 @@ class PainelRevisao(discord.ui.LayoutView):
         super().__init__(timeout=None if ativo else 180)
         caixa = montar_container_base(com_banner=True)
         caixa.add_item(discord.ui.TextDisplay(
-            f"# ⚖️・PROTOCOLO CGEX-{caso['id']:06d}\n"
-            f"**⌜ Situação ⌟** {resumo_status(caso['status'])}\n\n"
-            f"**⌜ Usuário ⌟** <@{caso['target_user_id']}> (`{caso['target_user_id']}`)\n"
-            f"**⌜ Comunicante ⌟** <@{caso['requester_id']}>\n"
-            f"**⌜ Origem ⌟** {caso['source']}\n"
-            f"**⌜ Comprovante ⌟** {caso['evidence_url'] or 'Não fornecido'}\n"
-            f"**⌜ Relato ⌟** {discord.utils.escape_markdown((caso['statement'] or '')[:500])}\n\n"
-            f"-# <a:regras2:1564669595904901250> A CGEx comunica o exílio e a Diretoria confirma a decisão administrativa."
+            f"# <:CGEx:1560374896138256524>・PROTOCOLO CGEX-{caso['id']:06d}\n"
+            f"**Situação** {resumo_status(caso['status'])}\n\n"
+            f"**Usuário** <@{caso['target_user_id']}> (`{caso['target_user_id']}`)\n"
+            f"**Comunicante** <@{caso['requester_id']}>\n"
+            f"**Origem** {caso['source']}\n"
+            f"**Comprovante** {caso['evidence_url'] or 'Não fornecido'}\n"
+            f"**Relato** {discord.utils.escape_markdown((caso['statement'] or '')[:500])}\n\n"
+            "-# <:regras2:1564669595904901250> A CGEx comunica o exílio e a Diretoria confirma a decisão administrativa."
         ))
         if ativo:
             caixa.add_item(discord.ui.ActionRow(
@@ -227,6 +244,7 @@ class AssistenteCGEx(commands.Cog):
         self._falas_recentes: dict[int, deque[str]] = defaultdict(lambda: deque(maxlen=4))
         self._estado_ia = "Não testada ainda" if API_KEY_IA else "Chave ausente (modo básico)"
         self._ultimo_teste_ia: datetime | None = None
+        self._ultimo_erro_ia: str | None = None
 
     def pool(self):
         pool = getattr(self.bot, "pool", None)
@@ -298,6 +316,14 @@ class AssistenteCGEx(commands.Cog):
             WHERE status IN ('needs_evidence','pending_review','processing')
         """)
         await pool.execute("""
+            CREATE TABLE IF NOT EXISTS royal_cgex_greetings (
+                guild_id BIGINT NOT NULL,
+                day DATE NOT NULL,
+                sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (guild_id, day)
+            )
+        """)
+        await pool.execute("""
             CREATE TABLE IF NOT EXISTS royal_cgex_audit (
                 id BIGSERIAL PRIMARY KEY,
                 case_id BIGINT NOT NULL REFERENCES royal_cgex_cases(id),
@@ -319,12 +345,13 @@ class AssistenteCGEx(commands.Cog):
                 LOG.warning("API do portal desativada: configure CGEX_BRIDGE_TOKEN com >=32 caracteres.")
             else:
                 await self.iniciar_bridge()
-        if not self.saudacao_periodica.is_running():
+        if SAUDACOES_AUTOMATICAS and not self.saudacao_periodica.is_running():
             self.saudacao_periodica.start()
         LOG.info("CGEx pronto (%d protocolos pendentes restaurados).", len(rows))
 
     async def cog_unload(self):
-        self.saudacao_periodica.cancel()
+        if self.saudacao_periodica.is_running():
+            self.saudacao_periodica.cancel()
         if self._bridge_runner is not None:
             await self._bridge_runner.cleanup()
         if self._session is not None:
@@ -336,34 +363,104 @@ class AssistenteCGEx(commands.Cog):
             VALUES ($1,$2,$3,$4)
         """, case_id, actor_id, evento, detalhe[:1000])
 
-    async def enviar_resposta_ctx(self, ctx: commands.Context, view: discord.ui.LayoutView, *, com_banner: bool = False):
+    def cargo_avisos(self, guild: discord.Guild | None) -> discord.Role | None:
+        if guild is None or CARGO_MENCAO_CGEX_ID <= 0:
+            return None
+        return guild.get_role(CARGO_MENCAO_CGEX_ID)
+
+    def mencoes_autorizadas(
+        self, guild: discord.Guild | None, *, marcar_cargo: bool = False
+    ) -> discord.AllowedMentions:
+        """Permite exclusivamente o cargo configurado. Nunca @everyone ou usuários."""
+        cargo = self.cargo_avisos(guild)
+        permissoes_bot = getattr(getattr(guild, "me", None), "guild_permissions", None)
+        pode_marcar = bool(
+            marcar_cargo and cargo is not None and
+            (cargo.mentionable or (permissoes_bot and permissoes_bot.mention_everyone))
+        )
+        if marcar_cargo and cargo is not None and not pode_marcar:
+            LOG.warning(
+                "A menção do cargo CGEx (%s) aparecerá no painel, mas sem notificar. "
+                "Marque o cargo como mencionável ou conceda 'Mencionar @everyone, @here e cargos'.",
+                cargo.id,
+            )
+        return discord.AllowedMentions(
+            everyone=False,
+            users=False,
+            roles=[cargo] if pode_marcar else False,
+            replied_user=False,
+        )
+
+    async def enviar_resposta_ctx(
+        self, ctx: commands.Context, view: discord.ui.LayoutView, *,
+        com_banner: bool = False, marcar_cargo: bool = False,
+        fallback_view: discord.ui.LayoutView | None = None,
+    ):
         banner = banner_path() if com_banner else None
+        me = getattr(ctx.guild, "me", None)
+        if banner and me and not ctx.channel.permissions_for(me).attach_files:
+            banner = None
+            if fallback_view:
+                view = fallback_view
         kwargs = {
             "view": view,
             "mention_author": False,
-            "allowed_mentions": discord.AllowedMentions.none(),
+            "allowed_mentions": self.mencoes_autorizadas(ctx.guild, marcar_cargo=marcar_cargo),
         }
         if banner is not None:
             with banner.open("rb") as fp:
                 return await ctx.reply(file=discord.File(fp, filename=ATTACHMENT_BANNER), **kwargs)
         return await ctx.reply(**kwargs)
 
-    async def enviar_view_canal(self, channel: discord.TextChannel, view: discord.ui.LayoutView, *, com_banner: bool = False):
+    async def enviar_view_canal(
+        self, channel: discord.TextChannel, view: discord.ui.LayoutView, *,
+        com_banner: bool = False, marcar_cargo: bool = False,
+        fallback_view: discord.ui.LayoutView | None = None,
+    ):
         banner = banner_path() if com_banner else None
-        kwargs = {"view": view, "allowed_mentions": discord.AllowedMentions.none()}
+        me = getattr(channel.guild, "me", None)
+        if banner and me and not channel.permissions_for(me).attach_files:
+            banner = None
+            if fallback_view:
+                view = fallback_view
+        kwargs = {
+            "view": view,
+            "allowed_mentions": self.mencoes_autorizadas(channel.guild, marcar_cargo=marcar_cargo),
+        }
         if banner is not None:
             with banner.open("rb") as fp:
                 return await channel.send(file=discord.File(fp, filename=ATTACHMENT_BANNER), **kwargs)
         return await channel.send(**kwargs)
 
-    async def enviar_boasvindas_cgex(self, destino: discord.TextChannel | commands.Context, *, automatica: bool = False):
+    async def enviar_boasvindas_cgex(
+        self, destino: discord.TextChannel | commands.Context, *,
+        automatica: bool = False, marcar_cargo: bool = False
+    ):
+        """Uma mensagem V2 com banner e marcação seletiva da equipe."""
         mensagem = next(self._rodizio_saudacoes) if automatica else (
-            "Olá, integrantes da Corregedoria! Se houver algum comunicado de exílio, podem me enviar o ID do usuário e o registro oficial para análise da Diretoria."
+            "Olá, integrantes da Corregedoria! Se houver algum comunicado de exílio, "
+            "podem me enviar o ID do usuário e o registro oficial para análise da Diretoria."
         )
-        view = montar_painel_boasvindas(mensagem)
+        guild = destino.guild
+        cargo = self.cargo_avisos(guild)
+        if cargo is None:
+            LOG.warning("CGEx: cargo de menção ID %s não encontrado no servidor.", CARGO_MENCAO_CGEX_ID)
+        # A menção fica dentro do TextDisplay (Components V2), nunca no conteúdo comum.
+        mencao = cargo.mention if cargo is not None else ""
+        view = montar_painel_boasvindas(mensagem, mencao_cargo=mencao, com_banner=True)
+        fallback_view = montar_painel_boasvindas(mensagem, mencao_cargo=mencao, com_banner=False)
         if isinstance(destino, commands.Context):
-            return await self.enviar_resposta_ctx(destino, view, com_banner=True)
-        return await self.enviar_view_canal(destino, view, com_banner=True)
+            # Não permite que invocação em outros canais notifique a CGEx.
+            pode_marcar = marcar_cargo and destino.channel.id == CANAL_CONVERSA_ID
+            return await self.enviar_resposta_ctx(
+                destino, view, com_banner=True,
+                marcar_cargo=pode_marcar, fallback_view=fallback_view,
+            )
+        return await self.enviar_view_canal(
+            destino, view, com_banner=True,
+            marcar_cargo=marcar_cargo and destino.id == CANAL_CONVERSA_ID,
+            fallback_view=fallback_view,
+        )
 
     def _registrar_conversa(self, actor_id: int, pergunta: str, resposta: str):
         self._conversa[actor_id].append({"role": "user", "content": pergunta[:1000]})
@@ -395,6 +492,8 @@ class AssistenteCGEx(commands.Cog):
             "Você é o Assistente Royal, um bot da Família Royal, parceiro da CGEx do E.B ALPHA no Discord. "
             "Fale em português do Brasil de modo natural, inteligente, simpático e descontraído. "
             "A comunidade gosta de resenha, Roblox, brincadeiras, piadas leves e amizade; entre na brincadeira! "
+            "Cumpra todas as partes de pedidos compostos, inclusive nomes mencionados e uma pergunta ao final se pedida. "
+            "Exemplo: 'conte piada sobre @Kael e depois pergunte algo' deve fazer uma piada sobre @Kael e uma pergunta. "
             "Quando pedirem para zoar alguém, faça provocações leves, criativas, sem humilhar, hostilizar, "
             "usar palavrões pesados nem ataques pessoais. Não xingue alguém de verdade. "
             "Se perguntarem como você está, responda como um personagem bem-humorado, não como menu de ajuda. "
@@ -420,12 +519,15 @@ class AssistenteCGEx(commands.Cog):
             "model": MODELO_IA,
             "store": False,
             "input": entrada,
-            "max_output_tokens": 600,
+            "max_output_tokens": 900 if MODELO_IA.startswith("gpt-6-luna") else 600,
             "text": {"format": {
                 "type": "json_schema", "name": "cgex_intencao",
                 "strict": True, "schema": esquema,
             }},
         }
+        # Não envia o campo reasoning aos modelos que não o suportam.
+        if ESFORCO_IA:
+            payload["reasoning"] = {"effort": ESFORCO_IA}
         try:
             async with self._session.post(
                 "https://api.openai.com/v1/responses", json=payload,
@@ -433,14 +535,30 @@ class AssistenteCGEx(commands.Cog):
             ) as resp:
                 self._ultimo_teste_ia = datetime.now(TZ_SP)
                 if resp.status != 200:
-                    self._estado_ia = f"Erro HTTP {resp.status} (modo básico)"
-                    LOG.warning("Falha da IA: HTTP %d; verificar chave, créditos e modelo.", resp.status)
+                    # Apresenta o motivo real do erro (sem expor chave ou token).
+                    codigo, detalhe = "", ""
+                    try:
+                        erro_data = await resp.json(content_type=None)
+                        erro = erro_data.get("error", {}) if isinstance(erro_data, dict) else {}
+                        codigo = str(erro.get("code") or erro.get("type") or "")[:50]
+                        detalhe = str(erro.get("message") or "")[:180]
+                    except (ValueError, TypeError, aiohttp.ClientError):
+                        detalhe = (await resp.text())[:180]
+                    detalhe = re.sub(r"sk-[A-Za-z0-9_-]{8,}", "[CHAVE OCULTADA]", detalhe)
+                    self._estado_ia = f"HTTP {resp.status}" + (f" · {codigo}" if codigo else "")
+                    self._ultimo_erro_ia = detalhe
+                    LOG.warning("API OpenAI HTTP %s (%s): %s", resp.status, codigo, detalhe)
                     return self.resposta_basica(texto, actor_id)
                 data = await resp.json()
             fragmentos = [
                 part.get("text", "") for item in data.get("output", [])
                 for part in item.get("content", []) if part.get("type") == "output_text"
             ]
+            if data.get("status") == "incomplete":
+                motivo = str((data.get("incomplete_details") or {}).get("reason") or "desconhecido")
+                raise ValueError(f"Resposta incompleta: {motivo}")
+            if not fragmentos:
+                raise ValueError(f"Resposta sem texto gerado (status={data.get('status')})")
             resultado = json.loads("".join(fragmentos))
             if resultado.get("intent") not in {"saudacao", "exilio", "banimento", "status", "ajuda", "conversa"}:
                 raise ValueError("Intenção da IA inválida")
@@ -448,13 +566,15 @@ class AssistenteCGEx(commands.Cog):
             if not resposta:
                 raise ValueError("A IA não retornou mensagem")
             self._estado_ia = "Conectada e respondendo"
+            self._ultimo_erro_ia = None
             self._registrar_conversa(actor_id, texto, resposta)
             resultado["resposta"] = resposta[:600]
             return resultado
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
             self._estado_ia = f"Falha de conexão/resposta: {type(exc).__name__}"
+            self._ultimo_erro_ia = str(exc)[:180]
             self._ultimo_teste_ia = datetime.now(TZ_SP)
-            LOG.warning("Falha ao interpretar conversa via IA (%s); ativando modo básico.", type(exc).__name__)
+            LOG.warning("Falha ao interpretar conversa via IA (%s): %s", type(exc).__name__, str(exc)[:180])
             return self.resposta_basica(texto, actor_id)
 
     def resposta_basica(self, texto: str, actor_id: int = 0) -> dict[str, Any]:
@@ -486,12 +606,24 @@ class AssistenteCGEx(commands.Cog):
             )
         elif re.search(r"\b(piadas?|engra[çc]ad[oa]|me faz rir|conta uma)\b", t):
             intent = "conversa"
-            alternativas = (
-                "Por que a coroa não joga esconde-esconde? Porque sempre acaba dando na vista! 👑😂",
-                "O cavaleiro chegou atrasado na call... disse que o cavalo estava sem internet. 🐎",
-                "A CGEx abriu processo contra o despertador: reincidência em perturbar o descanso real. ⚖️",
-                "Sabe qual é o jogo favorito da Corte? Aquele em que ninguém cai de conexão na final. 😂",
-            )
+            mencionado = re.search(r"@([\wÀ-ÿ'-]+)", texto)
+            sobre = re.search(r"\bsobre\s+(?:(?:o|a)\s+)?([\wÀ-ÿ'-]+)", texto, re.I)
+            nome = (mencionado.group(1) if mencionado else sobre.group(1) if sobre else "").strip(".,!?")
+            if nome:
+                alvo = "@" + nome if mencionado else nome
+                alternativas = (
+                    f"KKKK, {alvo} entrou na call e até o microfone pediu férias! 😂",
+                    f"{alvo} foi estudar Direito na Royal e saiu formado em fugir das provas. ⚖️😂",
+                    f"Dizem que {alvo} foi chamado para defender a coroa, mas ficou AFK no julgamento. 👑",
+                    f"{alvo} tem tanto talento para a resenha que já devia ganhar cargo de ministro da bagunça! 😂",
+                )
+            else:
+                alternativas = (
+                    "Por que a coroa não joga esconde-esconde? Porque sempre acaba dando na vista! 👑😂",
+                    "O cavaleiro chegou atrasado na call... disse que o cavalo estava sem internet. 🐎",
+                    "A CGEx abriu processo contra o despertador: reincidência em perturbar o descanso real. ⚖️",
+                    "Sabe qual é o jogo favorito da Corte? Aquele em que ninguém cai de conexão na final. 😂",
+                )
         elif re.search(r"\b(oi|ol[aá]|eai|e aí|salve|bom dia|boa tarde|boa noite|fala bot|tudo bem|como vai|suave)\b", t):
             intent = "saudacao"
             alternativas = (
@@ -551,6 +683,15 @@ class AssistenteCGEx(commands.Cog):
                 "Se tem uma coisa que eu aprendi na Royal, é que toda conversa rende um capítulo novo. 👀",
             )
         resposta = self._variar(actor_id, alternativas)
+        # Em pedidos compostos, execute também a parte de fazer uma pergunta.
+        if (intent == "conversa" and
+                re.search(r"\b(pergunta|perguntar|pergunte|perguntas|pergunt[aá]-me)\b", t) and
+                not resposta.rstrip().endswith("?")):
+            nome = re.search(r"@([\wÀ-ÿ'-]+)", texto)
+            if nome:
+                resposta += f" E aí, qual foi a maior resenha que o {nome.group(0)} aprontou?"
+            else:
+                resposta += " E aí, me conta: qual foi a melhor resenha da Royal esta semana?"
         self._registrar_conversa(actor_id, texto, resposta)
         return {
             "intent": intent,
@@ -730,19 +871,31 @@ class AssistenteCGEx(commands.Cog):
 
     @tasks.loop(minutes=120)
     async def saudacao_periodica(self):
+        """Uma saudação por dia com menção ao cargo, mesmo após reiniciar o bot."""
         canal = self.canal_conversa()
         if canal is None:
             return
         agora = datetime.now(TZ_SP)
-        if agora.hour < 10 or agora.hour > 20:
+        if not 10 <= agora.hour < 19:
             return
-        if self._ultima_saudacao and (agora - self._ultima_saudacao) < timedelta(hours=20):
+        dia = agora.date()
+        # A chave única do banco evita saudações duplicadas em múltiplos processos.
+        reservado = await self.pool().fetchrow("""
+            INSERT INTO royal_cgex_greetings (guild_id, day)
+            VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING day
+        """, canal.guild.id, dia)
+        if reservado is None:
             return
         try:
-            await self.enviar_boasvindas_cgex(canal, automatica=True)
+            await self.enviar_boasvindas_cgex(canal, automatica=True, marcar_cargo=True)
             self._ultima_saudacao = agora
-        except discord.HTTPException:
-            LOG.exception("Falha ao enviar saudação automática da CGEx")
+        except (discord.HTTPException, OSError) as exc:
+            # Libera nova tentativa em caso de falha real do Discord.
+            await self.pool().execute(
+                "DELETE FROM royal_cgex_greetings WHERE guild_id=$1 AND day=$2",
+                canal.guild.id, dia,
+            )
+            LOG.exception("Falha ao enviar saudação automática da CGEx: %s", exc)
 
     @saudacao_periodica.before_loop
     async def before_saudacao_periodica(self):
@@ -751,6 +904,15 @@ class AssistenteCGEx(commands.Cog):
     async def decidir(self, interaction: discord.Interaction, case_id: int, aprovar: bool):
         if not isinstance(interaction.user, discord.Member) or not self.revisor(interaction.user):
             return await interaction.response.send_message("⛔ Apenas revisores autorizados podem decidir.", ephemeral=True)
+        original = await self.pool().fetchrow(
+            "SELECT requester_id FROM royal_cgex_cases WHERE id=$1 AND guild_id=$2",
+            case_id, ROYAL_GUILD_ID,
+        )
+        if original and original["requester_id"] == interaction.user.id:
+            return await interaction.response.send_message(
+                "⛔ O comunicante não pode aprovar ou recusar seu próprio protocolo. "
+                "Solicite a decisão de outro revisor.", ephemeral=True,
+            )
         await interaction.response.defer(ephemeral=True, thinking=True)
         caso = await self.pool().fetchrow("""
             UPDATE royal_cgex_cases SET status='processing'
@@ -803,7 +965,7 @@ class AssistenteCGEx(commands.Cog):
             try:
                 await canal_log.send(
                     f"⚖️ **CGEX-{case_id:06d}** — {resumo_status(status)}\n"
-                    f"**⌜ Usuário ⌟** `{caso['target_user_id']}` ・ **⌜ Revisor ⌟** <@{interaction.user.id}>",
+                    f"**Usuário** `{caso['target_user_id']}` ・ **Revisor** <@{interaction.user.id}>",
                     allowed_mentions=discord.AllowedMentions.none(),
                 )
             except discord.HTTPException:
@@ -827,20 +989,64 @@ class AssistenteCGEx(commands.Cog):
         )
         view = montar_texto_curto(
             "🤖・DIAGNÓSTICO DA IA",
-            f"**⌜ Modelo ⌟** `{MODELO_IA}`\n"
-            f"**⌜ Chave configurada ⌟** {'Sim' if API_KEY_IA else 'Não'}\n"
-            f"**⌜ Estado ⌟** {self._estado_ia}\n"
-            f"**⌜ Última tentativa ⌟** {quando}\n\n"
+            f"**Modelo** `{MODELO_IA}`\n"
+            f"**Chave configurada** {'Sim' if API_KEY_IA else 'Não'}\n"
+            f"**Estado** {self._estado_ia}\n"
+            f"**Última tentativa** {quando}\n"
+            f"**Esforço de raciocínio** `{ESFORCO_IA or 'padrão do modelo'}`\n"
+            f"**Último erro** {discord.utils.escape_markdown(self._ultimo_erro_ia or 'Nenhum registrado')[:180]}\n\n"
             "-# Sem IA ativa, a resenha usa respostas alternativas locais. "
             "Se aparecer erro HTTP 401, confira a chave; 429 pode indicar limite ou créditos.",
         )
         await self.enviar_resposta_ctx(ctx, view)
 
+    @cgex.command(name="diagnostico", aliases=["diag"])
+    async def diagnostico(self, ctx: commands.Context):
+        """Diagnóstico de cargo, menções, canais e conexão com a IA."""
+        if not isinstance(ctx.author, discord.Member) or not self.revisor(ctx.author):
+            return await ctx.reply("⛔ Apenas revisores podem consultar o diagnóstico.", mention_author=False)
+        cargo = self.cargo_avisos(ctx.guild)
+        me = getattr(ctx.guild, "me", None)
+        pode_marcar = bool(cargo and (cargo.mentionable or
+                                (me and me.guild_permissions.mention_everyone)))
+        canal = self.canal_conversa()
+        me_perms = canal.permissions_for(me) if canal and me else None
+        texto = (
+            f"**Cargo CGEx** `{CARGO_MENCAO_CGEX_ID}` · {'encontrado' if cargo else 'NÃO ENCONTRADO'}\n"
+            f"**Menção habilitada** {'Sim' if pode_marcar else 'Não (exige cargo mencionável ou permissão de mencionar cargos)'}\n"
+            f"**Canal CGEx** {'Localizado' if canal else 'NÃO LOCALIZADO'}\n"
+            f"**Permissão para enviar** {'Sim' if me_perms and me_perms.send_messages else 'Não'}\n"
+            f"**Saudação automática** {'Ativada' if self.saudacao_periodica.is_running() else 'Desativada'}\n"
+            f"**IA** {self._estado_ia}\n"
+            "-# As configurações de segurança, protocolo e PostgreSQL permanecem preservadas."
+        )
+        await self.enviar_resposta_ctx(ctx, montar_texto_curto("🩺・DIAGNÓSTICO CGEx", texto))
+
+    @cgex.command(name="testaria", aliases=["testar_ia"])
+    async def testar_ia(self, ctx: commands.Context):
+        """!cgex testaria — executa uma requisição real para diagnosticar a API."""
+        if not isinstance(ctx.author, discord.Member) or not self.revisor(ctx.author):
+            return await ctx.reply("⛔ Apenas revisores podem testar a IA.", mention_author=False)
+        async with ctx.typing():
+            await self.resposta_ia(
+                "Responda com uma saudação curta e uma pergunta amigável, sem abrir protocolos.",
+                ctx.author.id,
+            )
+        resposta = (
+            f"**Modelo:** `{MODELO_IA}`\n"
+            f"**Estado:** {self._estado_ia}\n"
+            f"**Último erro:** {discord.utils.escape_markdown(self._ultimo_erro_ia or 'Nenhum')[:250]}\n"
+            "-# Teste real da API. Se houver falha, confira os logs e o faturamento no painel OpenAI."
+        )
+        await self.enviar_resposta_ctx(ctx, montar_texto_curto("🤖・TESTE DA IA", resposta))
+
     @cgex.command(name="boasvindas", aliases=["saudacao"])
     async def boasvindas(self, ctx: commands.Context):
         if not self.autorizado(ctx.author):
             return
-        await self.enviar_boasvindas_cgex(ctx)
+        await self.enviar_boasvindas_cgex(
+            ctx, marcar_cargo=MENCIONAR_CGEX_NO_TESTE and self.revisor(ctx.author)
+        )
 
     @cgex.command(name="abrir", aliases=["exilio"])
     async def abrir(self, ctx: commands.Context, target_id: int, comprovante: str):
