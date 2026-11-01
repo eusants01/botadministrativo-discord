@@ -246,6 +246,31 @@ class AssistenteCGEx(commands.Cog):
         self._ultimo_teste_ia: datetime | None = None
         self._ultimo_erro_ia: str | None = None
 
+    async def cog_before_invoke(self, ctx: commands.Context):
+        """Oculta a invocação de comandos !cgex antes da resposta pública.
+
+        Prefixos não são efêmeros no Discord: a mensagem pode ser vista brevemente
+        antes da exclusão. Mantemos actor_id nas auditorias internas dos protocolos.
+        """
+        if ctx.guild is None or ctx.message is None:
+            return
+        bot_member = ctx.guild.me
+        if bot_member is None:
+            LOG.warning("CGEx: não foi possível conferir Gerenciar Mensagens em %s.", ctx.guild.id)
+            return
+        if not ctx.channel.permissions_for(bot_member).manage_messages:
+            LOG.warning(
+                "CGEx: falta Gerenciar Mensagens no canal %s; comando %s permanecerá visível.",
+                ctx.channel.id, ctx.command.qualified_name if ctx.command else "cgex",
+            )
+            return
+        try:
+            await ctx.message.delete()
+        except discord.NotFound:
+            pass  # Mensagem já foi excluída por outro processo.
+        except (discord.Forbidden, discord.HTTPException):
+            LOG.exception("CGEx: não foi possível excluir a mensagem do comando no canal %s.", ctx.channel.id)
+
     def pool(self):
         pool = getattr(self.bot, "pool", None)
         if pool is None:
@@ -404,13 +429,12 @@ class AssistenteCGEx(commands.Cog):
                 view = fallback_view
         kwargs = {
             "view": view,
-            "mention_author": False,
             "allowed_mentions": self.mencoes_autorizadas(ctx.guild, marcar_cargo=marcar_cargo),
         }
         if banner is not None:
             with banner.open("rb") as fp:
-                return await ctx.reply(file=discord.File(fp, filename=ATTACHMENT_BANNER), **kwargs)
-        return await ctx.reply(**kwargs)
+                return await ctx.channel.send(file=discord.File(fp, filename=ATTACHMENT_BANNER), **kwargs)
+        return await ctx.channel.send(**kwargs)
 
     async def enviar_view_canal(
         self, channel: discord.TextChannel, view: discord.ui.LayoutView, *,
@@ -975,14 +999,14 @@ class AssistenteCGEx(commands.Cog):
     @commands.guild_only()
     async def cgex(self, ctx: commands.Context):
         if not isinstance(ctx.author, discord.Member) or not self.autorizado(ctx.author):
-            return await ctx.reply("⛔ Acesso restrito à CGEx e à Diretoria.", mention_author=False)
+            return await ctx.send("⛔ Acesso restrito à CGEx e à Diretoria.")
         await self.enviar_resposta_ctx(ctx, montar_painel_ajuda(), com_banner=True)
 
     @cgex.command(name="ia", aliases=["statusia"])
     async def status_ia(self, ctx: commands.Context):
         """!cgex ia — informa se a IA está funcionando, sem expor a chave."""
         if not isinstance(ctx.author, discord.Member) or not self.revisor(ctx.author):
-            return await ctx.reply("⛔ Somente revisores podem consultar o estado da IA.", mention_author=False)
+            return await ctx.send("⛔ Somente revisores podem consultar o estado da IA.")
         quando = (
             f"<t:{int(self._ultimo_teste_ia.timestamp())}:R>"
             if self._ultimo_teste_ia else "Ainda sem teste de conexão"
@@ -1004,18 +1028,20 @@ class AssistenteCGEx(commands.Cog):
     async def diagnostico(self, ctx: commands.Context):
         """Diagnóstico de cargo, menções, canais e conexão com a IA."""
         if not isinstance(ctx.author, discord.Member) or not self.revisor(ctx.author):
-            return await ctx.reply("⛔ Apenas revisores podem consultar o diagnóstico.", mention_author=False)
+            return await ctx.send("⛔ Apenas revisores podem consultar o diagnóstico.")
         cargo = self.cargo_avisos(ctx.guild)
         me = getattr(ctx.guild, "me", None)
         pode_marcar = bool(cargo and (cargo.mentionable or
                                 (me and me.guild_permissions.mention_everyone)))
         canal = self.canal_conversa()
         me_perms = canal.permissions_for(me) if canal and me else None
+        comando_perms = ctx.channel.permissions_for(me) if me else None
         texto = (
             f"**Cargo CGEx** `{CARGO_MENCAO_CGEX_ID}` · {'encontrado' if cargo else 'NÃO ENCONTRADO'}\n"
             f"**Menção habilitada** {'Sim' if pode_marcar else 'Não (exige cargo mencionável ou permissão de mencionar cargos)'}\n"
             f"**Canal CGEx** {'Localizado' if canal else 'NÃO LOCALIZADO'}\n"
             f"**Permissão para enviar** {'Sim' if me_perms and me_perms.send_messages else 'Não'}\n"
+            f"**Ocultar comandos neste canal** {'Sim' if comando_perms and comando_perms.manage_messages else 'Não — conceda Gerenciar Mensagens'}\n"
             f"**Saudação automática** {'Ativada' if self.saudacao_periodica.is_running() else 'Desativada'}\n"
             f"**IA** {self._estado_ia}\n"
             "-# As configurações de segurança, protocolo e PostgreSQL permanecem preservadas."
@@ -1026,7 +1052,7 @@ class AssistenteCGEx(commands.Cog):
     async def testar_ia(self, ctx: commands.Context):
         """!cgex testaria — executa uma requisição real para diagnosticar a API."""
         if not isinstance(ctx.author, discord.Member) or not self.revisor(ctx.author):
-            return await ctx.reply("⛔ Apenas revisores podem testar a IA.", mention_author=False)
+            return await ctx.send("⛔ Apenas revisores podem testar a IA.")
         async with ctx.typing():
             await self.resposta_ia(
                 "Responda com uma saudação curta e uma pergunta amigável, sem abrir protocolos.",
@@ -1051,9 +1077,9 @@ class AssistenteCGEx(commands.Cog):
     @cgex.command(name="abrir", aliases=["exilio"])
     async def abrir(self, ctx: commands.Context, target_id: int, comprovante: str):
         if not self.autorizado(ctx.author):
-            return await ctx.reply("⛔ Acesso restrito.", mention_author=False)
+            return await ctx.send("⛔ Acesso restrito.")
         if not extrair_link(comprovante):
-            return await ctx.reply("Informe um link `https://...` válido de registro oficial.", mention_author=False)
+            return await ctx.send("Informe um link `https://...` válido de registro oficial.")
         try:
             ident, result = await self.criar_caso(
                 ctx.author.id,
@@ -1063,7 +1089,7 @@ class AssistenteCGEx(commands.Cog):
                 "discord",
             )
         except (ValueError, RuntimeError) as exc:
-            return await ctx.reply(f"⚠️ {exc}", mention_author=False)
+            return await ctx.send(f"⚠️ {exc}")
         view = montar_texto_curto(
             f"⚖️・PROTOCOLO CGEX-{ident:06d}",
             f"{result}\n**⌜ Alvo ⌟** `{target_id}`",
@@ -1074,19 +1100,19 @@ class AssistenteCGEx(commands.Cog):
     @cgex.command(name="prova")
     async def prova(self, ctx: commands.Context, protocolo: int, link: str):
         if not self.autorizado(ctx.author):
-            return await ctx.reply("⛔ Acesso restrito.", mention_author=False)
+            return await ctx.send("⛔ Acesso restrito.")
         comprovante = extrair_link(link)
         if not comprovante:
-            return await ctx.reply("Informe um link `https://...` válido.", mention_author=False)
+            return await ctx.send("Informe um link `https://...` válido.")
         caso = await self.pool().fetchrow(
             "SELECT * FROM royal_cgex_cases WHERE id=$1 AND guild_id=$2",
             protocolo,
             ROYAL_GUILD_ID,
         )
         if not caso or caso["status"] != "needs_evidence":
-            return await ctx.reply("Protocolo não encontrado ou não aguarda comprovante.", mention_author=False)
+            return await ctx.send("Protocolo não encontrado ou não aguarda comprovante.")
         if caso["requester_id"] != ctx.author.id and not self.revisor(ctx.author):
-            return await ctx.reply("Somente o comunicante ou revisor pode anexar prova.", mention_author=False)
+            return await ctx.send("Somente o comunicante ou revisor pode anexar prova.")
         await self.pool().execute(
             "UPDATE royal_cgex_cases SET evidence_url=$2,status='pending_review' WHERE id=$1",
             protocolo,
@@ -1094,34 +1120,32 @@ class AssistenteCGEx(commands.Cog):
         )
         await self.auditoria(protocolo, ctx.author.id, "evidence_added", comprovante)
         await self.publicar_revisao(protocolo)
-        await ctx.reply(
+        await ctx.send(
             f"✅ Comprovante registrado em **CGEX-{protocolo:06d}** para análise.",
-            mention_author=False,
         )
 
     @cgex.command(name="status")
     async def status(self, ctx: commands.Context, protocolo: int):
         if not self.autorizado(ctx.author):
-            return await ctx.reply("⛔ Acesso restrito.", mention_author=False)
-        await ctx.reply(
+            return await ctx.send("⛔ Acesso restrito.")
+        await ctx.send(
             await self.consultar_status(ctx.author.id, protocolo),
-            mention_author=False,
             allowed_mentions=discord.AllowedMentions.none(),
         )
 
     @cgex.command(name="cancelar")
     async def cancelar(self, ctx: commands.Context, protocolo: int):
         if not self.autorizado(ctx.author):
-            return await ctx.reply("⛔ Acesso restrito.", mention_author=False)
+            return await ctx.send("⛔ Acesso restrito.")
         caso = await self.pool().fetchrow(
             "SELECT * FROM royal_cgex_cases WHERE id=$1 AND guild_id=$2",
             protocolo,
             ROYAL_GUILD_ID,
         )
         if not caso or caso["status"] not in ("needs_evidence", "pending_review"):
-            return await ctx.reply("Caso indisponível para cancelamento.", mention_author=False)
+            return await ctx.send("Caso indisponível para cancelamento.")
         if caso["requester_id"] != ctx.author.id and not self.revisor(ctx.author):
-            return await ctx.reply("Somente o comunicante ou revisor pode cancelar.", mention_author=False)
+            return await ctx.send("Somente o comunicante ou revisor pode cancelar.")
         await self.pool().execute(
             """
             UPDATE royal_cgex_cases SET status='cancelled',decided_by=$2,decided_at=NOW()
@@ -1131,23 +1155,23 @@ class AssistenteCGEx(commands.Cog):
             ctx.author.id,
         )
         await self.auditoria(protocolo, ctx.author.id, "cancelled")
-        await ctx.reply(f"✅ CGEX-{protocolo:06d} cancelado.", mention_author=False)
+        await ctx.send(f"✅ CGEX-{protocolo:06d} cancelado.")
 
     @cgex.command(name="revisar")
     async def revisar(self, ctx: commands.Context, protocolo: int):
         if not self.revisor(ctx.author):
-            return await ctx.reply("⛔ Apenas revisores podem reenviar a revisão.", mention_author=False)
+            return await ctx.send("⛔ Apenas revisores podem reenviar a revisão.")
         caso = await self.pool().fetchrow(
             "SELECT * FROM royal_cgex_cases WHERE id=$1 AND guild_id=$2",
             protocolo,
             ROYAL_GUILD_ID,
         )
         if not caso or caso["status"] != "pending_review":
-            return await ctx.reply("Protocolo não está em revisão.", mention_author=False)
+            return await ctx.send("Protocolo não está em revisão.")
         if caso["review_message_id"]:
-            return await ctx.reply("Este protocolo já foi publicado na revisão.", mention_author=False)
+            return await ctx.send("Este protocolo já foi publicado na revisão.")
         await self.publicar_revisao(protocolo)
-        await ctx.reply("✅ Tentativa de publicação realizada. Confira o canal e os logs.", mention_author=False)
+        await ctx.send("✅ Tentativa de publicação realizada. Confira o canal e os logs.")
 
     async def relatorio(self, guild_id: int) -> str:
         rows = await self.pool().fetch(
@@ -1173,10 +1197,9 @@ class AssistenteCGEx(commands.Cog):
     @cgex.command(name="relatorio", aliases=["relatórios", "relatorios"])
     async def comando_relatorio(self, ctx: commands.Context):
         if not self.revisor(ctx.author):
-            return await ctx.reply("⛔ Somente revisores podem consultar o relatório geral.", mention_author=False)
-        await ctx.reply(
+            return await ctx.send("⛔ Somente revisores podem consultar o relatório geral.")
+        await ctx.send(
             (await self.relatorio(ctx.guild.id))[:1950],
-            mention_author=False,
             allowed_mentions=discord.AllowedMentions.none(),
         )
 
