@@ -85,7 +85,7 @@ def montar_painel(member: discord.Member, *, com_banner: bool) -> discord.ui.Lay
     panel.add_item(
         discord.ui.TextDisplay(
             "## 🌸 Um novo capítulo começa aqui!\n"
-            f"Seja muito bem-vindo(a), {member.mention}! 👑\n"
+            f"Seja muito bem-vindo(a), {member.mention}! <a:coroa:1564000189167960177>\n"
             "Agora você faz parte da **Família Royal**, onde cada pessoa tem sua história, "
             "cada amizade importa e a diversão nunca fica de fora."
         )
@@ -93,26 +93,25 @@ def montar_painel(member: discord.Member, *, com_banner: bool) -> discord.ui.Lay
     panel.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
     panel.add_item(
         discord.ui.TextDisplay(
-            "**🪽 Conheça a nossa Família**\n"
+            "**<:pi_gift:1553900917466865789> Conheça a nossa Família**\n"
             "Fundada em **28/01/2026**, com raízes no **E.B. do ALPHA**, a Royal reúne "
             "amizades, resenhas, desafios, eventos e histórias inesquecíveis.\n"
-            "**⚜️ Nossos pilares:** Honra • União • Lealdade"
         )
     )
     panel.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
     panel.add_item(
         discord.ui.TextDisplay(
-            "**📚 Comece por aqui**\n"
-            f"📜 **Regras:** {channel_ref('ROYAL_RULES_CHANNEL_ID')}\n"
-            f"🎭 **Cargos:** {channel_ref('ROYAL_ROLES_CHANNEL_ID')}\n"
-            f"🎁 **Sorteios:** {channel_ref('ROYAL_GIVEAWAYS_CHANNEL_ID')}\n"
-            f"🎫 **Suporte:** {channel_ref('ROYAL_SUPPORT_CHANNEL_ID')}"
+            "<:pi_bow:1565454181207244820> **Saiba mais**\n"
+            f"`📜` Conheça nossas regras e evite problemas\n"
+            f"`🎭` Conheça nossos cargos e suas responsabilidades\n"
+            f"`🎁` acompanhe nossos sorteios e promoções\n"
+            f"`🎫` solicite suporte quando necessário"
         )
     )
     panel.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
     panel.add_item(
         discord.ui.TextDisplay(
-            "-# 👑 Família Royal — Honra, União e Lealdade. Aproveite sua chegada!"
+            "-# 👑 Família Royal"
         )
     )
 
@@ -126,15 +125,15 @@ def mensagem_simples(member: discord.Member) -> str:
         "**🌸 BOAS-VINDAS À FAMÍLIA ROYAL!**\n"
         f"Seja muito bem-vindo(a), {member.mention}! 👑\n"
         "Aqui cada pessoa tem sua história, cada amizade importa e a diversão nunca fica de fora.\n\n"
-        "**🪽 Nossa Família**\n"
+        "**<:pi_gift:1553900917466865789> Nossa Família**\n"
         "Fundada em **28/01/2026**, com raízes no **E.B. do ALPHA**, a Royal "
         "é feita de amizades, eventos, desafios e boas histórias.\n"
         "**⚜️ Honra • União • Lealdade**\n\n"
-        "**📚 Comece por aqui**\n"
-        f"📜 Regras: {channel_ref('ROYAL_RULES_CHANNEL_ID')}\n"
-        f"🎭 Cargos: {channel_ref('ROYAL_ROLES_CHANNEL_ID')}\n"
-        f"🎁 Sorteios: {channel_ref('ROYAL_GIVEAWAYS_CHANNEL_ID')}\n"
-        f"🎫 Suporte: {channel_ref('ROYAL_SUPPORT_CHANNEL_ID')}\n\n"
+        "**<:pi_bow:1565454181207244820> Saiba mais**\n"
+        f"`📜` Regras: {channel_ref('ROYAL_RULES_CHANNEL_ID')}\n"
+        f"`🎭` Cargos: {channel_ref('ROYAL_ROLES_CHANNEL_ID')}\n"
+        f"`🎁` Sorteios: {channel_ref('ROYAL_GIVEAWAYS_CHANNEL_ID')}\n"
+        f"`🎫` Suporte: {channel_ref('ROYAL_SUPPORT_CHANNEL_ID')}\n\n"
         "-# 👑 Família Royal — Aproveite sua chegada!"
     )
 
