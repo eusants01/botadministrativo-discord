@@ -104,8 +104,8 @@ def montar_painel(member: discord.Member, *, com_banner: bool) -> discord.ui.Lay
             "<:pi_bow:1565454181207244820> **Saiba mais**\n"
             f"`📜` Conheça nossas regras e evite problemas\n"
             f"`🎭` Conheça nossos cargos e suas responsabilidades\n"
-            f"`🎁` acompanhe nossos sorteios e promoções\n"
-            f"`🎫` solicite suporte quando necessário"
+            f"`🎁` Acompanhe nossos sorteios e promoções\n"
+            f"`🎫` Solicite suporte quando necessário"
         )
     )
     panel.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
@@ -123,7 +123,7 @@ def mensagem_simples(member: discord.Member) -> str:
     """Texto alternativo para instalações sem suporte a Components V2."""
     return (
         "**🌸 BOAS-VINDAS À FAMÍLIA ROYAL!**\n"
-        f"Seja muito bem-vindo(a), {member.mention}! 👑\n"
+        f"Seja muito bem-vindo(a), {member.mention}! <a:coroa:1564000189167960177>\n"
         "Aqui cada pessoa tem sua história, cada amizade importa e a diversão nunca fica de fora.\n\n"
         "**<:pi_gift:1553900917466865789> Nossa Família**\n"
         "Fundada em **28/01/2026**, com raízes no **E.B. do ALPHA**, a Royal "
