@@ -20,11 +20,9 @@ logger = logging.getLogger("sants.bot.cargos_exclusivos")
 
 CANAL_CARGOS_PADRAO = 1553820522322862200
 BANNER_NOME = "cargos_exclusivos_royal.png"
-MARCADOR = "👑 CARGOS EXCLUSIVOS | FAMÍLIA ROYAL"
+MARCADOR = "<a:coroa:1564000189167960177> CARGOS EXCLUSIVOS"
 COR_DESTAQUE = discord.Colour.from_rgb(137, 78, 150)
 
-# As descrições são INFORMATIVAS. Os multiplicadores e as chances nos sorteios
-# devem ser aplicados pelos sistemas de XP e sorteio, respectivamente.
 CARGOS = (
     (
         "Joker", 1553837456585920624,
@@ -50,7 +48,7 @@ CARGOS = (
     (
         "Corregedoria Geral do E.B", 1560374403051684012,
         (
-            ("🔒", "Canal administrativo."),
+            ("🗯️", "Canal administrativo."),
             ("🔑", "Obtível através da comprovação do cargo no E.B."),
         ),
     ),
@@ -65,7 +63,7 @@ CARGOS = (
         "Membros oficiais da Família", 1554367619463913582,
         (
             ("💰", "**2x** de multiplicador de XP."),
-            ("🔒", "Canais exclusivos."),
+            ("🗯️", "Canais exclusivos."),
             ("⭐", "Permissões especiais no servidor da Família e no servidor do E.B."),
             ("💰", "**2x** entradas nos sorteios."),
             ("🎉", "Sorteios exclusivos."),
@@ -123,10 +121,9 @@ def conteudos_painel() -> list[str]:
         citacoes = "\n".join(
             f"> `{icone}` {descricao}" for icone, descricao in informacoes
         )
-        blocos.append(f"### <@&{role_id}>\n\n{citacoes}")
+        blocos.append(f"### <@&{role_id}>\n{citacoes}")
     blocos.append(
-        "-# ⚜️ Família Royal • Honra · União · Lealdade\n"
-        "-# Os bônus de XP e sorteios dependem dos respectivos sistemas do servidor."
+        "-# <:ImagemdoChatGPT25deoutde202615_4:1563986647144730826> Família Royal\n"
     )
     return blocos
 
@@ -136,33 +133,40 @@ def texto_painel() -> str:
 
 
 def painel_v2(*, com_banner: bool) -> discord.ui.LayoutView:
-    """Mantém cada contêiner abaixo do limite de 10 componentes do Discord."""
-    blocos = conteudos_painel()
-    view = discord.ui.LayoutView(timeout=None)
+    """Exibe banner, seis cargos e rodapé em UM único contêiner V2.
 
-    cabecalho = discord.ui.Container(accent_colour=COR_DESTAQUE)
+    Um TextDisplay único evita os espaços e bordas entre grupos de cargos,
+    mantendo as menções e os benefícios no mesmo painel visual.
+    """
+    view = discord.ui.LayoutView(timeout=None)
+    painel = discord.ui.Container(accent_colour=COR_DESTAQUE)
+
     if com_banner:
-        cabecalho.add_item(discord.ui.MediaGallery(
+        painel.add_item(discord.ui.MediaGallery(
             discord.MediaGalleryItem(
                 media=f"attachment://{BANNER_NOME}",
                 description="Sants, Kael e Mateus — Cargos Exclusivos da Família Royal",
             )
         ))
-    cabecalho.add_item(discord.ui.TextDisplay(blocos[0]))
-    view.add_item(cabecalho)
 
-    for parte in (blocos[1:4], blocos[4:7]):
-        container = discord.ui.Container(accent_colour=COR_DESTAQUE)
-        for posicao, bloco in enumerate(parte):
-            if posicao:
-                container.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
-            container.add_item(discord.ui.TextDisplay(bloco))
-        view.add_item(container)
+    conteudo = texto_painel()
+    if len(conteudo) > 4000:
+        raise ValueError("O texto do painel ultrapassou o limite do TextDisplay (4.000 caracteres).")
 
-    rodape = discord.ui.Container(accent_colour=COR_DESTAQUE)
-    rodape.add_item(discord.ui.TextDisplay(blocos[7]))
-    view.add_item(rodape)
+    painel.add_item(discord.ui.TextDisplay(conteudo))
+    view.add_item(painel)
     return view
+
+
+def _painel_unico(mensagem: discord.Message) -> bool:
+    """Detecta o contêiner único para atualizar o layout antigo mesmo com texto igual."""
+    componentes = getattr(mensagem, "components", ())
+    tipo_container = getattr(discord.ComponentType, "container", None)
+    return (
+        tipo_container is not None
+        and len(componentes) == 1
+        and getattr(componentes[0], "type", None) == tipo_container
+    )
 
 
 def _texto_componentes(componentes) -> str:
@@ -263,6 +267,7 @@ class CargosExclusivosRoyal(commands.Cog):
                         _texto_mensagem(anterior).strip() == esperado
                         and banner_atual
                         and painel_anterior_v2 == v2
+                        and (not v2 or _painel_unico(anterior))
                     ):
                         self.ultima_falha = None
                         return True, "O painel já está atualizado; nenhuma mensagem duplicada foi criada."
