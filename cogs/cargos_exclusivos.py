@@ -12,7 +12,7 @@ logger = logging.getLogger("sants.bot.cargos_exclusivos")
 
 CANAL_CARGOS_PADRAO = 1553820522322862200
 BANNER_NOME = "cargos_exclusivos_royal.png"
-MARCADOR = "👑 CARGOS EXCLUSIVOS | FAMÍLIA ROYAL"
+MARCADOR = "<a:coroa:1564000189167960177> CARGOS EXCLUSIVOS | FAMÍLIA ROYAL"
 COR_DESTAQUE = discord.Colour.from_rgb(137, 78, 150)
 
 CARGOS = (
@@ -43,7 +43,7 @@ CARGOS = (
         "Corregedoria Geral do E.B", 1560374403051684012,
         (
             ("🔒", "Canal administrativo."),
-            ("🔑", "Obtível através da **comprovação** do cargo no E.B."),
+            ("🔑", "Obtível através da comprovação do cargo no E.B."),
         ),
     ),
     (
@@ -68,7 +68,7 @@ CARGOS = (
     (
         "Skull Cat", 1567374808331587724,
         (
-            ("🐈", "???"),
+            ("❓", "???"),
         ),
     ),
     (
@@ -81,7 +81,6 @@ CARGOS = (
 
 
 def canal_cargos_id() -> int:
-    """Permite ajustar o ID sem alterar o arquivo (ROYAL_ROLES_CHANNEL_ID)."""
     configurado = os.getenv("ROYAL_ROLES_CHANNEL_ID", "").strip()
     if configurado:
         try:
@@ -117,54 +116,61 @@ def components_v2_disponivel() -> bool:
     )
 
 
-def bloco_cargo(nome: str, role_id: int, informacoes: tuple[tuple[str, str], ...]) -> str:
+def bloco_cargo(_nome: str, role_id: int, informacoes: tuple[tuple[str, str], ...]) -> str:
     detalhes = "\n".join(f"> `{icone}` {descricao}" for icone, descricao in informacoes)
     return f"### <@&{role_id}>\n{detalhes}"
 
 
-def texto_principal() -> str:
-    blocos = [bloco_cargo(nome, role_id, informacoes) for nome, role_id, informacoes in CARGOS]
-    return "\n\n".join(blocos)
-
-
 def texto_painel() -> str:
+    blocos = [bloco_cargo(nome, role_id, informacoes) for nome, role_id, informacoes in CARGOS]
+    corpo = "\n\n---\n\n".join(blocos)
     return (
         f"## {MARCADOR}\n"
-        "Família Royal.\n\n"
-        f"{texto_principal()}\n\n"
+        "Família Royal - Cargos Exclusivos\n\n"
     )
 
 
-def painel_v2(*, com_banner: bool) -> discord.ui.LayoutView:
-    """Um único painel Components V2, com espaçamento curto e visual formal."""
-    view = discord.ui.LayoutView(timeout=None)
-    container = discord.ui.Container(accent_colour=COR_DESTAQUE)
+def _adicionar_bloco_com_divisorias(container: discord.ui.Container, itens: list[tuple[str, int, tuple[tuple[str, str], ...]]]) -> None:
+    for i, (nome, role_id, informacoes) in enumerate(itens):
+        container.add_item(discord.ui.TextDisplay(bloco_cargo(nome, role_id, informacoes)))
+        if i < len(itens) - 1:
+            container.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
 
+
+def painel_v2(*, com_banner: bool) -> discord.ui.LayoutView:
+    """Layout mais formal, com divisórias elegantes entre os cargos."""
+    view = discord.ui.LayoutView(timeout=None)
+
+    topo = discord.ui.Container(accent_colour=COR_DESTAQUE)
     if com_banner:
-        container.add_item(discord.ui.MediaGallery(
+        topo.add_item(discord.ui.MediaGallery(
             discord.MediaGalleryItem(
                 media=f"attachment://{BANNER_NOME}",
                 description="Sants, Kael e Mateus — Cargos Exclusivos da Família Royal",
             )
         ))
-
-    container.add_item(discord.ui.TextDisplay(
+    topo.add_item(discord.ui.TextDisplay(
         f"## {MARCADOR}\n"
-        "Conheça os cargos exclusivos, seus benefícios e as condições para obtê-los."
+        "Família Royal - Cargos Exclusivos\n\n"
     ))
-    container.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
-    container.add_item(discord.ui.TextDisplay(texto_principal()))
-    container.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
-    container.add_item(discord.ui.TextDisplay(
-        "-# ⚜️ Honra • União • Lealdade\n"
-        "-# Os bônus de XP e sorteios dependem dos respectivos sistemas do servidor."
+    view.add_item(topo)
+
+    # Divide em 3 seções para respeitar o limite de componentes do Discord.
+    secoes = (CARGOS[0:3], CARGOS[3:6], CARGOS[6:8])
+    for secao in secoes:
+        container = discord.ui.Container(accent_colour=COR_DESTAQUE)
+        _adicionar_bloco_com_divisorias(container, list(secao))
+        view.add_item(container)
+
+    rodape = discord.ui.Container(accent_colour=COR_DESTAQUE)
+    rodape.add_item(discord.ui.TextDisplay(
+        "-# Família Royal - Cargos Exclusivos\n"
     ))
-    view.add_item(container)
+    view.add_item(rodape)
     return view
 
 
 def _texto_componentes(componentes) -> str:
-    """Reconhece mensagens de painéis V2, inclusive após reinicialização."""
     textos: list[str] = []
 
     def visitar(itens):
@@ -187,8 +193,6 @@ def _texto_mensagem(mensagem: discord.Message) -> str:
 
 
 class CargosExclusivosRoyal(commands.Cog):
-    """Publica e atualiza apenas o painel de cargos exclusivos."""
-
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
         self._lock = asyncio.Lock()
@@ -206,7 +210,6 @@ class CargosExclusivosRoyal(commands.Cog):
         return canal if isinstance(canal, discord.TextChannel) else None
 
     async def _mensagem_existente(self, canal: discord.TextChannel) -> discord.Message | None:
-        """Localiza o painel antigo ou novo, sem precisar guardar IDs em memória."""
         async for mensagem in canal.history(limit=500):
             if (
                 self.bot.user is not None
@@ -321,7 +324,6 @@ class CargosExclusivosRoyal(commands.Cog):
                         if anterior is not None and bool(getattr(anterior.flags, "is_components_v2", False)):
                             return self._erro("O Discord recusou a atualização do painel V2 (HTTP 400).")
 
-                # Compatibilidade com versões antigas do discord.py (texto simples)
                 if anterior is not None:
                     if com_banner and banner is not None:
                         with banner.open("rb") as imagem:
@@ -361,7 +363,6 @@ class CargosExclusivosRoyal(commands.Cog):
     @commands.guild_only()
     @commands.has_guild_permissions(manage_guild=True)
     async def comando_publicar(self, ctx: commands.Context):
-        """!cargosexclusivos — publica ou atualiza o painel do canal de cargos."""
         canal = await self._canal()
         if canal is None or canal.guild.id != ctx.guild.id:
             await ctx.reply("❌ Comando disponível apenas no servidor da Família Royal.", mention_author=False)
@@ -373,7 +374,6 @@ class CargosExclusivosRoyal(commands.Cog):
     @commands.guild_only()
     @commands.has_guild_permissions(manage_guild=True)
     async def comando_status(self, ctx: commands.Context):
-        """!statuscargosexclusivos — diagnóstico do painel."""
         canal = await self._canal()
         if canal is None or canal.guild.id != ctx.guild.id:
             await ctx.reply("❌ Comando disponível apenas no servidor da Família Royal.", mention_author=False)
