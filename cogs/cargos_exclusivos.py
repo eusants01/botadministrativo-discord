@@ -20,9 +20,11 @@ logger = logging.getLogger("sants.bot.cargos_exclusivos")
 
 CANAL_CARGOS_PADRAO = 1553820522322862200
 BANNER_NOME = "cargos_exclusivos_royal.png"
-MARCADOR = "<a:coroa:1564000189167960177> CARGOS EXCLUSIVOS"
+MARCADOR = "👑 CARGOS EXCLUSIVOS | FAMÍLIA ROYAL"
 COR_DESTAQUE = discord.Colour.from_rgb(137, 78, 150)
 
+# As descrições são INFORMATIVAS. Os multiplicadores e as chances nos sorteios
+# devem ser aplicados pelos sistemas de XP e sorteio, respectivamente.
 CARGOS = (
     (
         "Joker", 1553837456585920624,
@@ -48,7 +50,7 @@ CARGOS = (
     (
         "Corregedoria Geral do E.B", 1560374403051684012,
         (
-            ("🗯️", "Canal administrativo."),
+            ("🔒", "Canal administrativo."),
             ("🔑", "Obtível através da comprovação do cargo no E.B."),
         ),
     ),
@@ -63,13 +65,21 @@ CARGOS = (
         "Membros oficiais da Família", 1554367619463913582,
         (
             ("💰", "**2x** de multiplicador de XP."),
-            ("🗯️", "Canais exclusivos."),
+            ("🔒", "Canais exclusivos."),
             ("⭐", "Permissões especiais no servidor da Família e no servidor do E.B."),
             ("💰", "**2x** entradas nos sorteios."),
             ("🎉", "Sorteios exclusivos."),
             ("🏅", "Insígnias personalizadas."),
             ("🔊", "Call privada para cada membro."),
         ),
+    ),
+    (
+        "Skull Cat", 1567374808331587724,
+        (("", "???"),),
+    ),
+    (
+        "Contribuidor", 1566514909267894352,
+        (("🎁", "Pessoas que contribuem com premiações para sorteios (nitro, gamepass ou algo do tipo)."),),
     ),
 )
 
@@ -112,31 +122,36 @@ def components_v2_disponivel() -> bool:
 
 
 def conteudos_painel() -> list[str]:
-    """Menção do cargo em linha própria, com cada detalhe em uma citação."""
+    """Retorna blocos compactos, com menção e benefícios imediatamente abaixo."""
     blocos = [
         f"## {MARCADOR}\n"
-        "Conheça os cargos exclusivos, seus benefícios e as condições para obtê-los.",
+        "-# Benefícios e requisitos dos cargos da Família Royal."
     ]
     for _nome, role_id, informacoes in CARGOS:
-        citacoes = "\n".join(
-            f"> `{icone}` {descricao}" for icone, descricao in informacoes
-        )
-        blocos.append(f"### <@&{role_id}>\n{citacoes}")
+        linhas = [f"<@&{role_id}>"]
+        for icone, descricao in informacoes:
+            # No Skull Cat, a interrogação é propositalmente o ÚNICO conteúdo.
+            detalhe = f"`{icone}` {descricao}" if icone else descricao
+            linhas.append(f"> {detalhe}")
+        blocos.append("\n".join(linhas))
     blocos.append(
-        "-# <:ImagemdoChatGPT25deoutde202615_4:1563986647144730826> Família Royal\n"
+        "-# ⚜️ Honra · União · Lealdade  •  "
+        "Bônus de XP e sorteios dependem dos respectivos sistemas."
     )
     return blocos
 
 
 def texto_painel() -> str:
-    return "\n\n".join(conteudos_painel())
+    # Uma linha entre cargos: nenhum parágrafo em branco e nenhum separador.
+    # O Discord preserva as menções reais, sem notificar os cargos.
+    return "\n".join(conteudos_painel())
 
 
 def painel_v2(*, com_banner: bool) -> discord.ui.LayoutView:
-    """Exibe banner, seis cargos e rodapé em UM único contêiner V2.
+    """Banner + todos os cargos em um ÚNICO contêiner Components V2.
 
-    Um TextDisplay único evita os espaços e bordas entre grupos de cargos,
-    mantendo as menções e os benefícios no mesmo painel visual.
+    Um TextDisplay único elimina as margens criadas por vários TextDisplays
+    e Containers, evitando espaçamento excessivo entre os cargos.
     """
     view = discord.ui.LayoutView(timeout=None)
     painel = discord.ui.Container(accent_colour=COR_DESTAQUE)
@@ -151,8 +166,7 @@ def painel_v2(*, com_banner: bool) -> discord.ui.LayoutView:
 
     conteudo = texto_painel()
     if len(conteudo) > 4000:
-        raise ValueError("O texto do painel ultrapassou o limite do TextDisplay (4.000 caracteres).")
-
+        raise ValueError("O conteúdo excedeu os 4.000 caracteres do TextDisplay.")
     painel.add_item(discord.ui.TextDisplay(conteudo))
     view.add_item(painel)
     return view
@@ -322,8 +336,12 @@ class CargosExclusivosRoyal(commands.Cog):
                         if anterior is not None and bool(getattr(anterior.flags, "is_components_v2", False)):
                             return self._erro("O Discord recusou a atualização do painel V2 (HTTP 400).")
 
-                # Versões antigas: texto simples, sem perder os benefícios.
-                # Compatibilidade com versões antigas (limite de 2.000 caracteres).
+                # Versões antigas: texto simples, preservando as oito menções.
+                if len(esperado) > 2000:
+                    return self._erro(
+                        "Texto acima do limite do Discord (2.000 caracteres). "
+                        "Atualize o discord.py para usar Components V2."
+                    )
                 if anterior is not None:
                     if com_banner and banner is not None:
                         with banner.open("rb") as imagem:
