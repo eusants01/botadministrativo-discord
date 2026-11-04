@@ -1,11 +1,3 @@
-"""Painel independente de Cargos Exclusivos — Família Royal.
-
-Instale como extensão ``cogs.cargos_exclusivos``. Não adiciona/remova cargos;
-exibe critérios e benefícios comunicados pela administração.
-
-Requisitos: discord.py >= 2.6 para o painel visual (Components V2).
-Para versões anteriores, publica o conteúdo em mensagens de texto.
-"""
 from __future__ import annotations
 
 import asyncio
@@ -23,8 +15,6 @@ BANNER_NOME = "cargos_exclusivos_royal.png"
 MARCADOR = "👑 CARGOS EXCLUSIVOS | FAMÍLIA ROYAL"
 COR_DESTAQUE = discord.Colour.from_rgb(137, 78, 150)
 
-# As descrições são INFORMATIVAS. Os multiplicadores e as chances nos sorteios
-# devem ser aplicados pelos sistemas de XP e sorteio, respectivamente.
 CARGOS = (
     (
         "Joker", 1553837456585920624,
@@ -40,18 +30,20 @@ CARGOS = (
         (
             ("💰", "**2x** entradas nos sorteios."),
             ("💰", "**2x** de multiplicador de XP."),
-            ("🔑", "Obtível somente através de sorteios pela administração."),
+            ("🔑", "Obtível somente através de sorteios realizados pela administração."),
         ),
     ),
     (
         "Artistas", 1554094917092118638,
-        (("🎨", "Canal exclusivo de arte."),),
+        (
+            ("🎨", "Canal exclusivo de arte."),
+        ),
     ),
     (
         "Corregedoria Geral do E.B", 1560374403051684012,
         (
             ("🔒", "Canal administrativo."),
-            ("🔑", "Obtível através da comprovação do cargo no E.B."),
+            ("🔑", "Obtível através da **comprovação** do cargo no E.B."),
         ),
     ),
     (
@@ -75,11 +67,15 @@ CARGOS = (
     ),
     (
         "Skull Cat", 1567374808331587724,
-        (("", "???"),),
+        (
+            ("🐈", "???"),
+        ),
     ),
     (
         "Contribuidor", 1566514909267894352,
-        (("🎁", "Pessoas que contribuem com premiações para sorteios (nitro, gamepass ou algo do tipo)."),),
+        (
+            ("🎁", "Pessoas que contribuem com premiações para sorteios."),
+        ),
     ),
 )
 
@@ -121,66 +117,50 @@ def components_v2_disponivel() -> bool:
     )
 
 
-def conteudos_painel() -> list[str]:
-    """Retorna blocos compactos, com menção e benefícios imediatamente abaixo."""
-    blocos = [
-        f"## {MARCADOR}\n"
-        "-# Benefícios e requisitos dos cargos da Família Royal."
-    ]
-    for _nome, role_id, informacoes in CARGOS:
-        linhas = [f"<@&{role_id}>"]
-        for icone, descricao in informacoes:
-            # No Skull Cat, a interrogação é propositalmente o ÚNICO conteúdo.
-            detalhe = f"`{icone}` {descricao}" if icone else descricao
-            linhas.append(f"> {detalhe}")
-        blocos.append("\n".join(linhas))
-    blocos.append(
-        "-# ⚜️ Honra · União · Lealdade  •  "
-        "Bônus de XP e sorteios dependem dos respectivos sistemas."
-    )
-    return blocos
+def bloco_cargo(nome: str, role_id: int, informacoes: tuple[tuple[str, str], ...]) -> str:
+    detalhes = "\n".join(f"> `{icone}` {descricao}" for icone, descricao in informacoes)
+    return f"### <@&{role_id}>\n{detalhes}"
+
+
+def texto_principal() -> str:
+    blocos = [bloco_cargo(nome, role_id, informacoes) for nome, role_id, informacoes in CARGOS]
+    return "\n\n".join(blocos)
 
 
 def texto_painel() -> str:
-    # Uma linha entre cargos: nenhum parágrafo em branco e nenhum separador.
-    # O Discord preserva as menções reais, sem notificar os cargos.
-    return "\n".join(conteudos_painel())
+    return (
+        f"## {MARCADOR}\n"
+        "Família Royal.\n\n"
+        f"{texto_principal()}\n\n"
+    )
 
 
 def painel_v2(*, com_banner: bool) -> discord.ui.LayoutView:
-    """Banner + todos os cargos em um ÚNICO contêiner Components V2.
-
-    Um TextDisplay único elimina as margens criadas por vários TextDisplays
-    e Containers, evitando espaçamento excessivo entre os cargos.
-    """
+    """Um único painel Components V2, com espaçamento curto e visual formal."""
     view = discord.ui.LayoutView(timeout=None)
-    painel = discord.ui.Container(accent_colour=COR_DESTAQUE)
+    container = discord.ui.Container(accent_colour=COR_DESTAQUE)
 
     if com_banner:
-        painel.add_item(discord.ui.MediaGallery(
+        container.add_item(discord.ui.MediaGallery(
             discord.MediaGalleryItem(
                 media=f"attachment://{BANNER_NOME}",
                 description="Sants, Kael e Mateus — Cargos Exclusivos da Família Royal",
             )
         ))
 
-    conteudo = texto_painel()
-    if len(conteudo) > 4000:
-        raise ValueError("O conteúdo excedeu os 4.000 caracteres do TextDisplay.")
-    painel.add_item(discord.ui.TextDisplay(conteudo))
-    view.add_item(painel)
+    container.add_item(discord.ui.TextDisplay(
+        f"## {MARCADOR}\n"
+        "Conheça os cargos exclusivos, seus benefícios e as condições para obtê-los."
+    ))
+    container.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
+    container.add_item(discord.ui.TextDisplay(texto_principal()))
+    container.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
+    container.add_item(discord.ui.TextDisplay(
+        "-# ⚜️ Honra • União • Lealdade\n"
+        "-# Os bônus de XP e sorteios dependem dos respectivos sistemas do servidor."
+    ))
+    view.add_item(container)
     return view
-
-
-def _painel_unico(mensagem: discord.Message) -> bool:
-    """Detecta o contêiner único para atualizar o layout antigo mesmo com texto igual."""
-    componentes = getattr(mensagem, "components", ())
-    tipo_container = getattr(discord.ComponentType, "container", None)
-    return (
-        tipo_container is not None
-        and len(componentes) == 1
-        and getattr(componentes[0], "type", None) == tipo_container
-    )
 
 
 def _texto_componentes(componentes) -> str:
@@ -207,7 +187,7 @@ def _texto_mensagem(mensagem: discord.Message) -> str:
 
 
 class CargosExclusivosRoyal(commands.Cog):
-    """Publica e atualiza apenas o painel de cargos exclusivos, sem boas-vindas."""
+    """Publica e atualiza apenas o painel de cargos exclusivos."""
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -281,7 +261,6 @@ class CargosExclusivosRoyal(commands.Cog):
                         _texto_mensagem(anterior).strip() == esperado
                         and banner_atual
                         and painel_anterior_v2 == v2
-                        and (not v2 or _painel_unico(anterior))
                     ):
                         self.ultima_falha = None
                         return True, "O painel já está atualizado; nenhuma mensagem duplicada foi criada."
@@ -296,19 +275,25 @@ class CargosExclusivosRoyal(commands.Cog):
                         if usando_imagem and banner is not None:
                             with banner.open("rb") as imagem:
                                 await anterior.edit(
-                                    content=None, embed=None,
+                                    content=None,
+                                    embed=None,
                                     attachments=[discord.File(imagem, filename=BANNER_NOME)],
                                     view=view,
                                     allowed_mentions=mencoes,
                                 )
                         else:
                             await anterior.edit(
-                                content=None, embed=None, attachments=[], view=view, allowed_mentions=mencoes,
+                                content=None,
+                                embed=None,
+                                attachments=[],
+                                view=view,
+                                allowed_mentions=mencoes,
                             )
                     elif usando_imagem and banner is not None:
                         with banner.open("rb") as imagem:
                             await canal.send(
-                                view=view, file=discord.File(imagem, filename=BANNER_NOME),
+                                view=view,
+                                file=discord.File(imagem, filename=BANNER_NOME),
                                 allowed_mentions=mencoes,
                             )
                     else:
@@ -336,17 +321,13 @@ class CargosExclusivosRoyal(commands.Cog):
                         if anterior is not None and bool(getattr(anterior.flags, "is_components_v2", False)):
                             return self._erro("O Discord recusou a atualização do painel V2 (HTTP 400).")
 
-                # Versões antigas: texto simples, preservando as oito menções.
-                if len(esperado) > 2000:
-                    return self._erro(
-                        "Texto acima do limite do Discord (2.000 caracteres). "
-                        "Atualize o discord.py para usar Components V2."
-                    )
+                # Compatibilidade com versões antigas do discord.py (texto simples)
                 if anterior is not None:
                     if com_banner and banner is not None:
                         with banner.open("rb") as imagem:
                             await anterior.edit(
-                                content=esperado, view=None,
+                                content=esperado,
+                                view=None,
                                 attachments=[discord.File(imagem, filename=BANNER_NOME)],
                                 allowed_mentions=mencoes,
                             )
@@ -355,7 +336,8 @@ class CargosExclusivosRoyal(commands.Cog):
                 elif com_banner and banner is not None:
                     with banner.open("rb") as imagem:
                         await canal.send(
-                            content=esperado, file=discord.File(imagem, filename=BANNER_NOME),
+                            content=esperado,
+                            file=discord.File(imagem, filename=BANNER_NOME),
                             allowed_mentions=mencoes,
                         )
                 else:
@@ -405,7 +387,8 @@ class CargosExclusivosRoyal(commands.Cog):
             f"• Banner: {b.name if b else 'NÃO encontrado'}\n"
             f"• Publicação: {'localizada' if painel_atual else 'não encontrada no histórico recente'}\n"
             f"• Última falha: {self.ultima_falha or 'nenhuma'}",
-            mention_author=False, allowed_mentions=discord.AllowedMentions.none(),
+            mention_author=False,
+            allowed_mentions=discord.AllowedMentions.none(),
         )
 
 
