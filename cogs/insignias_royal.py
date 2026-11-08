@@ -15,7 +15,6 @@ BANNERS = {
     "decisao": "insignias_decisao_royal.png",
 }
 INSIGNIAS = [
-    # Natal: o titular é definido por !titularnatal e salvo no PostgreSQL.
     {"nome": "Noel", "cargo_id": 1568866728237211668, "emoji": "🎅", "titular_id": 0, "descricao_curta": "Edição natalina · Permissões especiais.", "descricao_completa": "Insígnia especial de Natal da Família Royal. Concede permissões especiais no servidor e sua concessão depende da aprovação do titular escolhido pela administração."},
     {"nome": "Natalina", "cargo_id": 1568866716723839038, "emoji": "🎄", "titular_id": 0, "descricao_curta": "Edição natalina · Permissões especiais.", "descricao_completa": "Insígnia especial de Natal da Família Royal. Concede permissões especiais no servidor e sua concessão depende da aprovação do titular escolhido pela administração."},
     {"nome": "Candy", "cargo_id": 1568866728031559742, "emoji": "🍬", "titular_id": 0, "descricao_curta": "Edição natalina · Permissões especiais.", "descricao_completa": "Insígnia especial de Natal da Família Royal. Concede permissões especiais no servidor e sua concessão depende da aprovação do titular escolhido pela administração."},
@@ -37,6 +36,8 @@ INSIGNIAS = [
     {"nome": "Golgos", "cargo_id": 1565443033787277394, "emoji": "🎥", "titular_id": 525837977545605132, "descricao_curta": "Criatividade e influência.", "descricao_completa": "Distinção pessoal de Golgos, editor de vídeo e influenciador, associada à criatividade e à comunicação."},
     {"nome": "Dark", "cargo_id": 1565443625523880137, "emoji": "🐦‍⬛", "titular_id": 1089646065084534854, "descricao_curta": "Lealdade e consideração.", "descricao_completa": "Representa lealdade e consideração pessoal de um corregedor."},
     {"nome": "PH", "cargo_id": 1565942574676705330, "emoji": "❄️", "titular_id": 896496513251962992, "descricao_curta": "Esperança e perseverança", "descricao_completa": "Representa lealdade e consideração pessoal de um corregedor."},
+    {"nome": "Gomez", "cargo_id": 1566322721363726447, "emoji": "👿", "titular_id": 896496513251962992, "descricao_curta": "Esperança da destruição", "descricao_completa": "Representa lealdade e consideração pessoal de um corregedor."},
+
 ]
 
 # IDs das insígnias sazonais cujos titulares são definidos por comando.
