@@ -7,7 +7,7 @@ import discord
 from discord.ext import commands
 
 LOG = logging.getLogger("royal.insignias")
-COR_ROYAL = discord.Colour.from_rgb(212, 175, 55)
+COR_ROYAL = discord.Colour.from_rgb(139, 32, 45)
 PASTA_ASSETS = Path(__file__).resolve().parent.parent / "assets"
 BANNERS = {
     "catalogo": "insignias_royal.png",
@@ -27,7 +27,6 @@ INSIGNIAS = [
     {"nome": "Nathy", "cargo_id": 1565443626002026526, "emoji": "🌵", "titular_id": 775086637386301524, "descricao_curta": "Tengo lengo tengo", "descricao_completa": "Simboliza amizade, proximidade e lealdade."},
     {"nome": "Soso", "cargo_id": 1565942565767745699, "emoji": "🌺", "titular_id": 1525265476425355337, "descricao_curta": "Lealdade e consideração.", "descricao_completa": "Representa lealdade e consideração pessoal de um corregedor."},
     {"nome": "Sant's", "cargo_id": 1554376496196493342, "emoji": "👑", "titular_id": 925863471902503033, "descricao_curta": "Criador da Família Royal.", "descricao_completa": "Distinção pessoal de Sant's, criador da Família Royal. Sua concessão depende de sua autorização."},
-    {"nome": "Kael", "cargo_id": 1554376496787886090, "emoji": "⚔️", "titular_id": 1541150632554135724, "descricao_curta": "Honra de um dos fundadores.", "descricao_completa": "Reconhecimento ligado a Kael, um dos fundadores da Família Royal, associado à honra e à confiança."},
     {"nome": "Ruan", "cargo_id": 1554376496548941894, "emoji": "🛡️", "titular_id": 1348504492345397358, "descricao_curta": "Lealdade e consideração.", "descricao_completa": "Símbolo de lealdade e consideração pessoal."},
     {"nome": "Pato", "cargo_id": 1556147238986711070, "emoji": "🦆", "titular_id": 1459320617852731635, "descricao_curta": "quack quack.", "descricao_completa": "Expressa amizade e estima pessoal, concedida a critério de Pato."},
     {"nome": "Violets", "cargo_id": 1562498973787230339, "emoji": "🪐", "titular_id": 969628191268421672, "descricao_curta": "Vínculo e reconhecimento.", "descricao_completa": "Representa vínculo especial e reconhecimento."},
@@ -92,15 +91,22 @@ def montar_catalogo(cog: "InsigniasRoyal", com_banner: bool = False) -> discord.
         painel_com_banner(bloco, "catalogo")
 
     bloco.add_item(discord.ui.TextDisplay(
-        "## <a:coroa:1564000189167960177> INSÍGNIAS DA FAMÍLIA ROYAL\n"
+        "## <a:snow:1568873857509490888> INSÍGNIAS DA FAMÍLIA ROYAL - EDIÇÃO DE NATAL\n"
+        "Catálogo oficial das distinções da Família Royal no clima natalino.\n"
         "Distinções concedidas exclusivamente com a autorização de seus titulares.\n"
-        "-# 🎄 Insígnias especiais de Natal também disponíveis no menu."
     ))
     bloco.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
     bloco.add_item(discord.ui.TextDisplay(
-        "**✉️ SOLICITAR INSÍGNIA**\n"
-        "Selecione a opção desejada no menu abaixo. O pedido será enviado em privado "
-        "ao titular responsável, que poderá aprovar ou recusar."
+        "**<:tree:1568871853970165820> INSÍGNIAS NATALINAS EM DESTAQUE**\n"
+        "`🎅` <@&1568866728237211668> — *Espírito de Natal* · Insígnia especial com **permissões especiais**.\n"
+        "`🎄` <@&1568866716723839038> — *Celebração Real* · Insígnia especial com **permissões especiais**.\n"
+        "`🍬` <@&1568866728031559742> — *Doçura e União* · Insígnia especial com **permissões especiais**.\n\n"
+    ))
+    bloco.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
+    bloco.add_item(discord.ui.TextDisplay(
+        "**🎄 COMO SOLICITAR**\n"
+        "Selecione uma opção no menu abaixo. O pedido será enviado em privado ao titular\n"
+        "responsável, que poderá **aprovar** ou **recusar** sua solicitação."
     ))
     bloco.add_item(discord.ui.ActionRow(InsigniaSelect(cog, persistente=True)))
     if len(INSIGNIAS) > 25:
@@ -114,7 +120,7 @@ class InsigniaSelect(discord.ui.Select):
     def __init__(self, cog: "InsigniasRoyal", pagina: int = 0, persistente: bool = False):
         itens = INSIGNIAS[pagina * 25:(pagina + 1) * 25]
         super().__init__(
-            placeholder="Selecione uma insígnia para solicitar",
+            placeholder="<:7913xmasgift:1568875584208109728> Solicite",
             min_values=1, max_values=1,
             custom_id=("royal:insignias:selecionar:v1" if persistente
                        else f"royal:insignias:pagina:{pagina}"),
@@ -160,7 +166,7 @@ class MaisInsignias(discord.ui.Button):
         self.cog = cog
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.send_message(
-            "**⚜️ Outras insígnias** — escolha uma opção:",
+            "**<:7913xmasgift:1568875584208109728> Outras insígnias** — escolha uma opção:",
             view=PaginaInsignias(self.cog, pagina=1), ephemeral=True
         )
 
