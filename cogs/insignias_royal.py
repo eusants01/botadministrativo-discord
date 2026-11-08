@@ -1,22 +1,24 @@
 from __future__ import annotations
+
 import logging
 from pathlib import Path
+
 import discord
 from discord.ext import commands
 
 LOG = logging.getLogger("royal.insignias")
-
 COR_ROYAL = discord.Colour.from_rgb(212, 175, 55)
-
 PASTA_ASSETS = Path(__file__).resolve().parent.parent / "assets"
-
 BANNERS = {
     "catalogo": "insignias_royal.png",
     "solicitacao": "insignias_solicitacao_royal.png",
     "decisao": "insignias_decisao_royal.png",
 }
-
 INSIGNIAS = [
+    # Natal: o titular é definido por !titularnatal e salvo no PostgreSQL.
+    {"nome": "Noel", "cargo_id": 1568866728237211668, "emoji": "🎅", "titular_id": 0, "descricao_curta": "Edição natalina · Permissões especiais.", "descricao_completa": "Insígnia especial de Natal da Família Royal. Concede permissões especiais no servidor e sua concessão depende da aprovação do titular escolhido pela administração."},
+    {"nome": "Natalina", "cargo_id": 1568866716723839038, "emoji": "🎄", "titular_id": 0, "descricao_curta": "Edição natalina · Permissões especiais.", "descricao_completa": "Insígnia especial de Natal da Família Royal. Concede permissões especiais no servidor e sua concessão depende da aprovação do titular escolhido pela administração."},
+    {"nome": "Candy", "cargo_id": 1568866728031559742, "emoji": "🍬", "titular_id": 0, "descricao_curta": "Edição natalina · Permissões especiais.", "descricao_completa": "Insígnia especial de Natal da Família Royal. Concede permissões especiais no servidor e sua concessão depende da aprovação do titular escolhido pela administração."},
     {"nome": "Bruna", "cargo_id": 1554376484637122591, "emoji": "🌹", "titular_id": 697068974323793921, "descricao_curta": "Fundadora · Lealdade e acolhimento.", "descricao_completa": "Fundadora da Família Royal, integrante mais antiga e esposa de Sant's. Sua insígnia simboliza acolhimento, confiança e lealdade."},
     {"nome": "Pietra", "cargo_id": 1556147238852628562, "emoji": "💐", "titular_id": 1295645409082867732, "descricao_curta": "Apreço e reconhecimento.", "descricao_completa": "Simboliza apreço, reconhecimento e consideração pessoal."},
     {"nome": "Kananda", "cargo_id": 1556147239179518022, "emoji": "🪽", "titular_id": 1430221798389059584, "descricao_curta": "Companheirismo e proteção.", "descricao_completa": "Reconhece laços de companheirismo, cuidado e proteção."},
@@ -38,7 +40,16 @@ INSIGNIAS = [
     {"nome": "PH", "cargo_id": 1565942574676705330, "emoji": "❄️", "titular_id": 896496513251962992, "descricao_curta": "Esperança e perseverança", "descricao_completa": "Representa lealdade e consideração pessoal de um corregedor."},
 ]
 
-INSIGNIAS_DESTAQUE = {"Bruna", "Pietra", "Kananda", "Tatah", "Lívia", "Nathy", "Soso"}
+# IDs das insígnias sazonais cujos titulares são definidos por comando.
+INSIGNIAS_NATAL = {
+    "noel": 1568866728237211668,
+    "natalina": 1568866716723839038,
+    "candy": 1568866728031559742,
+}
+
+
+def eh_insignia_natal(cargo_id: int) -> bool:
+    return cargo_id in INSIGNIAS_NATAL.values()
 
 
 def catalogo() -> dict[int, dict]:
@@ -74,11 +85,7 @@ async def enviar_layout(destino, view: discord.ui.LayoutView, banner: Path | Non
 
 
 def montar_catalogo(cog: "InsigniasRoyal", com_banner: bool = False) -> discord.ui.LayoutView:
-    """Painel unificado V2: um banner, catálogo e solicitação na mesma mensagem.
-
-    O Container do Discord aceita até 10 componentes diretos.
-    Por isso, cada categoria é exibida em um único TextDisplay.
-    """
+    """Painel V2 compacto: banner, instruções e seleção das insígnias."""
     view = discord.ui.LayoutView(timeout=None)
     bloco = discord.ui.Container(accent_colour=COR_ROYAL)
     if com_banner:
@@ -86,38 +93,14 @@ def montar_catalogo(cog: "InsigniasRoyal", com_banner: bool = False) -> discord.
 
     bloco.add_item(discord.ui.TextDisplay(
         "## <a:coroa:1564000189167960177> INSÍGNIAS DA FAMÍLIA ROYAL\n"
-        "Distinções pessoais concedidas mediante autorização de seus titulares."
+        "Distinções concedidas exclusivamente com a autorização de seus titulares.\n"
+        "-# 🎄 Insígnias especiais de Natal também disponíveis no menu."
     ))
     bloco.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
-
-    damas = [i for i in INSIGNIAS if i["nome"] in INSIGNIAS_DESTAQUE]
-    linhas_damas = [
-        f"> `{i['emoji']}` <@&{i['cargo_id']}> — *{i['descricao_curta']}*"
-        for i in damas
-    ]
     bloco.add_item(discord.ui.TextDisplay(
-        "**<:ImagemdoChatGPT25deoutde202615_4:1563986702140440626> DAMAS DA COROA**\n"
-        + "\n".join(linhas_damas)
-    ))
-
-    cavalheiros = [i for i in INSIGNIAS if i["nome"] not in INSIGNIAS_DESTAQUE]
-    if cavalheiros:
-        bloco.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
-        linhas_cavalheiros = [
-            f"> `{i['emoji']}` <@&{i['cargo_id']}> — *{i['descricao_curta']}*"
-            for i in cavalheiros
-        ]
-        bloco.add_item(discord.ui.TextDisplay(
-            "**<:ImagemdoChatGPT25deoutde202615_4:1563986647144730826> NOBRES CAVALHEIROS**\n"
-            + "\n".join(linhas_cavalheiros)
-            + "\n\n-# <:regras2:1564669595904901250> Família Royal - Primeira Família"
-        ))
-
-    bloco.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
-    bloco.add_item(discord.ui.TextDisplay(
-        "## ✉️ SOLICITAR INSÍGNIA\n"
-        "Selecione uma insígnia abaixo. O pedido será enviado diretamente ao titular, "
-        "responsável exclusivo por autorizar a concessão."
+        "**✉️ SOLICITAR INSÍGNIA**\n"
+        "Selecione a opção desejada no menu abaixo. O pedido será enviado em privado "
+        "ao titular responsável, que poderá aprovar ou recusar."
     ))
     bloco.add_item(discord.ui.ActionRow(InsigniaSelect(cog, persistente=True)))
     if len(INSIGNIAS) > 25:
@@ -262,6 +245,18 @@ class InsigniasRoyal(commands.Cog):
             ON royal_insignia_requests(guild_id, requester_id, role_id)
             WHERE status IN ('pending', 'processing')
         """)
+        # Donos das insígnias de Natal são configurados pela administração.
+        await pool.execute("""
+            CREATE TABLE IF NOT EXISTS royal_christmas_insignia_owners (
+                guild_id BIGINT NOT NULL,
+                role_id BIGINT NOT NULL,
+                owner_id BIGINT NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                PRIMARY KEY (guild_id, role_id),
+                UNIQUE (guild_id, owner_id)
+            )
+        """)
+
         # Mesmo custom_id histórico: painéis antigos continuam operando.
         self.bot.add_view(montar_catalogo(self, com_banner=False))
         pendentes = await pool.fetch("""
@@ -291,6 +286,12 @@ class InsigniasRoyal(commands.Cog):
         if not item:
             return await interaction.followup.send("❌ Insígnia indisponível.", ephemeral=True)
         titular_id = item["titular_id"]
+        if cargo_id in INSIGNIAS_NATAL.values():
+            titular_id = await self.pool().fetchval("""
+                SELECT owner_id FROM royal_christmas_insignia_owners
+                WHERE guild_id=$1 AND role_id=$2
+            """, interaction.guild.id, cargo_id)
+
         cargo = interaction.guild.get_role(cargo_id)
         if cargo is None:
             return await interaction.followup.send("❌ Cargo não encontrado no servidor.", ephemeral=True)
@@ -299,7 +300,9 @@ class InsigniasRoyal(commands.Cog):
         if titular_id == interaction.user.id:
             return await interaction.followup.send("Você já é o titular dessa insígnia.", ephemeral=True)
         if not isinstance(titular_id, int) or titular_id <= 0:
-            return await interaction.followup.send("⚠️ Titular ainda não configurado.", ephemeral=True)
+            return await interaction.followup.send(
+                "⚠️ O titular desta insígnia ainda não foi definido pela administração.", ephemeral=True
+            )
         pool = self.pool()
         pedido = await pool.fetchrow("""
             INSERT INTO royal_insignia_requests
@@ -409,6 +412,119 @@ class InsigniasRoyal(commands.Cog):
             LOG.exception("Não foi possível publicar os painéis de insígnias")
             return await ctx.reply("❌ Falha ao enviar painéis. Confira os logs do Railway.", mention_author=False)
         await ctx.reply(f"✅ Painel unificado de insígnias publicado em {canal.mention}.", mention_author=False)
+    @commands.command(name="titularnatal")
+    @commands.guild_only()
+    @commands.has_guild_permissions(manage_guild=True)
+    async def titularnatal(self, ctx: commands.Context,
+                           nome: str | None = None,
+                           titular: discord.Member | None = None):
+        """!titularnatal Noel @membro | sem argumentos: exibe os titulares."""
+        pool = self.pool()
+        if nome is None:
+            atribuidos = await pool.fetch("""
+                SELECT role_id, owner_id FROM royal_christmas_insignia_owners
+                WHERE guild_id=$1
+            """, ctx.guild.id)
+            titulares = {r["role_id"]: r["owner_id"] for r in atribuidos}
+            texto = ["🎄 **Titulares das insígnias de Natal**"]
+            for nome_insignia, role_id in INSIGNIAS_NATAL.items():
+                responsavel = titulares.get(role_id)
+                texto.append(f"• **{nome_insignia.capitalize()}**: " +
+                             (f"<@{responsavel}>" if responsavel else "Ainda não definido"))
+            texto.append("\n-# Para definir: `!titularnatal Noel @membro`")
+            return await ctx.reply("\n".join(texto), mention_author=False)
+
+        cargo_id = INSIGNIAS_NATAL.get(nome.casefold())
+        if cargo_id is None:
+            return await ctx.reply("❌ Escolha: `Noel`, `Natalina` ou `Candy`.", mention_author=False)
+        if titular is None:
+            return await ctx.reply(f"❌ Utilize `!titularnatal {nome.capitalize()} @membro`.", mention_author=False)
+        if titular.bot:
+            return await ctx.reply("❌ Escolha um membro da Família, não um bot.", mention_author=False)
+        if ctx.guild.get_role(cargo_id) is None:
+            return await ctx.reply("❌ O cargo desta insígnia ainda não existe no servidor.", mention_author=False)
+
+        anterior = await pool.fetchval("""
+            SELECT owner_id FROM royal_christmas_insignia_owners
+            WHERE guild_id=$1 AND role_id=$2
+        """, ctx.guild.id, cargo_id)
+        if anterior is not None and anterior != titular.id:
+            pendentes = await pool.fetchval("""
+                SELECT COUNT(*) FROM royal_insignia_requests
+                WHERE guild_id=$1 AND role_id=$2 AND status IN ('pending', 'processing')
+            """, ctx.guild.id, cargo_id)
+            if pendentes:
+                return await ctx.reply(
+                    "⚠️ Há solicitações pendentes desta insígnia. "
+                    "Finalize-as antes de trocar seu titular.", mention_author=False
+                )
+
+        usado = await pool.fetchval("""
+            SELECT role_id FROM royal_christmas_insignia_owners
+            WHERE guild_id=$1 AND owner_id=$2 AND role_id<>$3
+        """, ctx.guild.id, titular.id, cargo_id)
+        if usado is not None:
+            return await ctx.reply(
+                "❌ Esse membro já é titular de outra insígnia natalina. "
+                "Escolha três integrantes diferentes.", mention_author=False
+            )
+
+        await pool.execute("""
+            INSERT INTO royal_christmas_insignia_owners (guild_id, role_id, owner_id)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (guild_id, role_id) DO UPDATE
+            SET owner_id=EXCLUDED.owner_id, updated_at=now()
+        """, ctx.guild.id, cargo_id, titular.id)
+        await ctx.reply(
+            f"✅ **{nome.capitalize()}** agora pertence a {titular.mention}. "
+            "As novas solicitações serão enviadas a essa pessoa para decisão.",
+            mention_author=False
+        )
+
+    @commands.command(name="atualizarinsignias")
+    @commands.guild_only()
+    @commands.has_guild_permissions(manage_guild=True)
+    async def atualizarinsignias(self, ctx: commands.Context):
+        """Atualiza, sem duplicar, o painel ao responder à mensagem existente."""
+        referencia = ctx.message.reference
+        if referencia is None or referencia.message_id is None:
+            return await ctx.reply(
+                "❌ Responda à mensagem do painel com `!atualizarinsignias`.",
+                mention_author=False
+            )
+        try:
+            mensagem = await ctx.channel.fetch_message(referencia.message_id)
+            if self.bot.user is None or mensagem.author.id != self.bot.user.id:
+                raise RuntimeError("O painel precisa ter sido publicado por este bot.")
+            if not getattr(mensagem.flags, "components_v2", False):
+                raise RuntimeError("A mensagem selecionada não utiliza Components V2.")
+            anterior = discord.ui.LayoutView.from_message(mensagem, timeout=None)
+            conteudos = [item.content for item in anterior.walk_children()
+                        if isinstance(item, discord.ui.TextDisplay)]
+            if not any("INSÍGNIAS DA FAMÍLIA ROYAL" in texto for texto in conteudos):
+                raise RuntimeError("A mensagem selecionada não é o painel de insígnias.")
+
+            banner = caminho_banner("catalogo")
+            if banner is None:
+                await mensagem.edit(view=montar_catalogo(self), attachments=[],
+                                    allowed_mentions=discord.AllowedMentions.none())
+            else:
+                me = ctx.guild.me or await ctx.guild.fetch_member(self.bot.user.id)
+                if not ctx.channel.permissions_for(me).attach_files:
+                    raise RuntimeError("O bot precisa da permissão Anexar Arquivos.")
+                with banner.open("rb") as arquivo:
+                    await mensagem.edit(
+                        view=montar_catalogo(self, com_banner=True),
+                        attachments=[discord.File(arquivo, filename=banner.name)],
+                        allowed_mentions=discord.AllowedMentions.none()
+                    )
+        except (discord.DiscordException, RuntimeError, OSError, ValueError) as exc:
+            LOG.exception("Falha ao atualizar o painel de insígnias")
+            return await ctx.reply(f"❌ Não foi possível atualizar: {str(exc)[:200]}",
+                                   mention_author=False)
+
+        await ctx.reply(f"✅ Painel atualizado: {mensagem.jump_url}", mention_author=False)
+
     @commands.command(name="painelinsignias")
     @commands.guild_only()
     @commands.has_guild_permissions(manage_guild=True)
