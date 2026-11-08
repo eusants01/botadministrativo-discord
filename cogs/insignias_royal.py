@@ -120,7 +120,7 @@ class InsigniaSelect(discord.ui.Select):
     def __init__(self, cog: "InsigniasRoyal", pagina: int = 0, persistente: bool = False):
         itens = INSIGNIAS[pagina * 25:(pagina + 1) * 25]
         super().__init__(
-            placeholder="<:7913xmasgift:1568875584208109728> Solicite",
+            placeholder="🎄 Solicite",
             min_values=1, max_values=1,
             custom_id=("royal:insignias:selecionar:v1" if persistente
                        else f"royal:insignias:pagina:{pagina}"),
