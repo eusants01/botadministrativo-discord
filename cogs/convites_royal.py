@@ -688,7 +688,7 @@ def montar_registro_v2(titulo: str, cor: int, partes: list[str], *, com_banner: 
             )
         ))
     painel.add_item(discord.ui.TextDisplay(
-        f"## {titulo}\n -# FAMÍLIA ROYAL • NATAL 2026"
+        f"## {titulo}\n Família Royal • NATAL 2026"
     ))
     painel.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
     for parte in partes:
