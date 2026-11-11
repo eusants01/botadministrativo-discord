@@ -8,41 +8,29 @@ import json
 
 import os
 from pathlib import Path
-
 import time
-
 from datetime import datetime, timezone
-
-
-
 import discord
 
 from discord.ext import commands
 
 
-
 CANAL_CONVITES_ID = 1569924797259980820
 
-
-
 CARGOS_STAFF = [
-
     1553832098404499516,
-
     1553832097905377422,
-
 ]
-
-
 
 ALERTA_CONTA_NOVA_DIAS = 3
 LOGAR_SAIDAS = False
 JANELA_AGRUPAR = 2.0
 JANELA_DELETE = 30
 NOME_SERVIDOR = "Família Royal"
-COR_PRINCIPAL = 0x8B202D  # Vinho Royal (Natal / realeza)
-COR_SUCESSO = 0x287451
-COR_ALERTA = 0xC59434
+
+COR_PRINCIPAL = 0x8B202D  
+COR_SUCESSO = 0x237A53
+COR_ALERTA = 0xD4AF37
 COR_ERRO = 0xB54148
 COR_NEUTRA = 0x5D6880
 COR_REENTRADA = 0xA27B42
@@ -73,6 +61,7 @@ async def enviar_v2(destino, view: discord.ui.LayoutView, banner: Path | None = 
     return await destino.send(view=view, allowed_mentions=SEM_MENCOES)
 
 
+# Quantas pessoas aparecem nas listas.
 LIMITE_CONVIDADOS = 30
 
 
@@ -667,7 +656,7 @@ def embed_base(
 
     )
 
-    footer_kwargs = {"text": f"{NOME_SERVIDOR} • Honra · União · Lealdade"}
+    footer_kwargs = {"text": f"{NOME_SERVIDOR} • Natal 2026"}
 
     e.set_footer(**footer_kwargs)
 
@@ -1528,36 +1517,40 @@ class ConvitesCog(commands.Cog, name="Convites"):
         ids_nomes = [uid for uid in (credito, res.get("inviter")) if uid is not None]
         nomes = await self._nomes(guild, ids_nomes)
         partes = [
-            "**👤  IDENTIFICAÇÃO**\n"
-            f"╭┈ Membro: {membro.mention}\n"
-            f"╰┈ Identificador: `{membro.id}`",
-            "**🕰️  CONTA DO DISCORD**\n"
-            f"╭┈ Criada em: <t:{int(membro.created_at.timestamp())}:D>\n"
-            f"╰┈ Idade da conta: **{idade}**" + (" ⚠️" if conta_nova else ""),
+            "`👮🏼` **IDENTIFICAÇÃO**\n"
+            f"> Membro: {membro.mention}\n"
+            f"> ID do usuário: `{membro.id}`",
+            "`⏳` **CONTA DO DISCORD**\n"
+            f"> Idade da conta: **{idade}**" + (" ⚠️" if conta_nova else "") + "\n"
+            f"> Criada em: <t:{int(membro.created_at.timestamp())}:D>",
         ]
         if tipo == "bot":
-            origem = "╰┈ Integração adicionada como bot; **não gera convite**."
+            origem = "> Integração adicionada como bot; **não gera convite**."
         elif tipo == "convite":
             convidador = res.get("inviter")
-            nome = discord.utils.escape_markdown(nomes.get(convidador, "Não identificado"))
-            mencao = f" <@{convidador}>" if convidador else ""
             codigo = discord.utils.escape_markdown(str(res.get("codigo") or "indefinido"))
+            recrutador = f"<@{convidador}>" if convidador else "Não identificado"
             origem = (
-                f"╭┈ Recrutador: **{nome}**{mencao}\n"
-                f"╰┈ Código utilizado: `{codigo}`"
+                f"> Recrutador(a): {recrutador}\n"
+                f"> Código utilizado: `{codigo}`"
             )
         elif tipo == "vanity":
             codigo = discord.utils.escape_markdown(str(res.get("codigo") or "indefinido"))
-            origem = f"╰┈ Link personalizado do servidor: `discord.gg/{codigo}`."
+            origem = f"> Link personalizado: `discord.gg/{codigo}`"
         elif tipo == "ambiguo":
             candidatos = list(res.get("candidatos", []))
             candidatos_txt = "\n".join(
-                "├┈ " + discord.utils.escape_markdown(str(item.get("nome") or item.get("inviter") or "Desconhecido"))
+                "> Possibilidade: "
+                + discord.utils.escape_markdown(str(item.get("nome") or item.get("inviter") or "Desconhecido"))
                 + f" (`{discord.utils.escape_markdown(str(item.get('codigo') or '?'))}`)"
                 for item in candidatos[:5]
             )
-            resto = f"\n╰┈ ... e mais {len(candidatos)-5} possibilidade(s)." if len(candidatos) > 5 else ""
-            origem = "╭┈ Entradas simultâneas; não é seguro escolher um responsável.\n" + (candidatos_txt or "╰┈ Sem candidatos confiáveis") + resto + "\n-# ❕ Sem crédito atribuído."
+            resto = f"\n> Outras possibilidades: {len(candidatos) - 5}" if len(candidatos) > 5 else ""
+            origem = (
+                "> Entradas simultâneas; não é seguro escolher um recrutador.\n"
+                + (candidatos_txt or "> Sem candidatos confiáveis") + resto
+                + "\n-# ❕ Sem crédito atribuído."
+            )
         else:
             causas = {
                 "sem_permissao": "O bot não possui permissão para consultar convites.",
@@ -1565,22 +1558,22 @@ class ConvitesCog(commands.Cog, name="Convites"):
                 "sem_base": "O rastreador ainda não tinha uma base de convites.",
                 "sem_uso": "Nenhum convite rastreável foi alterado (ou veio por Descoberta).",
             }
-            origem = "╰┈ " + causas.get(res.get("motivo"), "Não foi possível identificar a origem.") + "\n-# ❕ Sem crédito atribuído."
+            origem = "> " + causas.get(res.get("motivo"), "Não foi possível identificar a origem.") + "\n-# ❕ Sem crédito atribuído."
 
-        partes.append("**🔗  ORIGEM DO CONVITE**\n" + origem)
+        partes.append("`💌` **ORIGEM**\n" + origem)
         if reentrada:
             if credito is not None:
-                dono_credito = discord.utils.escape_markdown(nomes.get(credito, f"ID {credito}"))
-                nota = f"╰┈ O crédito permanece com **{dono_credito}** (primeira entrada)."
+                dono_credito = f"<@{credito}>"
+                nota = f"> O crédito permanece com {dono_credito} (primeira entrada)."
             else:
-                nota = "╰┈ A reentrada **não gera um novo convite**."
-            partes.append("**♻️  HISTÓRICO DE ENTRADA**\n" + nota)
+                nota = "> A reentrada **não gera um novo convite**."
+            partes.append("`♻️` **HISTÓRICO DE ENTRADA**\n" + nota)
         if credito is not None and self.pool is not None:
             resumo = await db_resumo(self.pool, guild.id, credito)
             partes.append(
-                "**🏆  DESEMPENHO DO RECRUTADOR**\n"
-                f"╭┈ Convites registrados: **{resumo['total']}**\n"
-                f"╰┈ Ativos: **{resumo['ativos']}**  ·  Saíram: **{resumo['saiu']}**"
+                "`🏆` **DESEMPENHO DO RECRUTADOR**\n"
+                f"> Convites registrados: **{resumo['total']}**\n"
+                f"> Ativos: **{resumo['ativos']}** · Saíram: **{resumo['saiu']}**"
             )
 
         banner = caminho_banner()
@@ -2030,13 +2023,15 @@ class ConvitesCog(commands.Cog, name="Convites"):
         autor = ctx.author
         idade, _ = idade_conta_txt(autor.created_at)
         partes = [
-            f"**👤  IDENTIFICAÇÃO**\n╭┈ Membro: {autor.mention}\n╰┈ Identificador: `{autor.id}`",
-            "**🕰️  CONTA DO DISCORD**\n"
-            f"╭┈ Criada em: <t:{int(autor.created_at.timestamp())}:D>\n"
-            f"╰┈ Idade da conta: **{idade}**",
-            "**🔗  ORIGEM DO CONVITE**\n"
-            "╭┈ Recrutador: **Simulação da Família Royal**\n"
-            "╰┈ Código utilizado: `EXEMPLO`",
+            "`👮🏼` **IDENTIFICAÇÃO**\n"
+            f"> Membro: {autor.mention}\n"
+            f"> ID do usuário: `{autor.id}`",
+            "`⏳` **CONTA DO DISCORD**\n"
+            f"> Idade da conta: **{idade}**\n"
+            f"> Criada em: <t:{int(autor.created_at.timestamp())}:D>",
+            "`💌` **ORIGEM**\n"
+            "> Recrutador(a): **Simulação da Família Royal**\n"
+            "> Código utilizado: `EXEMPLO`",
             "-# 🧪 ESTA É UMA SIMULAÇÃO. Nenhum convite foi registrado nem contabilizado.",
         ]
         banner = caminho_banner()
