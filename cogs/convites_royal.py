@@ -688,13 +688,13 @@ def montar_registro_v2(titulo: str, cor: int, partes: list[str], *, com_banner: 
             )
         ))
     painel.add_item(discord.ui.TextDisplay(
-        f"## {titulo}\n-# :snow:  FAMÍLIA ROYAL • NATAL 2026"
+        f"## {titulo}\n -# <a:snow:1568873857509490888> FAMÍLIA ROYAL • NATAL 2026"
     ))
     painel.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
     for parte in partes:
         painel.add_item(discord.ui.TextDisplay(parte))
     painel.add_item(discord.ui.TextDisplay(
-        "-# 🎄Feliz Natal 2026!"
+        "-# 🎄 Feliz Natal 2026!"
     ))
     view.add_item(painel)
     return view
