@@ -21,7 +21,7 @@ from discord.ext import commands
 
 
 
-CANAL_CONVITES_ID = 1556310089328099429
+CANAL_CONVITES_ID = 1569924797259980820
 
 
 
@@ -36,38 +36,17 @@ CARGOS_STAFF = [
 
 
 ALERTA_CONTA_NOVA_DIAS = 3
-
-
-
 LOGAR_SAIDAS = False
-
-
-
 JANELA_AGRUPAR = 2.0
-
-
-
 JANELA_DELETE = 30
-
-
-
 NOME_SERVIDOR = "Família Royal"
-
 COR_PRINCIPAL = 0x8B202D  # Vinho Royal (Natal / realeza)
 COR_SUCESSO = 0x287451
-
 COR_ALERTA = 0xC59434
-
 COR_ERRO = 0xB54148
-
 COR_NEUTRA = 0x5D6880
-
 COR_REENTRADA = 0xA27B42
 
-
-
-# Banner opcional em assets/convites_royal.png (sem URLs externas).
-# É exibido no painel V2 e nos registros automáticos, nunca como avatar de usuário.
 NOME_BANNER = "convites_royal.png"
 PASTA_ASSETS = Path(__file__).resolve().parent.parent / "assets"
 SEM_MENCOES = discord.AllowedMentions.none()
@@ -94,7 +73,6 @@ async def enviar_v2(destino, view: discord.ui.LayoutView, banner: Path | None = 
     return await destino.send(view=view, allowed_mentions=SEM_MENCOES)
 
 
-# Quantas pessoas aparecem nas listas.
 LIMITE_CONVIDADOS = 30
 
 
