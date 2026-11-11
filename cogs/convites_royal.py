@@ -693,9 +693,6 @@ def montar_registro_v2(titulo: str, cor: int, partes: list[str], *, com_banner: 
     painel.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
     for parte in partes:
         painel.add_item(discord.ui.TextDisplay(parte))
-    painel.add_item(discord.ui.TextDisplay(
-    
-    ))
     view.add_item(painel)
     return view
 
