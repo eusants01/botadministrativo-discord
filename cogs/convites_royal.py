@@ -700,6 +700,7 @@ def montar_registro_v2(titulo: str, cor: int, partes: list[str], *, com_banner: 
     return view
 
 
+
 class PainelConvitesView(discord.ui.LayoutView):
     """Central Components V2 com botões persistentes e IDs preservados."""
 
