@@ -93,9 +93,8 @@ CONFIG_PADRAO = {
     "bonus_mult": 2,
     "ping": 0,
     "tema": "azul",
-    "titulo_padrao": "✦ SORTEIO ROYAL ✦",
+    "titulo_padrao": "Sorteio Família Royal",
     "descricao_padrao": "",
-    "subtitulo_padrao": "Uma nova oportunidade de conquistar um prêmio especial.",
     "rodape_padrao": "Família Royal • Honra · União · Lealdade",
     "botao_padrao": "Participar",
     "banner_padrao": "",         # URL opcional para novos sorteios
@@ -460,7 +459,7 @@ def montar_embed(g: dict, *, preview: bool = False) -> discord.Embed:
         )
         requisitos = texto_requisitos(g)
         if requisitos:
-            descricao += "\n\n`⚜️` **✦ CONDIÇÕES DE PARTICIPAÇÃO ✦**\n" + "\n".join(
+            descricao += "\n\n`⚜️` **CONDIÇÕES DE PARTICIPAÇÃO**\n" + "\n".join(
                 f"> {regra}" for regra in requisitos
             )
         else:
