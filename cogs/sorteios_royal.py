@@ -98,6 +98,9 @@ CONFIG_PADRAO = {
     "subtitulo_padrao": "Uma nova oportunidade de conquistar um prêmio especial.",
     "rodape_padrao": "Família Royal • Honra · União · Lealdade",
     "botao_padrao": "Participar",
+    "banner_padrao": "",         # URL opcional para novos sorteios
+    "banner_painel": "",         # URL opcional dos painéis administrativos
+    "cor_padrao": "",            # #RRGGBB para novos sorteios
 }
 _CONFIG_CACHE: dict[int, dict] = {}
 SQL_CONFIG = """CREATE TABLE IF NOT EXISTS royal_giveaway_settings (
@@ -295,18 +298,15 @@ def titulo_sorteio(g: dict) -> str:
 
 
 def descricao_sorteio(g: dict) -> str:
-    """Uma descrição útil mesmo quando a staff deixa o campo em branco."""
+    """Descrição autoral ou chamada neutra, sem repetir o prêmio do destaque."""
     descricao = str(g.get("descricao") or "").strip()
     if descricao:
         return descricao[:1800]
-    premio = str(g.get("premio") or "um prêmio especial")
     return (
-        f"O Reino preparou uma nova oportunidade para você! ✨\n"
-        f"> `🎁` **Prêmio:** {premio}\n"
+        "O Reino preparou uma nova oportunidade para você! ✨\n"
         "> `🎟️` Participe pelo botão abaixo e acompanhe a apuração.\n"
         "> `🍀` Boa sorte a todos os integrantes da Família Royal!"
     )
-
 
 def texto_ganhadores(ganhadores: list[int]) -> str:
     return "\n".join(f"> <@{uid}>" for uid in ganhadores) if ganhadores else "> Nenhum participante elegível."
@@ -321,26 +321,36 @@ def arquivo_banner(local: Path) -> Path | None:
 
 
 def banner_sorteio(g: dict):
-    """Retorna (referência de mídia, arquivo local opcional)."""
-    personalizado = (g.get("banner") or "").strip()
+    """Prioridade: banner individual, banner padrão do servidor, arquivo assets/."""
+    personalizado = str(g.get("banner") or "").strip()
     if banner_valido(personalizado):
         return personalizado, None
+    guild_id = g.get("guild")
+    if guild_id:
+        padrao = str(configuracao(int(guild_id)).get("banner_padrao") or "").strip()
+        if banner_valido(padrao):
+            return padrao, None
     local = arquivo_banner(BANNER_SORTEIO)
     if local:
         return f"attachment://{local.name}", local
     return None, None
 
 
-def banner_painel():
+def banner_painel(guild_id: int | None = None):
+    """Banner do painel configurável por servidor, com fallback local."""
+    if guild_id is not None:
+        url = str(configuracao(guild_id).get("banner_painel") or "").strip()
+        if banner_valido(url):
+            return url, None
     local = arquivo_banner(BANNER_PAINEL)
     if local:
         return f"attachment://{local.name}", local
     return None, None
 
 
-async def enviar_painel_com_banner(canal, view):
-    """Anexa o PNG ao painel V2 em sua primeira publicação."""
-    _, local = banner_painel()
+async def enviar_painel_com_banner(canal, view, guild_id: int | None = None):
+    """Anexa somente arquivos locais; URLs são incorporadas diretamente no V2."""
+    _, local = banner_painel(guild_id)
     if local:
         with local.open("rb") as imagem:
             return await canal.send(
@@ -378,15 +388,16 @@ def link_sorteio(g: dict) -> str:
 
 
 def texto_requisitos(g: dict) -> list[str]:
-    """Só lista o que realmente existe (sem requisitos = lista vazia)."""
+    """Requisitos com o mesmo padrão Royal de ícones, destaques e citações."""
     linhas = []
     if g.get("cargo_exigido"):
-        linhas.append(f"🎖️ Cargo <@&{g['cargo_exigido']}>")
+        linhas.append(f"`🎖️` **Cargo necessário:** <@&{g['cargo_exigido']}>")
     if g.get("dias_min"):
-        linhas.append(f"📅 {g['dias_min']}+ dias no servidor")
+        linhas.append(f"`📅` **Permanência mínima:** {g['dias_min']}+ dias no servidor")
     if g.get("cargo_bonus"):
         linhas.append(
-            f"✨ <@&{g['cargo_bonus']}> vale **x{g.get('bonus_mult', 2)}** entradas"
+            f"`✨` **Bônus de participação:** <@&{g['cargo_bonus']}> "
+            f"recebe **x{g.get('bonus_mult', 2)}** entradas"
         )
     return linhas
 
@@ -435,21 +446,31 @@ def montar_embed(g: dict, *, preview: bool = False) -> discord.Embed:
     elif status == "cancelado":
         descricao = "## 🚫 SORTEIO CANCELADO"
     else:
+        subtitulo = str(g.get("subtitulo") or "").strip()
         descricao = (
             f"## {tema['emoji']} {titulo_sorteio(g)}\n"
-            f"{str(g.get('subtitulo') or '').strip()}\n\n"
-            f"{descricao_sorteio(g)}\n\n"
-            f"> `🎁` **Prêmio:** {g.get('premio', 'Não informado')}\n"
-            f"> `⏳` **Encerramento:** <t:{int(g.get('fim_ts', 0))}:R>\n"
-            f"> `🏆` **Vagas:** {g.get('vencedores', 1)}\n"
-            f"> `👥` **Participantes:** {len(g.get('participantes', {}))}"
+            + (f"-# ✧ {subtitulo}\n\n" if subtitulo else "\n")
+            + "`🎁` **PRÊMIO EM DESTAQUE**\n"
+            + f"> **{g.get('premio', 'Não informado')}**\n\n"
+            + "`📜` **SOBRE O SORTEIO**\n"
+            + f"{descricao_sorteio(g)}\n\n"
+            + "`⏳` **INFORMAÇÕES DO SORTEIO**\n"
+            + f"> `📅` **Encerramento:** <t:{int(g.get('fim_ts', 0))}:R>\n"
+            + f"> `🏆` **Vagas:** {g.get('vencedores', 1)}\n"
+            + f"> `👥` **Participantes:** {len(g.get('participantes', {}))}"
         )
         requisitos = texto_requisitos(g)
         if requisitos:
-            descricao += "\n\n**✦ CONDIÇÕES DE PARTICIPAÇÃO**\n" + "\n".join(f"> {r}" for r in requisitos)
+            descricao += "\n\n`⚜️` **✦ CONDIÇÕES DE PARTICIPAÇÃO ✦**\n" + "\n".join(
+                f"> {regra}" for regra in requisitos
+            )
+        else:
+            descricao += "\n\n`✅` **✦ PARTICIPAÇÃO LIVRE ✦**\n> Nenhum requisito adicional."
     embed = discord.Embed(description=descricao[:4000], color=cor_sorteio(g))
-    if status == "ativo" and banner_valido(g.get("banner")):
-        embed.set_image(url=g["banner"].strip())
+    if status == "ativo":
+        media, _ = banner_sorteio(g)
+        if media and banner_valido(media):
+            embed.set_image(url=media)
     if status == "ativo":
         rodape = str(g.get("rodape") or NOME_SERVIDOR)[:180]
         embed.set_footer(text=("Prévia • " if preview else "") + rodape)
@@ -771,29 +792,33 @@ def _container_sorteio(g: dict) -> discord.ui.Container:
         if banner:
             componentes.append(discord.ui.MediaGallery(discord.MediaGalleryItem(media=banner)))
         tema = TEMAS.get(g.get("tema", "azul"), TEMAS["azul"])
-        cabecalho = (
+        componentes.append(discord.ui.TextDisplay(
             f"## {tema['emoji']} {titulo_sorteio(g)}\n"
-            f"-# ✦ {str(g.get('subtitulo') or 'UMA NOVA PREMIAÇÃO DO REINO').strip()[:180]}"
-        )
-        componentes.append(discord.ui.TextDisplay(cabecalho[:4000]))
+            f"-# ✧ {str(g.get('subtitulo') or 'UMA NOVA PREMIAÇÃO DO REINO').strip()[:180]}"
+        ))
         componentes.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
         componentes.append(discord.ui.TextDisplay(
             "`🎁` **PRÊMIO EM DESTAQUE**\n"
-            f"> {str(g.get('premio') or 'Não informado')[:120]}\n\n"
+            f"> **{str(g.get('premio') or 'Não informado')[:120]}**"
+        ))
+        componentes.append(discord.ui.TextDisplay(
             "`📜` **SOBRE O SORTEIO**\n" + descricao_sorteio(g)
         ))
         componentes.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
-        componentes.append(discord.ui.TextDisplay(
+        info = (
             "`⏳` **INFORMAÇÕES DO SORTEIO**\n"
-            f"> Encerramento: <t:{int(g.get('fim_ts', 0))}:F>  (<t:{int(g.get('fim_ts', 0))}:R>)\n"
-            f"> Ganhadores: **{g.get('vencedores', 1)}**\n"
-            f"> Participantes: **{len(g.get('participantes', {}))}**"
-        ))
-        reqs = texto_requisitos(g)
-        if reqs:
-            componentes.append(discord.ui.TextDisplay(
-                "`⚜️` **CONDIÇÕES DE PARTICIPAÇÃO**\n" + "\n".join(f"> {r}" for r in reqs)
-            ))
+            f"> `📅` **Encerramento:** <t:{int(g.get('fim_ts', 0))}:F> "
+            f"(<t:{int(g.get('fim_ts', 0))}:R>)\n"
+            f"> `🏆` **Vagas:** {g.get('vencedores', 1)}\n"
+            f"> `👥` **Participantes:** {len(g.get('participantes', {}))}"
+        )
+        requisitos = texto_requisitos(g)
+        if requisitos:
+            info += "\n\n`⚜️` **✦ CONDIÇÕES DE PARTICIPAÇÃO ✦**\n"
+            info += "\n".join(f"> {regra}" for regra in requisitos)
+        else:
+            info += "\n\n`✅` **✦ PARTICIPAÇÃO LIVRE ✦**\n> Nenhum requisito adicional."
+        componentes.append(discord.ui.TextDisplay(info))
         componentes.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
         componentes.append(discord.ui.ActionRow(
             RoyalSorteioBotao("entrar", rotulo=g.get("botao_texto")),
@@ -999,6 +1024,7 @@ class CriarView(discord.ui.View):
 
     def montar_dados(self) -> dict:
         g = dict(self.dados)
+        g["guild"] = self.autor.guild.id
         g.update(
             tema=self.tema,
             ping=self.ping,
@@ -1037,10 +1063,16 @@ class CriarView(discord.ui.View):
     def _texto_topo(self) -> str:
         canal = destino_sorteios(self.autor.guild, self.fallback_id)
         destino = canal.mention if canal else "**canal não configurado**"
+        media, _ = banner_sorteio(self.montar_dados())
+        imagem = "**Personalizado**" if self.dados.get("banner") else (
+            "**Padrão**" if media else "**Sem banner**")
         return (
-            "✦ **PRÉVIA ROYAL** — personalize textos, tema e visual antes de publicar.\n"
-            f"📢 Será publicado em {destino} • "
-            f"⏱️ Duração: **{formatar_duracao(self.dados['duracao_seg'])}**"
+            "✦ **PRÉVIA ROYAL** — confira e personalize antes de publicar.\n"
+            f"> `🏰` **Destino:** {destino}\n"
+            f"> `⏳` **Duração:** {formatar_duracao(self.dados['duracao_seg'])}  "
+            f"• `🏆` **Vagas:** {self.dados['vencedores']}\n"
+            f"> `🖼️` **Banner:** {imagem}\n"
+            "-# ✍️ Título e descrição • 🖼️ Banner e visual • 🚀 Publicar"
         )
 
     # ── Linha 0: cargo obrigatório ──
@@ -1085,6 +1117,7 @@ class CriarView(discord.ui.View):
     async def btn_tema(self, interaction: discord.Interaction, button: discord.ui.Button):
         chaves = list(TEMAS)
         self.tema = chaves[(chaves.index(self.tema) + 1) % len(chaves)]
+        self.dados["cor_personalizada"] = ""  # escolha explícita do tema prevalece sobre o padrão
         await self._refresh(interaction)
 
     @discord.ui.button(label="Sem ping", emoji="🔔", style=discord.ButtonStyle.secondary, row=3)
@@ -1129,7 +1162,11 @@ class CriarView(discord.ui.View):
         )
         self.stop()
 
-    @discord.ui.button(label="Personalizar visual", emoji="✨", style=discord.ButtonStyle.secondary, row=4)
+    @discord.ui.button(label="Título e textos", emoji="✍️", style=discord.ButtonStyle.secondary, row=4)
+    async def btn_textos(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(PersonalizarTextosSorteioModal(self))
+
+    @discord.ui.button(label="Banner e visual", emoji="🖼️", style=discord.ButtonStyle.secondary, row=4)
     async def btn_visual(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(PersonalizarSorteioModal(self))
 
@@ -1192,11 +1229,43 @@ class PersonalizarSorteioModal(discord.ui.Modal, title="✨ Personalizar Sorteio
             embed=self.criacao.embed_preview(), view=self.criacao)
 
 
+class PersonalizarTextosSorteioModal(discord.ui.Modal, title="✍️ Textos do Sorteio Royal"):
+    titulo = discord.ui.TextInput(label="Título do sorteio", max_length=120)
+    descricao = discord.ui.TextInput(label="Descrição", style=discord.TextStyle.paragraph,
+                                      required=False, max_length=1800)
+    subtitulo = discord.ui.TextInput(label="Subtítulo", required=False, max_length=180)
+    rodape = discord.ui.TextInput(label="Rodapé", required=False, max_length=180)
+    botao_texto = discord.ui.TextInput(label="Texto do botão", required=False, max_length=80)
+
+    def __init__(self, criacao: CriarView):
+        super().__init__(timeout=600)
+        self.criacao = criacao
+        for nome in ("titulo", "descricao", "subtitulo", "rodape", "botao_texto"):
+            atual = str(criacao.dados.get(nome) or "")
+            if atual:
+                getattr(self, nome).default = atual
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if interaction.user.id != self.criacao.autor.id:
+            return await interaction.response.send_message("⛔ Apenas o criador pode editar.", ephemeral=True)
+        titulo = str(self.titulo).strip()
+        if not titulo:
+            return await interaction.response.send_message("❌ Informe um título válido.", ephemeral=True)
+        self.criacao.dados.update(
+            titulo=titulo,
+            descricao=str(self.descricao).strip(),
+            subtitulo=str(self.subtitulo).strip(),
+            rodape=str(self.rodape).strip(),
+            botao_texto=str(self.botao_texto).strip() or "Participar",
+        )
+        await interaction.response.edit_message(
+            content=self.criacao._texto_topo(),
+            embed=self.criacao.embed_preview(), view=self.criacao,
+        )
+
+
 class CriarModal(discord.ui.Modal, title="🎁 Novo Sorteio Royal"):
-    """Etapa 1: textos principais. Etapa 2 na prévia permite acabamento visual."""
-    titulo = discord.ui.TextInput(
-        label="Título do sorteio", placeholder="Ex.: ✦ Noite de Prêmios Royal ✦", max_length=120,
-    )
+    """Como no painel antigo: prêmio, duração, vagas, descrição e banner próprio."""
     premio = discord.ui.TextInput(
         label="Prêmio", placeholder="Ex.: Nitro, Robux, VIP...", max_length=120,
     )
@@ -1211,12 +1280,16 @@ class CriarModal(discord.ui.Modal, title="🎁 Novo Sorteio Royal"):
         placeholder="Use **negrito**, citações > e caracteres especiais ✦ ⚜️ ❄️",
         required=False, max_length=1800,
     )
+    banner = discord.ui.TextInput(
+        label="Banner personalizado (URL opcional)",
+        placeholder="https://... • vazio = banner padrão",
+        required=False, max_length=400,
+    )
 
     def __init__(self, bot, guild_id: int | None = None):
         super().__init__(timeout=600)
         self.bot = bot
         self.conf = configuracao(guild_id) if guild_id else CONFIG_PADRAO
-        self.titulo.default = str(self.conf.get("titulo_padrao") or "✦ SORTEIO ROYAL ✦")[:120]
         self.duracao.default = str(self.conf.get("duracao", "2h"))[:20]
         self.vencedores.default = str(self.conf.get("vencedores", 1))[:2]
         self.descricao.default = str(self.conf.get("descricao_padrao") or "")[:1800] or None
@@ -1236,21 +1309,24 @@ class CriarModal(discord.ui.Modal, title="🎁 Novo Sorteio Royal"):
         except ValueError:
             return await interaction.response.send_message(
                 f"❌ Escolha de 1 a {MAX_VENCEDORES} ganhadores.", ephemeral=True)
-        titulo = str(self.titulo).strip()
         premio = str(self.premio).strip()
-        if not titulo or not premio:
-            return await interaction.response.send_message("❌ Informe o título e o prêmio.", ephemeral=True)
+        banner = str(self.banner).strip()
+        if not premio:
+            return await interaction.response.send_message("❌ Informe o prêmio.", ephemeral=True)
+        if banner and not banner_valido(banner):
+            return await interaction.response.send_message(
+                "❌ Banner inválido. Use um link http(s) completo.", ephemeral=True)
         dados = {
-            "titulo": titulo,
+            "titulo": str(self.conf.get("titulo_padrao") or "✦ SORTEIO ROYAL ✦")[:120],
             "premio": premio,
             "descricao": str(self.descricao).strip(),
-            "banner": "",
+            "banner": banner,
             "vencedores": qtd,
             "duracao_seg": seg,
             "subtitulo": str(self.conf.get("subtitulo_padrao") or "")[:180],
             "rodape": str(self.conf.get("rodape_padrao") or NOME_SERVIDOR)[:180],
             "botao_texto": str(self.conf.get("botao_padrao") or "Participar")[:80],
-            "cor_personalizada": "",
+            "cor_personalizada": str(self.conf.get("cor_padrao") or ""),
         }
         atual = interaction.channel
         fallback = atual.id if isinstance(atual, discord.TextChannel) else None
@@ -1718,23 +1794,76 @@ class ConfigSelectView(discord.ui.View):
         await self._salvar(interaction, {"cargo_bonus": self.bonus_sel.values[0].id if self.bonus_sel.values else None})
 
 
+class ConfigVisualModal(discord.ui.Modal, title="🖼️ Banners e Cores Royal"):
+    banner_padrao = discord.ui.TextInput(
+        label="Banner padrão dos sorteios (URL)", required=False, max_length=400,
+        placeholder="https://... • vazio = assets/",
+    )
+    banner_painel = discord.ui.TextInput(
+        label="Banner dos dois painéis (URL)", required=False, max_length=400,
+        placeholder="https://... • vazio = assets/",
+    )
+    cor_padrao = discord.ui.TextInput(
+        label="Cor padrão hexadecimal", required=False, max_length=7,
+        placeholder="#8B202D • vazio = tema",
+    )
+
+    def __init__(self, guild_id: int):
+        super().__init__(timeout=600)
+        self.guild_id = guild_id
+        conf = configuracao(guild_id)
+        for nome in ("banner_padrao", "banner_painel", "cor_padrao"):
+            valor = str(conf.get(nome) or "")
+            if valor:
+                getattr(self, nome).default = valor
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if interaction.guild_id != self.guild_id or not eh_staff(interaction.user):
+            return await interaction.response.send_message("⛔ Acesso restrito à equipe.", ephemeral=True)
+        banner = str(self.banner_padrao).strip()
+        painel = str(self.banner_painel).strip()
+        cor = str(self.cor_padrao).strip()
+        if any(valor and not banner_valido(valor) for valor in (banner, painel)):
+            return await interaction.response.send_message(
+                "❌ Informe URLs completas começando com `https://` ou `http://`.", ephemeral=True)
+        if cor and not re.fullmatch(r"#?[a-fA-F0-9]{6}", cor):
+            return await interaction.response.send_message(
+                "❌ Cor inválida. Utilize o formato `#8B202D`.", ephemeral=True)
+        try:
+            await salvar_config(self.guild_id, {
+                "banner_padrao": banner,
+                "banner_painel": painel,
+                "cor_padrao": cor,
+            })
+        except Exception:
+            LOG.exception("Falha ao salvar banners e cores padrão")
+            return await interaction.response.send_message(
+                "❌ Não foi possível salvar banners e cores.", ephemeral=True)
+        await interaction.response.send_message(
+            "✅ Banner padrão, banner dos painéis e cor foram salvos.\n"
+            "-# ✧ Publique novamente os painéis administrativos para ver o novo banner.",
+            ephemeral=True,
+        )
+
+
 class PainelConfigRoyal(discord.ui.LayoutView):
     """Painel administrativo V2, independente do painel de criação."""
-    def __init__(self):
+    def __init__(self, guild_id: int | None = None):
         super().__init__(timeout=None)
         elementos = []
-        media, _ = banner_painel()
+        media, _ = banner_painel(guild_id)
         if media:
             elementos.append(discord.ui.MediaGallery(discord.MediaGalleryItem(media=media)))
         elementos.append(discord.ui.TextDisplay(
-            "## <a:coroa:1564000189167960177> CONFIGURAÇÕES DOS SORTEIOS\n"
-            "Defina os padrões utilizados nas próximas premiações. "
-            "Sorteios em andamento não serão modificados.\n\n"
-            "> `⚙️` **Padrões** — duração, ganhadores e requisitos\n"
-            "> `🏰` **Canal e cargos** — local da publicação e elegibilidade\n"
-            "> `🔔` **Avisos** — menções e identidade visual\n"
-            "> `✦` **Textos** — títulos, descrições e botões padrão\n"
-            "> `📋` **Consultar** — confira as definições atuais"))
+            "## <a:coroa:1564000189167960177> ✦ CONFIGURAÇÕES ROYAL ✦\n"
+            "-# ⚜️ IDENTIDADE, REGRAS E PREFERÊNCIAS DOS SORTEIOS\n\n"
+            "`⚙️` **PADRÕES**\n> Duração, ganhadores e elegibilidade\n\n"
+            "`🏰` **CANAL E CARGOS**\n> Local da premiação e cargos necessários\n\n"
+            "`🔔` **AVISOS**\n> Menções e tema principal\n\n"
+            "`✍️` **TEXTOS**\n> Título, descrição, subtítulo, rodapé e botão\n\n"
+            "`🖼️` **BANNERS E CORES**\n> Imagem padrão, banner dos painéis e cor hexadecimal\n\n"
+            "`📋` **CONSULTAR**\n> Confira as preferências salvas no PostgreSQL"
+        ))
         elementos.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
         linha = []
         for acao, rotulo, emoji in (
@@ -1773,11 +1902,24 @@ class PainelConfigRoyal(discord.ui.LayoutView):
                     f"> `🔔` Notificação: **{conf['ping']}**\n"
                     f"> `👑` Tema: **{TEMAS.get(conf['tema'], TEMAS['azul'])['nome']}**\n"
                     f"> `✦` Título padrão: **{conf.get('titulo_padrao', 'Sorteio Royal')}**\n"
-                    f"> `🎟️` Botão: **{conf.get('botao_padrao', 'Participar')}**", ephemeral=True)
+                    f"> `🎟️` Botão: **{conf.get('botao_padrao', 'Participar')}**\n"
+                    f"> `🖼️` Banner dos sorteios: **{'Configurado' if conf.get('banner_padrao') else 'Padrão local'}**\n"
+                    f"> `🎄` Banner dos painéis: **{'Configurado' if conf.get('banner_painel') else 'Padrão local'}**\n"
+                    f"> `🎨` Cor padrão: **{conf.get('cor_padrao') or 'Tema selecionado'}**", ephemeral=True)
             botao.callback = cb
             linha.append(botao)
         elementos.append(discord.ui.ActionRow(*linha))
-        elementos.append(discord.ui.TextDisplay("-# Família Royal • Preferências salvas no PostgreSQL"))
+        botao_visual = discord.ui.Button(
+            label="Banners e cores", emoji="🖼️", style=discord.ButtonStyle.primary,
+            custom_id="royal:sorteio:config:banners:v1",
+        )
+        async def editar_visuais(interaction: discord.Interaction):
+            if not interaction.guild or not eh_staff(interaction.user):
+                return await interaction.response.send_message("⛔ Acesso exclusivo da equipe.", ephemeral=True)
+            await interaction.response.send_modal(ConfigVisualModal(interaction.guild.id))
+        botao_visual.callback = editar_visuais
+        elementos.append(discord.ui.ActionRow(botao_visual))
+        elementos.append(discord.ui.TextDisplay("-# ✧ Família Royal • Preferências salvas no PostgreSQL"))
         self.add_item(discord.ui.Container(*elementos, accent_colour=discord.Colour(COR_AZUL)))
 
 
@@ -1823,20 +1965,25 @@ class ConfigAvisosSelect(discord.ui.Select):
 class PainelSorteioRoyal(discord.ui.LayoutView):
     """Painel administrativo Royal (Components V2); preserva controles anteriores."""
 
-    def __init__(self):
+    def __init__(self, guild_id: int | None = None):
         super().__init__(timeout=None)
         componentes = []
-        media, _ = banner_painel()
+        media, _ = banner_painel(guild_id)
         if media:
             componentes.append(discord.ui.MediaGallery(discord.MediaGalleryItem(media=media)))
         componentes.append(discord.ui.TextDisplay(
-            "## 👑 CENTRAL DE SORTEIOS ROYAL\n"
-            "Gerencie premiações e eventos da Família Royal com segurança.\n\n"
-            "> `🎁` **Criar** — título, prêmio, descrição e duração\n"
-            "> `✨` **Personalizar** — banner, subtítulo, botão, rodapé e cor\n"
-            "> `⚡` **Relâmpago** — publicação imediata\n"
-            "> `🛡️` **Gerenciar** — encerrar, cancelar ou sortear novamente\n"
-            "> `📊` **Estatísticas** — acompanhamento administrativo"
+            "## 👑 ✦ CENTRAL DE SORTEIOS ROYAL ✦\n"
+            "-# ⚜️ GERENCIAMENTO DE PREMIAÇÕES • FAMÍLIA ROYAL\n\n"
+            "`🎁` **CRIAR SORTEIO**\n"
+            "> Prêmio, duração, vagas, descrição e **banner personalizado**\n\n"
+            "`✍️` **PERSONALIZAR A PRÉVIA**\n"
+            "> Título, textos, tema, cor e botão de participação\n\n"
+            "`⚡` **SORTEIO RELÂMPAGO**\n"
+            "> Publicação rápida com os padrões salvos\n\n"
+            "`🛡️` **GERENCIAR SORTEIOS**\n"
+            "> Editar, encerrar, cancelar ou sortear novamente\n\n"
+            "`📊` **ESTATÍSTICAS E CONFIGURAÇÕES**\n"
+            "> Acompanhe a participação e defina os padrões Royal"
         ))
         componentes.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
         botoes = []
@@ -1875,7 +2022,7 @@ class PainelSorteioRoyal(discord.ui.LayoutView):
             botao.callback = clique
             botoes.append(botao)
         componentes.append(discord.ui.ActionRow(*botoes))
-        componentes.append(discord.ui.TextDisplay("-# ⚜️ Família Royal • Administração de sorteios"))
+        componentes.append(discord.ui.TextDisplay("-# ✧ Família Royal • Honra · União · Lealdade"))
         self.add_item(discord.ui.Container(*componentes, accent_colour=discord.Colour(COR_AZUL)))
 
 
@@ -1993,7 +2140,7 @@ class SorteiosCog(commands.Cog):
             await ctx.message.delete()
         except discord.HTTPException:
             pass
-        await enviar_painel_com_banner(ctx, PainelSorteioRoyal())
+        await enviar_painel_com_banner(ctx, PainelSorteioRoyal(ctx.guild.id), ctx.guild.id)
 
     @commands.command(name="painelconfigsorteio", aliases=["configsorteio"])
     @commands.guild_only()
@@ -2004,7 +2151,7 @@ class SorteiosCog(commands.Cog):
             await ctx.message.delete()
         except discord.HTTPException:
             pass
-        await enviar_painel_com_banner(ctx, PainelConfigRoyal())
+        await enviar_painel_com_banner(ctx, PainelConfigRoyal(ctx.guild.id), ctx.guild.id)
 
     @commands.command(name="sorteioajuda")
     @apenas_staff()
@@ -2017,8 +2164,9 @@ class SorteiosCog(commands.Cog):
                 f"`{p}painelsorteio` — cria o painel da equipe\n"
                 f"`{p}sorteioajuda` — mostra esta ajuda\n"
                 f"`{p}painelconfigsorteio` — configura os próximos sorteios\n\n"
-                "**✦ PELO PAINEL:** crie títulos, descrições, banners, cores, "
-                "subtítulos, botões e rodapés próprios.\n"
+                "**✦ PELO PAINEL:** crie sorteios com prêmio, duração, descrição e "
+                "**banner próprio** no formulário inicial.\n"
+                "**✍️ NA PRÉVIA:** personalize o título, subtítulo, rodapé, botão, cores e demais detalhes.\n"
                 "**⚜️ GERENCIAMENTO:** edite sorteios ativos, encerre, cancele, "
                 "faça rerolls e consulte as estatísticas.\n\n"
                 "**Formatos de duração:** `30m` • `2h` • `1d` • `1d12h` • `90` (minutos)"
