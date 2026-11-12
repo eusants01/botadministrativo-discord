@@ -303,7 +303,6 @@ def descricao_sorteio(g: dict) -> str:
     if descricao:
         return descricao[:1800]
     return (
-        "O Reino preparou uma nova oportunidade para você! ✨\n"
         "> `🎟️` Participe pelo botão abaixo e acompanhe a apuração.\n"
         "> `🍀` Boa sorte a todos os integrantes da Família Royal!"
     )
@@ -465,7 +464,7 @@ def montar_embed(g: dict, *, preview: bool = False) -> discord.Embed:
                 f"> {regra}" for regra in requisitos
             )
         else:
-            descricao += "\n\n`✅` **✦ PARTICIPAÇÃO LIVRE ✦**\n> Nenhum requisito adicional."
+            descricao += "\n\n`✅` **PARTICIPAÇÃO LIVRE**\n> Nenhum requisito adicional."
     embed = discord.Embed(description=descricao[:4000], color=cor_sorteio(g))
     if status == "ativo":
         media, _ = banner_sorteio(g)
@@ -814,10 +813,10 @@ def _container_sorteio(g: dict) -> discord.ui.Container:
         )
         requisitos = texto_requisitos(g)
         if requisitos:
-            info += "\n\n`⚜️` **✦ CONDIÇÕES DE PARTICIPAÇÃO ✦**\n"
+            info += "\n\n`⚜️` **CONDIÇÕES DE PARTICIPAÇÃO**\n"
             info += "\n".join(f"> {regra}" for regra in requisitos)
         else:
-            info += "\n\n`✅` **✦ PARTICIPAÇÃO LIVRE ✦**\n> Nenhum requisito adicional."
+            info += "\n\n`✅` **PARTICIPAÇÃO LIVRE**\n> Nenhum requisito adicional."
         componentes.append(discord.ui.TextDisplay(info))
         componentes.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
         componentes.append(discord.ui.ActionRow(
@@ -825,7 +824,7 @@ def _container_sorteio(g: dict) -> discord.ui.Container:
             RoyalSorteioBotao("lista"),
         ))
         componentes.append(discord.ui.TextDisplay(
-            f"-# ✧ {str(g.get('rodape') or 'Família Royal • Honra · União · Lealdade').strip()[:180]}"
+            f"-# ✧ {str(g.get('rodape') or 'Família Royal • Feliz Natal • 2026').strip()[:180]}"
         ))
     elif status == "encerrado":
         ganhadores = g.get("ganhadores", [])
@@ -1972,8 +1971,7 @@ class PainelSorteioRoyal(discord.ui.LayoutView):
         if media:
             componentes.append(discord.ui.MediaGallery(discord.MediaGalleryItem(media=media)))
         componentes.append(discord.ui.TextDisplay(
-            "## 👑 ✦ CENTRAL DE SORTEIOS ROYAL ✦\n"
-            "-# ⚜️ GERENCIAMENTO DE PREMIAÇÕES • FAMÍLIA ROYAL\n\n"
+            "## <a:coroa:1564000189167960177> **CENTRAL DE SORTEIOS ROYAL**\n"
             "`🎁` **CRIAR SORTEIO**\n"
             "> Prêmio, duração, vagas, descrição e **banner personalizado**\n\n"
             "`✍️` **PERSONALIZAR A PRÉVIA**\n"
@@ -2073,12 +2071,6 @@ class PainelSorteioView(discord.ui.View):
         await interaction.response.send_message(
             embed=embed_estatisticas(interaction.guild), ephemeral=True
         )
-
-
-# ════════════════════════════════════════════════════════════════
-#                                  COG
-# ════════════════════════════════════════════════════════════════
-
 
 class SorteiosCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
