@@ -45,7 +45,7 @@ DURACAO_MIN = 60
 DURACAO_MAX = 60 * 86400     
 
 TEMAS = {
-    "azul": {"nome": "Royal", "emoji": "👑", "cor": COR_AZUL},
+    "azul": {"nome": "Royal", "emoji": "<a:coroa:1564000189167960177>", "cor": COR_AZUL},
     "ouro": {"nome": "Ouro Imperial", "emoji": "⚜️", "cor": 0xCFAC6D},
     "neon": {"nome": "Relâmpago Royal", "emoji": "⚡", "cor": COR_AZUL},
     "rubi": {"nome": "Rubi", "emoji": "🔥", "cor": 0xC0392B},
@@ -95,7 +95,7 @@ CONFIG_PADRAO = {
     "tema": "azul",
     "titulo_padrao": "Sorteio Família Royal",
     "descricao_padrao": "",
-    "rodape_padrao": "Família Royal • Honra · União · Lealdade",
+    "rodape_padrao": "Família Royal • Natal • 2026",
     "botao_padrao": "Participar",
     "banner_padrao": "",         # URL opcional para novos sorteios
     "banner_painel": "",         # URL opcional dos painéis administrativos
@@ -1187,7 +1187,7 @@ class PersonalizarSorteioModal(discord.ui.Modal, title="✨ Personalizar Sorteio
     )
     rodape = discord.ui.TextInput(
         label="Rodapé do painel", required=False, max_length=180,
-        placeholder="Ex.: ⚜️ Família Royal • Honra · União · Lealdade",
+        placeholder="Ex.: <a:coroa:1564000189167960177> Família Royal • Natal • 2026",
     )
     botao_texto = discord.ui.TextInput(
         label="Nome do botão de participação", required=False, max_length=80,
