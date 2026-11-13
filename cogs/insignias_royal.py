@@ -141,16 +141,14 @@ def montar_catalogo(cog: "InsigniasRoyal", com_banner: bool = False) -> discord.
     ))
     bloco.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
     bloco.add_item(discord.ui.TextDisplay(
-        f"**{EMOJI_ARVORE} COLEÇÃO NATALINA ・ EXCLUSIVAS**\n"
-        "> <@&1568866728237211668> ┊ *Espírito de Natal*\n"
-        "> <@&1568866716723839038> ┊ *Celebração Real*\n"
-        "> <@&1568866728031559742> ┊ *Doçura e União*\n"
+        f"**COLEÇÃO NATALINA**\n"
+        "> `🎅🏼` <@&1568866728237211668> ┊ *Espírito de Natal*\n"
+        "> `🎅🏼` <@&1568866716723839038> ┊ *Celebração Real*\n"
+        "> `🎅🏼` <@&1568866728031559742> ┊ *Doçura e União*\n"
     ))
     bloco.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
     bloco.add_item(discord.ui.TextDisplay(
-        f"**INSÍGNIAS DOS MEMBROS**\n"
-        "> Distinções pessoais de integrantes da Família, concedidas mediante aprovação.\n\n"
-        "**❄️ COMO PARTICIPAR**\n"
+               "**COMO PARTICIPAR**\n"
         "> `🎄` Abra uma das duas coleções abaixo.\n"
         "> `🎄` Escolha a insígnia e escreva uma mensagem **opcional**.\n"
         "> `🎄` O titular recebe o pedido na **DM** e decide aprovar ou recusar.\n"
@@ -208,8 +206,8 @@ def montar_pagina(cog: "InsigniasRoyal", categoria: str, pagina: int = 0) -> dis
 
 class AbrirCategoria(discord.ui.Button):
     def __init__(self, cog: "InsigniasRoyal", categoria: str):
-        titulo = "Especiais" if categoria == "natal" else "Insígnias dos membros"
-        emoji = "🎄" if categoria == "natal" else "🎁"
+        titulo = "Especiais" if categoria == "natal" else "Membros"
+        emoji = "🎄" if categoria == "natal" else "<:gift:1570665369868173342>"
         super().__init__(
             label=titulo, emoji=emoji, style=discord.ButtonStyle.primary,
             custom_id=f"royal:insignias:categoria:{categoria}:v2",
@@ -243,7 +241,7 @@ class TrocarCategoria(discord.ui.Button):
     def __init__(self, cog: "InsigniasRoyal", categoria: str):
         super().__init__(
             label="Ver natalinas" if categoria == "natal" else "Ver membros",
-            emoji="🎄" if categoria == "natal" else "🎀",
+            emoji="🎄" if categoria == "natal" else "<:gift:1570665369868173342>",
             style=discord.ButtonStyle.secondary,
         )
         self.cog, self.categoria = cog, categoria
@@ -338,7 +336,7 @@ def montar_meus_pedidos(cog: "InsigniasRoyal", registros) -> discord.ui.LayoutVi
     bloco = discord.ui.Container(accent_colour=COR_ROYAL)
     bloco.add_item(discord.ui.TextDisplay(
         f"## {EMOJI_PRESENTE} MEUS PEDIDOS DE INSÍGNIAS\n"
-        "**❄️ **ACOMPANHAMENTO**\n"
+        "**ACOMPANHAMENTO**\n"
         "Confira suas solicitações ainda aguardando resposta do titular."
     ))
     bloco.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
@@ -354,7 +352,7 @@ def montar_meus_pedidos(cog: "InsigniasRoyal", registros) -> discord.ui.LayoutVi
         bloco.add_item(discord.ui.ActionRow(CancelarPedidoSelect(cog, registros)))
     else:
         bloco.add_item(discord.ui.TextDisplay(
-            "🎄 Você não possui solicitações pendentes.\n"
+            "**Você não possui solicitações pendentes.**\n"
             "-# Abra uma das coleções no painel para solicitar uma insígnia."
         ))
     view.add_item(bloco)
