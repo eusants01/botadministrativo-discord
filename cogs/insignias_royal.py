@@ -1,11 +1,5 @@
 from __future__ import annotations
 
-"""Insígnias da Família Royal | edição de Natal.
-
-Requer discord.py >= 2.6 (Components V2) e bot.pool (asyncpg).
-Coloque este arquivo na pasta de cogs, mantendo a pasta assets no nível acima.
-"""
-
 import logging
 import math
 from pathlib import Path
@@ -135,7 +129,7 @@ def montar_catalogo(cog: "InsigniasRoyal", com_banner: bool = False) -> discord.
     bloco.add_item(discord.ui.TextDisplay(
         f"## {EMOJI_NEVE}  INSÍGNIAS DA FAMÍLIA ROYAL\n"
         "### EDIÇÃO ESPECIAL DE NATAL\n"
-        "> `❄️` Uma distinção, um vínculo, uma história.**\n"
+        "> `❄️` Uma distinção, um vínculo, uma história.\n"
         "> `❄️` Cada insígnia representa reconhecimento e confiança.\n"
         "> `❄️` Explore os presentes e os símbolos de nossa Família."
     ))
@@ -368,7 +362,7 @@ def montar_pedido(cog: "InsigniasRoyal", pedido_id: int, item: dict,
         painel_com_banner(bloco, "solicitacao")
     bloco.add_item(discord.ui.TextDisplay(
         f"## {EMOJI_COROA} PEDIDO DE INSÍGNIA · NATAL\n"
-        "**❄️ **NOVA SOLICITAÇÃO**\n"
+        "**NOVA SOLICITAÇÃO**\n"
         f"> {item['emoji']} **Insígnia {texto_seguro(item['nome'])}**\n"
         f"> `👤` Solicitante: <@{solicitante}>\n"
         f"> `🏰` Comunidade: **{texto_seguro(servidor or 'Família Royal')}**\n"
@@ -405,9 +399,9 @@ def montar_pedido(cog: "InsigniasRoyal", pedido_id: int, item: dict,
 def montar_resultado(pedido, estado: str, *,
                      com_banner: bool = False) -> discord.ui.LayoutView:
     configuracoes = {
-        "approved": ("✅ APROVADA", "🎁 A insígnia foi concedida com autorização do titular."),
-        "rejected": ("📜 NÃO APROVADA", "❄️ Solicitação encerrada por decisão do titular."),
-        "cancelled": ("🚫 CANCELADA", "📜 Solicitação cancelada por quem a enviou."),
+        "approved": ("APROVADA", "🎁 A insígnia foi concedida com autorização do titular."),
+        "rejected": ("NÃO APROVADA", "❄️ Solicitação encerrada por decisão do titular."),
+        "cancelled": ("CANCELADA", "📜 Solicitação cancelada por quem a enviou."),
     }
     titulo, explicacao = configuracoes[estado]
     view = discord.ui.LayoutView(timeout=None)
@@ -416,7 +410,7 @@ def montar_resultado(pedido, estado: str, *,
         painel_com_banner(bloco, "decisao")
     bloco.add_item(discord.ui.TextDisplay(
         f"## {EMOJI_NEVE} {titulo}\n"
-        "**🎄 **REGISTRO DA FAMÍLIA ROYAL**\n"
+        f"**REGISTRO DA FAMÍLIA**\n"
         f"> `🏆` Insígnia: **{texto_seguro(pedido['insignia_name'])}**\n"
         f"> `👤` Solicitante: <@{pedido['requester_id']}>\n"
         f"> `📜` Pedido: `#{pedido['id']}`\n\n"
