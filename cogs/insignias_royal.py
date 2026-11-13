@@ -135,27 +135,25 @@ def montar_catalogo(cog: "InsigniasRoyal", com_banner: bool = False) -> discord.
     bloco.add_item(discord.ui.TextDisplay(
         f"## {EMOJI_NEVE}  INSÍGNIAS DA FAMÍLIA ROYAL\n"
         "### EDIÇÃO ESPECIAL DE NATAL\n"
-        "╭・✧  **Uma distinção, um vínculo, uma história.**\n"
-        "┊  Cada insígnia representa reconhecimento e confiança.\n"
-        "╰・✧  Explore os presentes e os símbolos de nossa Família."
+        "> `❄️` Uma distinção, um vínculo, uma história.**\n"
+        "> `❄️` Cada insígnia representa reconhecimento e confiança.\n"
+        "> `❄️` Explore os presentes e os símbolos de nossa Família."
     ))
     bloco.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
     bloco.add_item(discord.ui.TextDisplay(
-        f"**{EMOJI_ARVORE}  ✦ COLEÇÃO NATALINA ・ EXCLUSIVAS**\n"
-        "🎅 <@&1568866728237211668>  ┊  *Espírito de Natal*\n"
-        "🎄 <@&1568866716723839038>  ┊  *Celebração Real*\n"
-        "🍬 <@&1568866728031559742>  ┊  *Doçura e União*\n"
-        "-# Insígnias especiais, com permissões próprias e autorização do titular."
+        f"**{EMOJI_ARVORE} COLEÇÃO NATALINA ・ EXCLUSIVAS**\n"
+        "> <@&1568866728237211668> ┊ *Espírito de Natal*\n"
+        "> <@&1568866716723839038> ┊ *Celebração Real*\n"
+        "> <@&1568866728031559742> ┊ *Doçura e União*\n"
     ))
     bloco.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
     bloco.add_item(discord.ui.TextDisplay(
-        f"**{EMOJI_PRESENTE} INSÍGNIAS DOS MEMBROS**\n"
-        "Distinções pessoais de integrantes da Família, concedidas mediante aprovação.\n\n"
+        f"**INSÍGNIAS DOS MEMBROS**\n"
+        "> Distinções pessoais de integrantes da Família, concedidas mediante aprovação.\n\n"
         "**❄️ COMO PARTICIPAR**\n"
-        "`01`  Abra uma das duas coleções abaixo.\n"
-        "`02`  Escolha a insígnia e escreva uma mensagem *opcional*.\n"
-        "`03`  O titular recebe o pedido na DM e decide aprovar ou recusar.\n"
-        "-# ✧ Cada solicitação é individual. Respeite a decisão de seu titular."
+        "> `🎄` Abra uma das duas coleções abaixo.\n"
+        "> `🎄` Escolha a insígnia e escreva uma mensagem **opcional**.\n"
+        "> `🎄` O titular recebe o pedido na **DM** e decide aprovar ou recusar.\n"
     ))
     bloco.add_item(discord.ui.ActionRow(
         AbrirCategoria(cog, "natal"),
@@ -172,8 +170,8 @@ def montar_pagina(cog: "InsigniasRoyal", categoria: str, pagina: int = 0) -> dis
     total = max(1, math.ceil(len(itens) / PAGINA_TAMANHO))
     pagina = max(0, min(pagina, total - 1))
     exibidos = itens[pagina * PAGINA_TAMANHO:(pagina + 1) * PAGINA_TAMANHO]
-    titulo = (f"{EMOJI_ARVORE}  INSÍGNIAS ESPECIAIS / EXCLUSIVAS"
-              if categoria == "natal" else f"{EMOJI_COROA}  INSÍGNIAS DOS MEMBROS")
+    titulo = (f"{EMOJI_ARVORE}  INSÍGNIAS EXCLUSIVAS"
+              if categoria == "natal" else (f"INSÍGNIAS DOS MEMBROS"))
     resumo = ("Distinções sazonais de Natal, autorizadas por seus titulares."
               if categoria == "natal" else "Símbolos pessoais da Família, concedidos por seus titulares.")
 
@@ -182,20 +180,19 @@ def montar_pagina(cog: "InsigniasRoyal", categoria: str, pagina: int = 0) -> dis
     bloco.add_item(discord.ui.TextDisplay(
         f"## ❄️ {titulo}\n"
         f"> {resumo}\n"
-        f"-# 〔 Página {pagina + 1:02d} de {total:02d} 〕 ・ {len(itens)} insígnias no catálogo"
+        f"-# Página {pagina + 1:02d} / {total:02d} - {len(itens)} insígnias no catálogo"
     ))
     bloco.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
     linhas = [
         f"{item['emoji']}  <@&{item['cargo_id']}>\n"
-        f"　　└・*{texto_seguro(item['descricao_curta'])}*"
+        f" <:icons_text1:1570684931842113576>・*{texto_seguro(item['descricao_curta'])}*"
         for item in exibidos
     ]
     bloco.add_item(discord.ui.TextDisplay("\n".join(linhas)))
     bloco.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
     bloco.add_item(discord.ui.TextDisplay(
-        "**🎄 SOLICITAR INSÍGNIA**\n"
-        "Selecione no menu para abrir a ficha com a mensagem opcional.\n"
-        "-# A análise será feita pelo titular em mensagem privada."
+        "**`🎄` SOLICITAR INSÍGNIA**\n"
+        "Selecione no **menu** para abrir a ficha com a mensagem opcional.\n"
     ))
     bloco.add_item(discord.ui.ActionRow(InsigniaSelect(cog, exibidos, categoria, pagina)))
     botoes = []
@@ -211,7 +208,7 @@ def montar_pagina(cog: "InsigniasRoyal", categoria: str, pagina: int = 0) -> dis
 
 class AbrirCategoria(discord.ui.Button):
     def __init__(self, cog: "InsigniasRoyal", categoria: str):
-        titulo = "Especiais / exclusivas" if categoria == "natal" else "Insígnias dos membros"
+        titulo = "Especiais" if categoria == "natal" else "Insígnias dos membros"
         emoji = "🎄" if categoria == "natal" else "🎁"
         super().__init__(
             label=titulo, emoji=emoji, style=discord.ButtonStyle.primary,
@@ -308,7 +305,7 @@ class SolicitarInsigniaModal(discord.ui.Modal):
 class AbrirMeusPedidos(discord.ui.Button):
     def __init__(self, cog: "InsigniasRoyal"):
         super().__init__(
-            label="Meus pedidos pendentes", emoji="📜",
+            label="Meus pedidos", emoji="<:christmascard:1570666450161639464>",
             style=discord.ButtonStyle.secondary,
             custom_id="royal:insignias:meus-pedidos:v2",
         )
@@ -341,14 +338,14 @@ def montar_meus_pedidos(cog: "InsigniasRoyal", registros) -> discord.ui.LayoutVi
     bloco = discord.ui.Container(accent_colour=COR_ROYAL)
     bloco.add_item(discord.ui.TextDisplay(
         f"## {EMOJI_PRESENTE} MEUS PEDIDOS DE INSÍGNIAS\n"
-        "**❄️ 〔 ACOMPANHAMENTO 〕**\n"
+        "**❄️ **ACOMPANHAMENTO**\n"
         "Confira suas solicitações ainda aguardando resposta do titular."
     ))
     bloco.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
     if registros:
         bloco.add_item(discord.ui.TextDisplay("\n".join(
-            f"✦ **{texto_seguro(r['insignia_name'])}** · pedido `#{r['id']}` "
-            f"· <t:{int(r['created_at'].timestamp())}:R>"
+            f" **{texto_seguro(r['insignia_name'])}** · pedido `#{r['id']}` "
+            f" <t:{int(r['created_at'].timestamp())}:R>"
             for r in registros[:25]
         )))
         bloco.add_item(discord.ui.TextDisplay(
@@ -373,17 +370,17 @@ def montar_pedido(cog: "InsigniasRoyal", pedido_id: int, item: dict,
         painel_com_banner(bloco, "solicitacao")
     bloco.add_item(discord.ui.TextDisplay(
         f"## {EMOJI_COROA} PEDIDO DE INSÍGNIA · NATAL\n"
-        "**❄️ 〔 NOVA SOLICITAÇÃO 〕**\n"
+        "**❄️ **NOVA SOLICITAÇÃO**\n"
         f"> {item['emoji']} **Insígnia {texto_seguro(item['nome'])}**\n"
-        f"> 👤 Solicitante: <@{solicitante}>\n"
-        f"> 🏰 Comunidade: **{texto_seguro(servidor or 'Família Royal')}**\n"
-        f"> 📜 Registro: `#{pedido_id}`"
+        f"> `👤` Solicitante: <@{solicitante}>\n"
+        f"> `🏰` Comunidade: **{texto_seguro(servidor or 'Família Royal')}**\n"
+        f"> `📜` Registro: `#{pedido_id}`"
     ))
     bloco.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
     bloco.add_item(discord.ui.TextDisplay(
-        f"**🎄 ✦ SIGNIFICADO DA DISTINÇÃO**\n{item['descricao_completa']}\n\n"
-        f"**💌 ✦ MENSAGEM DO SOLICITANTE**\n{texto_citado(mensagem)}\n\n"
-        "-# ✧ A decisão de conceder a insígnia é exclusiva do titular."
+        f"**> `🎄` SIGNIFICADO DA DISTINÇÃO**\n{item['descricao_completa']}\n\n"
+        f"**> `💌` MENSAGEM DO SOLICITANTE**\n{texto_citado(mensagem)}\n\n"
+        "-# A decisão de conceder a insígnia é exclusiva do titular."
     ))
     aprovar = discord.ui.Button(
         label="Aprovar", emoji="✅", style=discord.ButtonStyle.success,
@@ -421,12 +418,11 @@ def montar_resultado(pedido, estado: str, *,
         painel_com_banner(bloco, "decisao")
     bloco.add_item(discord.ui.TextDisplay(
         f"## {EMOJI_NEVE} {titulo}\n"
-        "**🎄 〔 REGISTRO DA FAMÍLIA ROYAL 〕**\n"
-        f"> ✦ Insígnia: **{texto_seguro(pedido['insignia_name'])}**\n"
-        f"> 👤 Solicitante: <@{pedido['requester_id']}>\n"
-        f"> 📜 Pedido: `#{pedido['id']}`\n\n"
+        "**🎄 **REGISTRO DA FAMÍLIA ROYAL**\n"
+        f"> `🏆` Insígnia: **{texto_seguro(pedido['insignia_name'])}**\n"
+        f"> `👤` Solicitante: <@{pedido['requester_id']}>\n"
+        f"> `📜` Pedido: `#{pedido['id']}`\n\n"
         f"{explicacao}\n"
-        "-# ✧ Honra · União · Lealdade"
     ))
     view.add_item(bloco)
     return view
