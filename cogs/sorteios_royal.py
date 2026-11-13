@@ -93,9 +93,8 @@ CONFIG_PADRAO = {
     "bonus_mult": 2,
     "ping": 0,
     "tema": "azul",
-    "titulo_padrao": "✦ SORTEIO ROYAL ✦",
+    "titulo_padrao": "🎄 SORTEIO ROYAL • NATAL",
     "descricao_padrao": "",
-    "subtitulo_padrao": "Uma nova oportunidade de conquistar um prêmio especial.",
     "rodape_padrao": "Família Royal • Natal 2026",
     "botao_padrao": "Participar",
     "banner_padrao": "",         # URL opcional para novos sorteios
@@ -472,7 +471,7 @@ def montar_embed(g: dict, *, preview: bool = False) -> discord.Embed:
                 f"> {regra}" for regra in requisitos
             )
         else:
-            descricao += "\n\n`✅` **✦ PARTICIPAÇÃO LIVRE ✦**\n> Nenhum requisito adicional."
+            descricao += "\n\n`✅` **PARTICIPAÇÃO LIVRE**\n> Nenhum requisito adicional."
     embed = discord.Embed(description=descricao[:4000], color=cor_sorteio(g))
     if status == "ativo":
         media, _ = banner_sorteio(g)
@@ -1367,7 +1366,7 @@ class CriarModal(discord.ui.Modal, title="🎁 Novo Sorteio Royal"):
             return await interaction.response.send_message(
                 "❌ Banner inválido. Use um link http(s) completo.", ephemeral=True)
         dados = {
-            "titulo": str(self.conf.get("titulo_padrao") or "✦ SORTEIO ROYAL ✦")[:120],
+            "titulo": str(self.conf.get("titulo_padrao") or "SORTEIO ROYAL")[:120],
             "premio": premio,
             "descricao": str(self.descricao).strip(),
             "banner": banner,
@@ -1433,7 +1432,6 @@ class RelampagoModal(discord.ui.Modal, title="⚡ Sorteio Relâmpago"):
             "premio": str(self.premio).strip(),
             "titulo": "⚡ SORTEIO RELÂMPAGO ROYAL",
             "descricao": "",
-            "subtitulo": "✦ Um prêmio especial. Pouco tempo para participar!",
             "rodape": "⚜️ Família Royal • Boa sorte!",
             "botao_texto": "Participar agora",
             "banner": "",
@@ -1457,7 +1455,7 @@ class RelampagoModal(discord.ui.Modal, title="⚡ Sorteio Relâmpago"):
         )
 
 
-class EditarConteudoSorteioModal(discord.ui.Modal, title="✦ Editar Sorteio Royal"):
+class EditarConteudoSorteioModal(discord.ui.Modal, title="Editar Sorteio Royal"):
     titulo = discord.ui.TextInput(label="Título", max_length=120)
     premio = discord.ui.TextInput(label="Prêmio", max_length=120)
     descricao = discord.ui.TextInput(label="Descrição", style=discord.TextStyle.paragraph,
@@ -1771,7 +1769,7 @@ class ConfiguracaoModal(discord.ui.Modal, title="Padrões dos próximos sorteios
         await interaction.response.send_message("✅ Padrões atualizados para os próximos sorteios.", ephemeral=True)
 
 
-class ConfigTextosModal(discord.ui.Modal, title="✦ Identidade Royal dos Sorteios"):
+class ConfigTextosModal(discord.ui.Modal, title="Identidade Royal dos Sorteios"):
     titulo_padrao = discord.ui.TextInput(label="Título padrão", max_length=120)
     descricao_padrao = discord.ui.TextInput(label="Descrição padrão", style=discord.TextStyle.paragraph,
                                             required=False, max_length=1800)
@@ -1793,7 +1791,7 @@ class ConfigTextosModal(discord.ui.Modal, title="✦ Identidade Royal dos Sortei
             return await interaction.response.send_message("⛔ Acesso restrito.", ephemeral=True)
         try:
             await salvar_config(self.guild_id, {
-                "titulo_padrao": str(self.titulo_padrao).strip() or "✦ SORTEIO ROYAL ✦",
+                "titulo_padrao": str(self.titulo_padrao).strip() or "SORTEIO ROYAL",
                 "descricao_padrao": str(self.descricao_padrao).strip(),
                 "subtitulo_padrao": str(self.subtitulo_padrao).strip(),
                 "rodape_padrao": str(self.rodape_padrao).strip() or NOME_SERVIDOR,
@@ -1907,7 +1905,7 @@ class PainelConfigRoyal(discord.ui.LayoutView):
         if media:
             elementos.append(discord.ui.MediaGallery(discord.MediaGalleryItem(media=media)))
         elementos.append(discord.ui.TextDisplay(
-            "## <a:coroa:1564000189167960177> ✦ CONFIGURAÇÕES ROYAL ✦\n"
+            "## <a:coroa:1564000189167960177> CONFIGURAÇÕES ROYAL\n"
             "-# ⚜️ IDENTIDADE, REGRAS E PREFERÊNCIAS DOS SORTEIOS\n\n"
             "`⚙️` **PADRÕES**\n> Duração, ganhadores e elegibilidade\n\n"
             "`🏰` **CANAL E CARGOS**\n> Local da premiação e cargos necessários\n\n"
@@ -2024,7 +2022,7 @@ class PainelSorteioRoyal(discord.ui.LayoutView):
         if media:
             componentes.append(discord.ui.MediaGallery(discord.MediaGalleryItem(media=media)))
         componentes.append(discord.ui.TextDisplay(
-            "## 👑 ✦ CENTRAL DE SORTEIOS ROYAL ✦\n"
+            "## 👑 CENTRAL DE SORTEIOS ROYAL\n"
             "-# ⚜️ GERENCIAMENTO DE PREMIAÇÕES • FAMÍLIA ROYAL\n\n"
             "`🎁` **CRIAR SORTEIO**\n"
             "> Prêmio, duração, vagas, descrição e **banner personalizado**\n\n"
@@ -2074,7 +2072,7 @@ class PainelSorteioRoyal(discord.ui.LayoutView):
             botao.callback = clique
             botoes.append(botao)
         componentes.append(discord.ui.ActionRow(*botoes))
-        componentes.append(discord.ui.TextDisplay("-# ✧ Família Royal • Honra · União · Lealdade"))
+        componentes.append(discord.ui.TextDisplay("-# 🎄 Família Royal • Natal 2026"))
         self.add_item(discord.ui.Container(*componentes, accent_colour=discord.Colour(COR_AZUL)))
 
 
@@ -2216,7 +2214,7 @@ class SorteiosCog(commands.Cog):
                 f"`{p}painelsorteio` — cria o painel da equipe\n"
                 f"`{p}sorteioajuda` — mostra esta ajuda\n"
                 f"`{p}painelconfigsorteio` — configura os próximos sorteios\n\n"
-                "**✦ PELO PAINEL:** crie sorteios com prêmio, duração, descrição e "
+                "**PELO PAINEL:** crie sorteios com prêmio, duração, descrição e "
                 "**banner próprio** no formulário inicial.\n"
                 "**✍️ NA PRÉVIA:** personalize o título, subtítulo, rodapé, botão, cores e demais detalhes.\n"
                 "**⚜️ GERENCIAMENTO:** edite sorteios ativos, encerre, cancele, "
