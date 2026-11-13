@@ -45,12 +45,12 @@ DURACAO_MIN = 60
 DURACAO_MAX = 60 * 86400     
 
 TEMAS = {
-    "azul": {"nome": "Royal", "emoji": "👑", "cor": COR_AZUL},
-    "ouro": {"nome": "Ouro Imperial", "emoji": "⚜️", "cor": 0xCFAC6D},
-    "neon": {"nome": "Relâmpago Royal", "emoji": "⚡", "cor": COR_AZUL},
-    "rubi": {"nome": "Rubi", "emoji": "🔥", "cor": 0xC0392B},
-    "esmeralda": {"nome": "Esmeralda", "emoji": "🍀", "cor": 0x1ABC9C},
-    "galaxia": {"nome": "Galáxia", "emoji": "🌌", "cor": 0x6C3FC5},
+    "azul": {"nome": "Royal", "emoji": "", "cor": COR_AZUL},
+    "ouro": {"nome": "Ouro Imperial", "emoji": "", "cor": 0xCFAC6D},
+    "neon": {"nome": "Relâmpago Royal", "emoji": "", "cor": COR_AZUL},
+    "rubi": {"nome": "Rubi", "emoji": "", "cor": 0xC0392B},
+    "esmeralda": {"nome": "Esmeralda", "emoji": "", "cor": 0x1ABC9C},
+    "galaxia": {"nome": "Galáxia", "emoji": "", "cor": 0x6C3FC5},
 }
 
 BONUS_OPCOES = [2, 3, 5]
