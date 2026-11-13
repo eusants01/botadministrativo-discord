@@ -45,7 +45,7 @@ DURACAO_MIN = 60
 DURACAO_MAX = 60 * 86400     
 
 TEMAS = {
-    "azul": {"nome": "Royal", "emoji": "<a:coroa:1564000189167960177>", "cor": COR_AZUL},
+    "azul": {"nome": "Royal", "emoji": "👑", "cor": COR_AZUL},
     "ouro": {"nome": "Ouro Imperial", "emoji": "⚜️", "cor": 0xCFAC6D},
     "neon": {"nome": "Relâmpago Royal", "emoji": "⚡", "cor": COR_AZUL},
     "rubi": {"nome": "Rubi", "emoji": "🔥", "cor": 0xC0392B},
@@ -93,9 +93,10 @@ CONFIG_PADRAO = {
     "bonus_mult": 2,
     "ping": 0,
     "tema": "azul",
-    "titulo_padrao": "Sorteio Família Royal",
+    "titulo_padrao": "✦ SORTEIO ROYAL ✦",
     "descricao_padrao": "",
-    "rodape_padrao": "Família Royal • Natal • 2026",
+    "subtitulo_padrao": "Uma nova oportunidade de conquistar um prêmio especial.",
+    "rodape_padrao": "Família Royal • Natal 2026",
     "botao_padrao": "Participar",
     "banner_padrao": "",         # URL opcional para novos sorteios
     "banner_painel": "",         # URL opcional dos painéis administrativos
@@ -303,11 +304,16 @@ def descricao_sorteio(g: dict) -> str:
         return descricao[:1800]
     return (
         "> `🎟️` Participe pelo botão abaixo e acompanhe a apuração.\n"
-        "> `🍀` Boa sorte a todos os integrantes da Família Royal!"
+        "> `🍀` Que a sorte esteja ao seu lado."
     )
 
 def texto_ganhadores(ganhadores: list[int]) -> str:
     return "\n".join(f"> <@{uid}>" for uid in ganhadores) if ganhadores else "> Nenhum participante elegível."
+
+
+def texto_patrocinador(g: dict) -> str:
+    patrocinador = str(g.get("patrocinador") or "").strip()
+    return f"> `🪎` **Patrocinador:** {patrocinador[:120]}" if patrocinador else ""
 
 
 def arquivo_banner(local: Path) -> Path | None:
@@ -457,13 +463,16 @@ def montar_embed(g: dict, *, preview: bool = False) -> discord.Embed:
             + f"> `🏆` **Vagas:** {g.get('vencedores', 1)}\n"
             + f"> `👥` **Participantes:** {len(g.get('participantes', {}))}"
         )
+        patrocinador = texto_patrocinador(g)
+        if patrocinador:
+            descricao += "\n" + patrocinador
         requisitos = texto_requisitos(g)
         if requisitos:
             descricao += "\n\n`⚜️` **CONDIÇÕES DE PARTICIPAÇÃO**\n" + "\n".join(
                 f"> {regra}" for regra in requisitos
             )
         else:
-            descricao += "\n\n`✅` **PARTICIPAÇÃO LIVRE**\n> Nenhum requisito adicional."
+            descricao += "\n\n`✅` **✦ PARTICIPAÇÃO LIVRE ✦**\n> Nenhum requisito adicional."
     embed = discord.Embed(description=descricao[:4000], color=cor_sorteio(g))
     if status == "ativo":
         media, _ = banner_sorteio(g)
@@ -488,6 +497,8 @@ def info_embed(g: dict) -> discord.Embed:
         f"**Vencedores:** {g['vencedores']}",
         f"**Participantes:** {len(g.get('participantes', {}))} ({entradas} entradas)",
     ]
+    if g.get("patrocinador"):
+        linhas.append(texto_patrocinador(g))
     if g.get("status") == "ativo":
         linhas.append(f"**Termina:** <t:{int(g['fim_ts'])}:R>")
     if ganh:
@@ -576,7 +587,10 @@ async def anunciar(
     ganhadores: list[int],
     reroll: bool = False,
 ):
-    """O canal mostra somente os vencedores; sem instruções adicionais."""
+    """O resultado aparece no próprio banner do sorteio; aqui ficam apenas os avisos privados."""
+    if not (AVISAR_GANHADORES_DM and ganhadores):
+        return
+
     canal = bot.get_channel(int(g["canal"]))
     if canal is None:
         try:
@@ -584,42 +598,28 @@ async def anunciar(
         except discord.HTTPException:
             LOG.exception("Canal do sorteio não encontrado: %s", g.get("canal"))
             return
-    if ganhadores:
-        cabecalho = "## 🏆 GANHADOR(A)" if len(ganhadores) == 1 else "## 🏆 GANHADORES"
-        descricao = cabecalho + "\n" + texto_ganhadores(ganhadores)
-    else:
-        descricao = "## 🏁 SORTEIO ENCERRADO\n> Nenhum participante elegível."
-    try:
-        # Um único anúncio público, sem repetir menções ou incluir texto extra.
-        await canal.send(
-            embed=discord.Embed(description=descricao, color=cor_sorteio(g)),
-            allowed_mentions=discord.AllowedMentions(users=True),
-        )
-    except discord.HTTPException:
-        LOG.exception("Falha ao anunciar ganhador do sorteio %s", g.get("mensagem"))
 
-    if AVISAR_GANHADORES_DM and ganhadores:
-        guild = canal.guild
-        for uid in ganhadores:
-            membro = guild.get_member(uid)
-            if membro is None:
-                try:
-                    membro = await guild.fetch_member(uid)
-                except discord.HTTPException:
-                    continue
-            dm = discord.Embed(
-                title="🏆 Você ganhou o sorteio!",
-                description=(
-                    f"Parabéns, **{membro.display_name}**!\n"
-                    f"> `🎁` **Prêmio:** {g.get('premio', 'Sorteio Royal')}\n"
-                    f"> `🔗` [Ver o sorteio]({link_sorteio(g)})"
-                ),
-                color=cor_sorteio(g),
-            )
+    guild = canal.guild
+    for uid in ganhadores:
+        membro = guild.get_member(uid)
+        if membro is None:
             try:
-                await membro.send(embed=dm)
-            except (discord.Forbidden, discord.HTTPException):
-                pass
+                membro = await guild.fetch_member(uid)
+            except discord.HTTPException:
+                continue
+        dm = discord.Embed(
+            title="🏆 Você ganhou o sorteio!",
+            description=(
+                f"Parabéns, **{membro.display_name}**!\n"
+                f"> `🎁` **Prêmio:** {g.get('premio', 'Sorteio Royal')}\n"
+                f"> `🔗` [Ver o sorteio]({link_sorteio(g)})"
+            ),
+            color=cor_sorteio(g),
+        )
+        try:
+            await membro.send(embed=dm)
+        except (discord.Forbidden, discord.HTTPException):
+            pass
 
 
 async def publicar(
@@ -805,11 +805,13 @@ def _container_sorteio(g: dict) -> discord.ui.Container:
         componentes.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
         info = (
             "`⏳` **INFORMAÇÕES DO SORTEIO**\n"
-            f"> `📅` **Encerramento:** <t:{int(g.get('fim_ts', 0))}:F> "
-            f"(<t:{int(g.get('fim_ts', 0))}:R>)\n"
+            f"> `📅` **Encerramento:** <t:{int(g.get('fim_ts', 0))}:R>\n"
             f"> `🏆` **Vagas:** {g.get('vencedores', 1)}\n"
             f"> `👥` **Participantes:** {len(g.get('participantes', {}))}"
         )
+        patrocinador = texto_patrocinador(g)
+        if patrocinador:
+            info += "\n" + patrocinador
         requisitos = texto_requisitos(g)
         if requisitos:
             info += "\n\n`⚜️` **CONDIÇÕES DE PARTICIPAÇÃO**\n"
@@ -823,12 +825,34 @@ def _container_sorteio(g: dict) -> discord.ui.Container:
             RoyalSorteioBotao("lista"),
         ))
         componentes.append(discord.ui.TextDisplay(
-            f"-# ✧ {str(g.get('rodape') or 'Família Royal • Feliz Natal • 2026').strip()[:180]}"
+            f"-# ✧ {str(g.get('rodape') or '🎄 Família Royal • Natal 2026').strip()[:180]}"
         ))
     elif status == "encerrado":
+        banner, _ = banner_sorteio(g)
+        if banner:
+            componentes.append(discord.ui.MediaGallery(discord.MediaGalleryItem(media=banner)))
+        tema = TEMAS.get(g.get("tema", "azul"), TEMAS["azul"])
         ganhadores = g.get("ganhadores", [])
-        titulo = "## 🏆 GANHADOR(A)" if len(ganhadores) == 1 else "## 🏆 GANHADORES"
-        componentes.append(discord.ui.TextDisplay(titulo + "\n" + texto_ganhadores(ganhadores)))
+        componentes.append(discord.ui.TextDisplay(
+            f"## {tema['emoji']} {titulo_sorteio(g)}\n"
+            f"-# ✧ {str(g.get('subtitulo') or 'SORTEIO ENCERRADO').strip()[:180]}"
+        ))
+        componentes.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
+        componentes.append(discord.ui.TextDisplay(
+            "`🎁` **PRÊMIO EM DESTAQUE**\n"
+            f"> **{str(g.get('premio') or 'Não informado')[:120]}**"
+        ))
+        patrocinador = texto_patrocinador(g)
+        if patrocinador:
+            componentes.append(discord.ui.TextDisplay(patrocinador))
+        componentes.append(discord.ui.TextDisplay(
+            ("`🏆` **GANHADOR(A)**\n" if len(ganhadores) == 1 else "`🏆` **GANHADORES**\n")
+            + texto_ganhadores(ganhadores)
+        ))
+        componentes.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
+        componentes.append(discord.ui.TextDisplay(
+            f"-# ✧ {str(g.get('rodape') or '🎄 Família Royal • Natal 2026').strip()[:180]}"
+        ))
     else:
         componentes.append(discord.ui.TextDisplay("## 🚫 SORTEIO CANCELADO"))
     return discord.ui.Container(*componentes, accent_colour=discord.Colour(cor_sorteio(g)))
@@ -1168,12 +1192,40 @@ class CriarView(discord.ui.View):
     async def btn_visual(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(PersonalizarSorteioModal(self))
 
+    @discord.ui.button(label="Patrocinador", emoji="🎁", style=discord.ButtonStyle.secondary, row=4)
+    async def btn_patrocinador(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(PatrocinadorCriacaoModal(self))
+
     @discord.ui.button(label="Cancelar", emoji="✖️", style=discord.ButtonStyle.danger, row=3)
     async def btn_cancelar(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(
             content="❌ Criação cancelada.", embed=None, view=None
         )
         self.stop()
+
+
+class PatrocinadorCriacaoModal(discord.ui.Modal, title="🪎 Patrocinador do Sorteio"):
+    patrocinador = discord.ui.TextInput(
+        label="Patrocinador (opcional)",
+        placeholder="Ex.: @membro, Família Royal ou parceiro",
+        required=False, max_length=120,
+    )
+
+    def __init__(self, criacao: CriarView):
+        super().__init__(timeout=600)
+        self.criacao = criacao
+        atual = str(criacao.dados.get("patrocinador") or "")
+        if atual:
+            self.patrocinador.default = atual
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if interaction.user.id != self.criacao.autor.id:
+            return await interaction.response.send_message("⛔ Apenas o criador pode editar.", ephemeral=True)
+        self.criacao.dados["patrocinador"] = str(self.patrocinador).strip()
+        await interaction.response.edit_message(
+            content=self.criacao._texto_topo(),
+            embed=self.criacao.embed_preview(), view=self.criacao,
+        )
 
 
 class PersonalizarSorteioModal(discord.ui.Modal, title="✨ Personalizar Sorteio Royal"):
@@ -1187,7 +1239,7 @@ class PersonalizarSorteioModal(discord.ui.Modal, title="✨ Personalizar Sorteio
     )
     rodape = discord.ui.TextInput(
         label="Rodapé do painel", required=False, max_length=180,
-        placeholder="Ex.: <a:coroa:1564000189167960177> Família Royal • Natal • 2026",
+        placeholder="Ex.: 🎄 Família Royal • Natal 2026",
     )
     botao_texto = discord.ui.TextInput(
         label="Nome do botão de participação", required=False, max_length=80,
@@ -1450,12 +1502,13 @@ class EditarVisualSorteioModal(discord.ui.Modal, title="✨ Identidade Visual do
     cor_personalizada = discord.ui.TextInput(label="Cor hexadecimal (opcional)",
                                               required=False, max_length=7)
     botao_texto = discord.ui.TextInput(label="Texto do botão", required=False, max_length=80)
+    patrocinador = discord.ui.TextInput(label="Patrocinador (opcional)", required=False, max_length=120)
 
     def __init__(self, msg_id: int, bot):
         super().__init__(timeout=600)
         self.msg_id, self.bot = msg_id, bot
         g = obter(msg_id)
-        for nome in ("banner", "cor_personalizada", "botao_texto"):
+        for nome in ("banner", "cor_personalizada", "botao_texto", "patrocinador"):
             atual = str((g or {}).get(nome) or "")
             if atual:
                 getattr(self, nome).default = atual
@@ -1474,7 +1527,8 @@ class EditarVisualSorteioModal(discord.ui.Modal, title="✨ Identidade Visual do
             return await interaction.response.send_message("❌ Cor inválida. Use `#8B202D`.", ephemeral=True)
         await interaction.response.defer(ephemeral=True, thinking=True)
         g.update(banner=banner, cor_personalizada=cor,
-                 botao_texto=str(self.botao_texto).strip() or "Participar")
+                 botao_texto=str(self.botao_texto).strip() or "Participar",
+                 patrocinador=str(self.patrocinador).strip())
         salvar(g)
         ok = await atualizar_mensagem(self.bot, g)
         await interaction.followup.send(
@@ -1970,7 +2024,8 @@ class PainelSorteioRoyal(discord.ui.LayoutView):
         if media:
             componentes.append(discord.ui.MediaGallery(discord.MediaGalleryItem(media=media)))
         componentes.append(discord.ui.TextDisplay(
-            "## <a:coroa:1564000189167960177> **CENTRAL DE SORTEIOS ROYAL**\n"
+            "## 👑 ✦ CENTRAL DE SORTEIOS ROYAL ✦\n"
+            "-# ⚜️ GERENCIAMENTO DE PREMIAÇÕES • FAMÍLIA ROYAL\n\n"
             "`🎁` **CRIAR SORTEIO**\n"
             "> Prêmio, duração, vagas, descrição e **banner personalizado**\n\n"
             "`✍️` **PERSONALIZAR A PRÉVIA**\n"
@@ -2070,6 +2125,12 @@ class PainelSorteioView(discord.ui.View):
         await interaction.response.send_message(
             embed=embed_estatisticas(interaction.guild), ephemeral=True
         )
+
+
+# ════════════════════════════════════════════════════════════════
+#                                  COG
+# ════════════════════════════════════════════════════════════════
+
 
 class SorteiosCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
