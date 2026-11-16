@@ -51,9 +51,9 @@ def ids_ambiente(chave: str) -> list[int]:
 # informada aqui (ou pelo proprietário do servidor, por segurança).
 CARGOS_CORREGEDORIA = ids_ambiente("ROYAL_TICKETS_CORREGEDORIA_ROLE_IDS")
 TEMA_PADRAO = os.getenv("ROYAL_TICKETS_TEMA", "natal").strip().lower()
-BANNER_NATAL = os.getenv("ROYAL_NATAL_BANNER_URL", "").strip()
+BANNER_NATAL = os.getenv("ROYAL_SUPPORT_BANNER_URL.png", "").strip()
 BANNERS_NATAL = {
-    k: os.getenv(f"ROYAL_NATAL_BANNER_{k.upper()}_URL", "").strip()
+    k: os.getenv(f"ROYAL_SUPPORT_BANNER_URL.png{k.upper()}_URL", "").strip()
     for k in ("DENUNCIA", "CARGO_EB", "PARCERIA", "OUTROS")
 }
 MAX_TRANSCRICAO_BYTES = 15 * 1024 * 1024
@@ -75,7 +75,7 @@ INATIVIDADE_AVISO_HORAS = 0
 INATIVIDADE_FECHAR_APOS_AVISO_HORAS = 0
 FECHAR_APOS_DECISAO_MIN = 0
 BANNER_PRINCIPAL = os.getenv("ROYAL_SUPPORT_BANNER_URL.png", "").strip() or None
-BANNER_TICKET_PADRAO = os.getenv("ROYAL_TICKET_BANNER_URL.png", "").strip() or BANNER_PRINCIPAL
+BANNER_TICKET_PADRAO = os.getenv("ROYAL_SUPPORT_BANNER_URL.png", "").strip() or BANNER_PRINCIPAL
 BANNER_AVALIACAO = os.getenv("ROYAL_AVALIACAO_BANNER_URL.png", "").strip() or BANNER_TICKET_PADRAO
 
 
@@ -2000,7 +2000,6 @@ class TicketView(discord.ui.LayoutView):
         elementos.append(discord.ui.ActionRow(TicketSelect()))
         elementos.append(discord.ui.TextDisplay(
             '-# <a:animated_Settings:1556187476177981440> Família Royal • '
-            + ('🎄 Edição de Natal' if tema_atual() == 'natal' else 'Central oficial')
         ))
         self.add_item(discord.ui.Container(*elementos, accent_colour=discord.Colour(cor_tema())))
 
