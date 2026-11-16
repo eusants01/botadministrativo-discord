@@ -100,8 +100,8 @@ Bem-vindo(a) à central oficial de atendimento da **Família Royal**. Selecione 
 """
 
 PAINEL_DESCRICAO = """\
-# <a:coroa:1564000189167960177> CENTRAL DE ATENDIMENTO ROYAL 🎄
-Seja bem-vindo(a) à **Central de Atendimento Natalina** da **Família Royal**! 🎁 Nossa equipe está pronta para receber a sua solicitação com atenção e respeito. Escolha a categoria correta no menu abaixo.
+# <:wreath:1570688836776755200> CENTRAL DE ATENDIMENTO ROYAL 
+Bem-vindo(a) à central oficial de atendimento da **Família Royal**. Selecione a categoria correspondente à sua solicitação.
 
 **<:ImagemdoChatGPT25deoutde202615_4:1563986647144730826> CATEGORIAS DE ATENDIMENTO**
 > `📜` **Denúncias** — Relatar condutas irregulares ou infrações com segurança.
@@ -110,17 +110,15 @@ Seja bem-vindo(a) à **Central de Atendimento Natalina** da **Família Royal**! 
 > `✉️` **Outros Assuntos** — Encaminhar dúvidas e solicitações gerais.
 
 **<:ImagemdoChatGPT25deoutde202615_4:1563986753830912070> HORÁRIO DE ATENDIMENTO**
-> `⏳` **Segunda a Sexta:** 09h às 22h.
-> `⏳` **Sábados e Domingos:** 11h às 18h.
-> `🎅` Nosso clima é natalino, mas os horários permanecem os mesmos.
+> `⏳` **Segunda** a **Sexta**: 10h às 22h.
+> `⏳` **Sábado** e **Domingo**: 11h às 18h.
+> `🎅` Nosso clima é **natalino**, mas os horários permanecem os mesmos.
 
 **<:ImagemdoChatGPT25deoutde202615_4:1563986790753378424> ORIENTAÇÕES IMPORTANTES**
 > `⚖️` Toda solicitação será analisada conforme as normas da Família Royal.
-> `📎` Descreva seu caso com clareza e anexe as comprovações necessárias.
-> `🔒` Denúncias contra a equipe terão tratamento reservado.
+> `📷` Descreva seu caso com clareza e anexe as comprovações necessárias.
+> `🚓` Denúncias contra a equipe terão tratamento reservado.
 > `⚠️` O uso indevido do sistema poderá resultar em medidas administrativas.
-
-`🎄` **Família Royal** — Natal 2026
 """
 
 
