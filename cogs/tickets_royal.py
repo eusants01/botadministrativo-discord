@@ -248,12 +248,13 @@ Recebemos o seu pedido de cargo no **E.B**.
 """,
        
         "escolha": {
-            "label": "Divisão",
-            "placeholder": "Em qual divisão/organização você quer o cargo?",
+            "label": "Divisão ou instituição",
+            "placeholder": "Em qual divisão/instituição você quer o cargo?",
             "opcoes": [
-                ("CGEx", "Solicitar cargo no CGEx", "🛡️"),
-                ("AFEx", "Solicitar cargo no AFEx", "🎖️"),
-                ("Outra divisão", "Informe qual no formulário", "📌"),
+                ("CGEx", "Solicitar cargo no CGEx", "<:CGEx:1560374896138256524>"),
+                ("AFEx", "Solicitar cargo no AFEx", "<:AFEx:1560375341145391196>"),
+                ("PJ",   "Solicitar cargo no Poder Judiciário", "<:pj:1564669592540942416>"),
+                ("Outra instituição", "Informe qual no formulário", "📌"),
             ],
         },
         "perguntas": [
@@ -274,12 +275,6 @@ Recebemos o seu pedido de cargo no **E.B**.
                 "placeholder": "Ex: Soldado / nenhum",
                 "longo": False,
                 "obrigatorio": False,
-            },
-            {
-                "label": "Por que merece o cargo?",
-                "placeholder": "Atividade, tempo e requisitos que você cumpre...",
-                "longo": True,
-                "obrigatorio": True,
             },
             {
                 "label": "Comprovação (links)",
@@ -1279,7 +1274,7 @@ def criar_card_v2(canal: discord.TextChannel, t: dict) -> discord.ui.LayoutView:
         blocos.append(linha)
 
     blocos.append(discord.ui.TextDisplay(
-        "-# <a:animated_Settings:1556187476177981440> Família Royal"
+        "-# Família Royal • 2026 "
     ))
     layout = TicketCardV2(controles)
     layout.add_item(discord.ui.Container(*blocos, accent_colour=discord.Colour(cor_tema())))
