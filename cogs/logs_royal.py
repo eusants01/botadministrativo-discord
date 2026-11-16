@@ -153,40 +153,39 @@ def build_notification(*, item_id: int, category: str, action: str, summary: str
     target = event_target(action, target_id, channel_id, details)
     stamp = int(created_at.timestamp())
     box.add_item(discord.ui.TextDisplay(
-        f'## {titulo}\n-# FAMÍLIA ROYAL  •  OCORRÊNCIA `#{item_id:05d}`'
+        f'## {titulo}\n-# OCORRÊNCIA `#{item_id:05d}`'
     ))
     box.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
     if alert:
         # Campos na ordem solicitada, distribuídos para melhor leitura no celular.
         box.add_item(discord.ui.TextDisplay(
-            f'**🏛️ Categoria:** {categoria}\n'
-            f'**🚓 Ocorrência:** {safe(occurrence, 100)}'
+            f'**`🏛️` Categoria:** {categoria}\n'
+            f'**`🚓` Ocorrência:** {safe(occurrence, 100)}'
         ))
         box.add_item(discord.ui.TextDisplay(
-            f'**📄 Descrição:**\n> {safe(summary, 620)}'
+            f'**`📄` Descrição:**\n> {safe(summary, 620)}'
         ))
         box.add_item(discord.ui.TextDisplay(
-            f'**⚙️ Executor:** {format_user(actor_id) if actor_id else "Não confirmado"}\n'
-            f'**🎯 Alvo:** {target}'
+            f'**`⚙️` Executor:** {format_user(actor_id) if actor_id else "Não confirmado"}\n'
+            f'**`🎯` Alvo:** {target}'
         ))
     else:
         box.add_item(discord.ui.TextDisplay(
-            f'**📁 Categoria:** {categoria}\n'
-            f'**🧾 Evento:** {safe(occurrence, 100)}'
+            f'**`📁` Categoria:** {categoria}\n'
+            f'**`🧾` Evento:** {safe(occurrence, 100)}'
         ))
         box.add_item(discord.ui.TextDisplay(
-            f'**📝 Descrição:**\n> {safe(summary, 620)}'
+            f'**`📝` Descrição:**\n> {safe(summary, 620)}'
         ))
         box.add_item(discord.ui.TextDisplay(
-            f'**👤 Responsável:** {format_user(actor_id) if actor_id else "Não confirmado"}\n'
-            f'**🎯 Alvo:** {target}'
+            f'**`👤` Responsável:** {format_user(actor_id) if actor_id else "Não confirmado"}\n'
+            f'**`🎯` Alvo:** {target}'
         ))
     box.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
     if channel_id:
-        box.add_item(discord.ui.TextDisplay(f'**📍 Canal relacionado:** {format_channel(channel_id)}'))
+        box.add_item(discord.ui.TextDisplay(f'**`📍` Canal relacionado:** {format_channel(channel_id)}'))
     box.add_item(discord.ui.TextDisplay(
-        f'🕒 <t:{stamp}:f>  •  {safe(audit_status(actor_id, details), 110)}\n'
-        f'-# 🔎 Histórico e detalhes em <#{PANEL_CHANNEL_ID}> com `!logs`.'
+        f'`🕒` <t:{stamp}:f>  •  {safe(audit_status(actor_id, details), 110)}\n'
     ))
     view.add_item(box)
     return view
@@ -404,7 +403,7 @@ class LogsHistoryView(discord.ui.LayoutView):
         refresh.callback = go_refresh
         container.add_item(discord.ui.ActionRow(prev, nxt, filter_member, refresh))
         container.add_item(discord.ui.TextDisplay(
-            '-# 🔒 Painel administrativo exclusivo deste canal • Histórico PostgreSQL.'
+            ''
         ))
         self.add_item(container)
 
