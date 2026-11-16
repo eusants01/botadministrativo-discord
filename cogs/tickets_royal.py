@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import asyncio
@@ -12,6 +11,7 @@ import re
 import time
 import unicodedata
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
 
@@ -51,10 +51,12 @@ def ids_ambiente(chave: str) -> list[int]:
 # informada aqui (ou pelo proprietário do servidor, por segurança).
 CARGOS_CORREGEDORIA = ids_ambiente("ROYAL_TICKETS_CORREGEDORIA_ROLE_IDS")
 TEMA_PADRAO = os.getenv("ROYAL_TICKETS_TEMA", "natal").strip().lower()
-BANNER_NATAL = os.getenv("ROYAL_SUPPORT_BANNER_URL.png", "").strip()
+# Estas são VARIÁVEIS DE AMBIENTE (sem extensão .png no nome).
+# Arquivos PNG que já estão no repositório são detectados separadamente.
+BANNER_NATAL = os.getenv("ROYAL_TICKETS_BANNER_NATAL_URL", "").strip()
 BANNERS_NATAL = {
-    k: os.getenv(f"ROYAL_SUPPORT_BANNER_URL.png{k.upper()}_URL", "").strip()
-    for k in ("DENUNCIA", "CARGO_EB", "PARCERIA", "OUTROS")
+    k: os.getenv(f"ROYAL_TICKETS_BANNER_NATAL_{k.upper()}_URL", "").strip()
+    for k in ("denuncia", "cargo_eb", "parceria", "outros")
 }
 MAX_TRANSCRICAO_BYTES = 15 * 1024 * 1024
 ALERTAS_ESCALONADOS_MINUTOS = (5, 20, 60)
@@ -74,9 +76,9 @@ ALERTA_SEM_ATENDENTE_MINUTOS = 5
 INATIVIDADE_AVISO_HORAS = 0
 INATIVIDADE_FECHAR_APOS_AVISO_HORAS = 0
 FECHAR_APOS_DECISAO_MIN = 0
-BANNER_PRINCIPAL = os.getenv("ROYAL_SUPPORT_BANNER_URL.png", "").strip() or None
-BANNER_TICKET_PADRAO = os.getenv("ROYAL_SUPPORT_BANNER_URL.png", "").strip() or BANNER_PRINCIPAL
-BANNER_AVALIACAO = os.getenv("ROYAL_AVALIACAO_BANNER_URL.png", "").strip() or BANNER_TICKET_PADRAO
+BANNER_PRINCIPAL = os.getenv("ROYAL_SUPPORT_BANNER_URL", "").strip() or None
+BANNER_TICKET_PADRAO = os.getenv("ROYAL_TICKET_BANNER_URL", "").strip() or BANNER_PRINCIPAL
+BANNER_AVALIACAO = os.getenv("ROYAL_AVALIACAO_BANNER_URL", "").strip() or BANNER_TICKET_PADRAO
 
 
 PAINEL_DESCRICAO_CLASSICO = """\
@@ -495,15 +497,145 @@ def descricao_tema() -> str:
     return PAINEL_DESCRICAO if tema_atual() == "natal" else PAINEL_DESCRICAO_CLASSICO
 
 
+# Busca os arquivos a partir do código (cogs/), da raiz do projeto e de assets/.
+# Assim a publicação funciona no Railway mesmo quando o diretório atual muda.
+DIRETORIO_MODULO = Path(__file__).resolve().parent
+DIRETORIOS_BANNER = tuple(dict.fromkeys((
+    DIRETORIO_MODULO / "assets",
+    DIRETORIO_MODULO.parent / "assets",
+    DIRETORIO_MODULO,
+    DIRETORIO_MODULO.parent,
+    Path.cwd() / "assets",
+    Path.cwd(),
+)))
+EXTENSOES_BANNER = frozenset((".png", ".jpg", ".jpeg", ".webp", ".gif"))
+
+
+def localizar_banner_local(valor: str | None) -> Path | None:
+    """Aceita nome ou caminho de arquivo em assets/, na raiz ou em cogs/."""
+    if not valor:
+        return None
+    texto = str(valor).strip()
+    if not texto or texto.startswith(("http://", "https://", "attachment://")):
+        return None
+    caminho = Path(texto).expanduser()
+    if caminho.suffix.lower() not in EXTENSOES_BANNER:
+        return None
+    candidatos = [caminho] if caminho.is_absolute() else [
+        caminho, *(diretorio / caminho for diretorio in DIRETORIOS_BANNER)
+    ]
+    for candidato in candidatos:
+        if candidato.is_file() and candidato.stat().st_size > 0:
+            return candidato.resolve()
+    return None
+
+
+def nome_arquivo_banner(chave: str | None = None, tipo: str = "painel", caminho: Path | None = None) -> str:
+    """Nome fixo para attachments; evita problemas com espaços ou acentos."""
+    sufixo = caminho.suffix.lower() if caminho else ".png"
+    categoria = re.sub(r"[^a-z0-9_]+", "", chave or "")
+    nome = f"royal_{tipo}_{categoria}" if categoria else f"royal_{tipo}"
+    return f"{nome}{sufixo}"
+
+
+def fonte_banner(chave: str | None = None, tipo: str = "painel") -> tuple[str | None, Path | None]:
+    """Escolhe URL válida ou PNG do projeto e devolve (media, caminho_local).
+
+    A prioridade no Natal é: banner sazonal específico, banner natalino
+    principal, versão clássica. Para avaliações, a imagem específica vem primeiro.
+    """
+    categoria = (chave or "").lower()
+    titulo = categoria.upper()
+    natal = tema_atual() == "natal"
+    candidatos: list[str | None] = []
+
+    if tipo == "avaliacao":
+        candidatos.extend((
+            os.getenv("ROYAL_AVALIACAO_BANNER_FILE"),
+            "ROYAL_AVALIACAO_BANNER_URL.png",
+            "royal_avaliacao_banner.png",
+            os.getenv("ROYAL_AVALIACAO_BANNER_URL"),
+        ))
+    elif categoria:
+        if natal:
+            candidatos.extend((
+                BANNERS_NATAL.get(categoria),
+                os.getenv(f"ROYAL_TICKETS_BANNER_NATAL_{titulo}_FILE"),
+                f"ROYAL_TICKETS_BANNER_NATAL_{titulo}.png",
+            ))
+        candidatos.extend((
+            os.getenv(f"ROYAL_BANNER_{titulo}_URL"),
+            os.getenv(f"ROYAL_BANNER_{titulo}_FILE"),
+            f"ROYAL_BANNER_{titulo}_URL.png",
+        ))
+
+    if natal:
+        candidatos.extend((
+            BANNER_NATAL,
+            os.getenv("ROYAL_TICKETS_BANNER_NATAL_FILE"),
+            "ROYAL_TICKETS_BANNER_NATAL.png",
+        ))
+    else:
+        candidatos.extend((
+            os.getenv("ROYAL_SUPPORT_BANNER_CLASSICO_URL"),
+            os.getenv("ROYAL_SUPPORT_BANNER_CLASSICO_FILE"),
+        ))
+
+    candidatos.extend((
+        os.getenv("ROYAL_SUPPORT_BANNER_FILE"),
+        "ROYAL_SUPPORT_BANNER_URL.png",
+        "royal_support_banner.png",
+        os.getenv("ROYAL_SUPPORT_BANNER_URL"),
+    ))
+
+    if tipo == "ticket":
+        candidatos.append(os.getenv("ROYAL_TICKET_BANNER_URL"))
+        candidatos.append(os.getenv("ROYAL_TICKET_BANNER_FILE"))
+        if categoria:
+            candidatos.append(CATEGORIAS.get(categoria, {}).get("banner"))
+
+    for candidato in candidatos:
+        if not candidato:
+            continue
+        if banner_valido(candidato):
+            return str(candidato).strip(), None
+        caminho = localizar_banner_local(candidato)
+        if caminho:
+            nome = nome_arquivo_banner(categoria, tipo, caminho)
+            return f"attachment://{nome}", caminho
+    return None, None
+
+
 def banner_tema(chave: str | None = None) -> str | None:
-    if tema_atual() == "natal":
-        env_key = chave.upper() if chave else None
-        url = BANNERS_NATAL.get(env_key, "") if env_key else BANNER_NATAL
-        if banner_valido(url):
-            return url
-    if chave:
-        return CATEGORIAS.get(chave, {}).get("banner") or BANNER_TICKET_PADRAO
-    return BANNER_PRINCIPAL
+    """Retorna mídia para o MediaGallery: URL ou attachment://arquivo."""
+    return fonte_banner(chave, tipo="ticket" if chave else "painel")[0]
+
+
+def arquivo_banner(chave: str | None = None, tipo: str = "painel") -> discord.File | None:
+    """Abre um arquivo novo para cada envio; nunca reusa discord.File fechado."""
+    _, caminho = fonte_banner(chave, tipo)
+    if not caminho:
+        return None
+    return discord.File(caminho, filename=nome_arquivo_banner(chave, tipo, caminho))
+
+
+def anexos_banner_edicao(mensagem: discord.Message, chave: str | None = None,
+                         tipo: str = "painel", *, forcar: bool = False) -> list:
+    """Preserva o anexo existente ou envia um novo, conforme o tema."""
+    _, caminho = fonte_banner(chave, tipo)
+    if not caminho:
+        return []  # URLs públicas não precisam de anexos locais.
+    nome = nome_arquivo_banner(chave, tipo, caminho)
+    if not forcar:
+        for anexo in mensagem.attachments:
+            if anexo.filename == nome:
+                return [anexo]
+    return [discord.File(caminho, filename=nome)]
+
+
+def banner_disponivel(chave: str | None = None, tipo: str = "painel") -> bool:
+    return fonte_banner(chave, tipo)[0] is not None
+
 
 
 def ticket_confidencial(t: dict) -> bool:
@@ -961,7 +1093,7 @@ def minutos_uteis(desde: datetime, ate: datetime | None = None) -> int:
     dia = desde.date()
     while dia <= ate.date():
         fim_dia = 18 if dia.weekday() >= 5 else 22
-        inicio_dia = 11 if dia.weekday() >= 5 else 9
+        inicio_dia = 11 if dia.weekday() >= 5 else (10 if tema_atual() == "natal" else 9)
         abertura = datetime.combine(dia, datetime.min.time(), FUSO).replace(hour=inicio_dia)
         fechamento = datetime.combine(dia, datetime.min.time(), FUSO).replace(hour=fim_dia)
         inicio = max(abertura, desde)
@@ -1092,7 +1224,7 @@ def criar_card_v2(canal: discord.TextChannel, t: dict) -> discord.ui.LayoutView:
     banner_ticket = banner_tema(t.get("cat"))
 
     blocos = []
-    if banner_valido(banner_ticket):
+    if banner_ticket:
         blocos.append(discord.ui.MediaGallery(discord.MediaGalleryItem(media=banner_ticket)))
         blocos.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
 
@@ -1194,7 +1326,11 @@ async def atualizar_card(canal: discord.TextChannel) -> bool:
         try:
             msg = await canal.fetch_message(int(card_id))
             if msg.flags.value & (1 << 15):
-                await msg.edit(view=view, allowed_mentions=discord.AllowedMentions.none())
+                await msg.edit(
+                    view=view,
+                    attachments=anexos_banner_edicao(msg, t.get("cat"), tipo="ticket"),
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
                 return True
             LOG.warning("Cartão antigo %s não é V2; publicando substituto", card_id)
         except discord.NotFound:
@@ -1203,7 +1339,11 @@ async def atualizar_card(canal: discord.TextChannel) -> bool:
             LOG.exception("Falha ao editar cartão V2 no canal %s", canal.id)
             return False
     try:
-        novo = await canal.send(view=view, allowed_mentions=discord.AllowedMentions.none())
+        anexo = arquivo_banner(t.get("cat"), tipo="ticket")
+        parametros = {"file": anexo} if anexo else {}
+        novo = await canal.send(
+            view=view, allowed_mentions=discord.AllowedMentions.none(), **parametros
+        )
         salvar_estado(canal.id, card_id=novo.id)
         return True
     except discord.HTTPException:
@@ -1565,13 +1705,16 @@ class ComentarioModal(discord.ui.Modal):
             embed.add_field(
                 name="Comentário", value=comentario or "*Sem comentário*", inline=False
             )
-            if banner_valido(BANNER_AVALIACAO):
-                embed.set_image(url=BANNER_AVALIACAO)
+            imagem, _ = fonte_banner(tipo="avaliacao")
+            if imagem:
+                embed.set_image(url=imagem)
             embed.set_footer(text=f"{NOME_SERVIDOR} • Central de Atendimento")
             try:
-                await canal.send(embed=embed)
-            except discord.HTTPException:
-                pass
+                anexo = arquivo_banner(tipo="avaliacao")
+                parametros = {"file": anexo} if anexo else {}
+                await canal.send(embed=embed, **parametros)
+            except (discord.HTTPException, OSError):
+                LOG.exception("Falha ao publicar avaliação no canal %s", canal.id)
 
 
         agradecimento = discord.Embed(
@@ -1994,7 +2137,7 @@ class TicketView(discord.ui.LayoutView):
         super().__init__(timeout=None)
         elementos = [discord.ui.TextDisplay(descricao_tema())]
         banner = banner_tema()
-        if banner_valido(banner):
+        if banner:
             elementos.insert(0, discord.ui.MediaGallery(discord.MediaGalleryItem(media=banner)))
         elementos.append(discord.ui.Separator())
         elementos.append(discord.ui.ActionRow(TicketSelect()))
@@ -2986,7 +3129,7 @@ def embed_config(guild: discord.Guild, bot: commands.Bot) -> discord.Embed:
     # Categorias
     linhas = []
     for k, c in CATEGORIAS.items():
-        banner = "✅" if banner_valido(c.get("banner")) else "—"
+        banner = "✅" if banner_disponivel(k, tipo="ticket") else "—"
         extra = ""
         if c.get("categoria_discord_id"):
             ok = isinstance(guild.get_channel(c["categoria_discord_id"]), discord.CategoryChannel)
@@ -3000,7 +3143,8 @@ def embed_config(guild: discord.Guild, bot: commands.Bot) -> discord.Embed:
     embed.add_field(name="📂 Categorias", value="\n".join(linhas), inline=False)
     embed.add_field(
         name="🖼️ Banner principal",
-        value="✅" if banner_valido(BANNER_PRINCIPAL) else "⚠️ link de exemplo",
+        value=("✅ Arquivo local" if fonte_banner()[1] else "✅ URL configurada")
+              if banner_disponivel() else "⚠️ Banner não encontrado",
         inline=True,
     )
 
@@ -3488,11 +3632,56 @@ class TicketsCog(commands.Cog):
             await ctx.message.delete()
         except discord.HTTPException:
             pass
-        msg = await ctx.send(view=TicketView(), allowed_mentions=discord.AllowedMentions.none())
+        anexo = arquivo_banner()
+        parametros = {"file": anexo} if anexo else {}
+        msg = await ctx.send(
+            view=TicketView(), allowed_mentions=discord.AllowedMentions.none(), **parametros
+        )
         paineis = _ler_json(F_PAINEIS, {})
         paineis[str(ctx.guild.id)] = {"canal": ctx.channel.id, "mensagem": msg.id}
         _salvar_json(F_PAINEIS, paineis)
         await confirmar_gravacao(F_PAINEIS)
+
+    @commands.command(name="atualizarpainelticket", aliases=["recarregarbanner"])
+    @apenas_staff()
+    async def atualizarpainelticket(self, ctx: commands.Context):
+        """Atualiza banner e texto no painel publicado, sem criar outro."""
+        paineis = _ler_json(F_PAINEIS, {})
+        painel = paineis.get(str(ctx.guild.id), {})
+        if not painel:
+            return await ctx.send("⚠️ Painel ainda não registrado. Use `!painelticket` no canal correto.")
+        try:
+            canal = ctx.guild.get_channel(int(painel["canal"]))
+            if canal is None:
+                return await ctx.send("⚠️ Canal original não encontrado. Use `!painelticket`.")
+            mensagem = await canal.fetch_message(int(painel["mensagem"]))
+            await mensagem.edit(
+                content=None, embeds=[], view=TicketView(),
+                attachments=anexos_banner_edicao(mensagem, forcar=True),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except (discord.HTTPException, KeyError, ValueError, OSError):
+            LOG.exception("Falha ao atualizar painel de tickets no servidor %s", ctx.guild.id)
+            return await ctx.send("❌ Não foi possível editar o painel salvo. Confira permissões ou republique com `!painelticket`.")
+        await ctx.send(f"✅ Banner e descrição atualizados no painel {mensagem.jump_url}.", delete_after=20)
+
+    @commands.command(name="diagnosticobanners")
+    @apenas_staff()
+    async def diagnosticobanners(self, ctx: commands.Context):
+        """Mostra onde o bot encontrou cada banner (arquivo ou URL)."""
+        linhas = [f"🎄 **Banners Royal — tema {tema_atual()}**"]
+        for titulo, chave, tipo in (
+            ("Painel principal", None, "painel"),
+            ("Denúncias", "denuncia", "ticket"),
+            ("Cargo E.B", "cargo_eb", "ticket"),
+            ("Parcerias", "parceria", "ticket"),
+            ("Outros", "outros", "ticket"),
+            ("Avaliações", None, "avaliacao"),
+        ):
+            media, caminho = fonte_banner(chave, tipo)
+            origem = (f"📁 {caminho.name}" if caminho else "🌐 URL pública") if media else "❌ Não localizado"
+            linhas.append(f"> **{titulo}:** {origem}")
+        await ctx.send("\n".join(linhas), allowed_mentions=discord.AllowedMentions.none())
 
     @commands.command(name="painelstaff")
     @apenas_staff()
@@ -3523,9 +3712,14 @@ class TicketsCog(commands.Cog):
                 canal = ctx.guild.get_channel(int(painel["canal"]))
                 if canal:
                     mensagem = await canal.fetch_message(int(painel["mensagem"]))
-                    await mensagem.edit(view=TicketView(),
-                                        allowed_mentions=discord.AllowedMentions.none())
-                    resultado.append("Painel principal atualizado")
+                    await mensagem.edit(
+                        content=None,
+                        embeds=[],
+                        view=TicketView(),
+                        attachments=anexos_banner_edicao(mensagem, forcar=True),
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+                    resultado.append("Painel principal e banner atualizados")
             except (discord.HTTPException, KeyError, ValueError):
                 LOG.warning("Painel principal antigo não encontrado para atualização")
         atualizados = 0
