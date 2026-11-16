@@ -11,7 +11,8 @@ import os
 import re
 import time
 import unicodedata
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
 
 
@@ -25,6 +26,9 @@ FUSO = ZoneInfo("America/Sao_Paulo")
 
 COR_AZUL = 0xB8904F  # ouro envelhecido • identidade Royal       
 COR_AZUL_CLARO = 0xE7C990  # marfim dourado  
+COR_NATAL_VERDE = 0x185540
+COR_NATAL_VERMELHO = 0xA83238
+COR_NATAL_OURO = 0xD2AD61
 
 CARGOS_STAFF = [
     1553832098404499516,
@@ -32,6 +36,29 @@ CARGOS_STAFF = [
 ]
 
 CARGOS_NOTIFICAR = [1560385636819796059]
+
+
+def ids_ambiente(chave: str) -> list[int]:
+    resultado = []
+    for texto in os.getenv(chave, "").replace(";", ",").split(","):
+        texto = texto.strip()
+        if texto.isdigit():
+            resultado.append(int(texto))
+    return resultado
+
+
+# Denúncias contra a própria equipe só podem ser geridas pela Corregedoria
+# informada aqui (ou pelo proprietário do servidor, por segurança).
+CARGOS_CORREGEDORIA = ids_ambiente("ROYAL_TICKETS_CORREGEDORIA_ROLE_IDS")
+TEMA_PADRAO = os.getenv("ROYAL_TICKETS_TEMA", "natal").strip().lower()
+BANNER_NATAL = os.getenv("ROYAL_NATAL_BANNER_URL", "").strip()
+BANNERS_NATAL = {
+    k: os.getenv(f"ROYAL_NATAL_BANNER_{k.upper()}_URL", "").strip()
+    for k in ("DENUNCIA", "CARGO_EB", "PARCERIA", "OUTROS")
+}
+MAX_TRANSCRICAO_BYTES = 15 * 1024 * 1024
+ALERTAS_ESCALONADOS_MINUTOS = (5, 20, 60)
+
 
 CATEGORIA_TICKETS_ID = 1555449984453972009
 
@@ -52,7 +79,7 @@ BANNER_TICKET_PADRAO = os.getenv("ROYAL_TICKET_BANNER_URL", "").strip() or BANNE
 BANNER_AVALIACAO = os.getenv("ROYAL_AVALIACAO_BANNER_URL", "").strip() or BANNER_TICKET_PADRAO
 
 
-PAINEL_DESCRICAO = """\
+PAINEL_DESCRICAO_CLASSICO = """\
 # <a:coroa:1564000189167960177> CENTRAL ATENDIMENTO ROYAL
 Bem-vindo(a) à central oficial de atendimento da **Família Royal**. Selecione a categoria correspondente à sua solicitação para receber o devido atendimento.
 
@@ -63,7 +90,7 @@ Bem-vindo(a) à central oficial de atendimento da **Família Royal**. Selecione 
 > `✉️` **Outros Assuntos** — Encaminhar dúvidas e solicitações gerais.
 
 **<:ImagemdoChatGPT25deoutde202615_4:1563986753830912070> HORÁRIO DE ATENDIMENTO**
-> `⏳` **Segunda a sexta-feira:** 09h às 22h.
+> `⏳` **Segunda a Sexta:** 09h às 22h.
 > `⏳` **Sábados e domingos:** 11h às 18h.
 
 **<:ImagemdoChatGPT25deoutde202615_4:1563986790753378424> ORIENTAÇÕES IMPORTANTES**
@@ -71,6 +98,31 @@ Bem-vindo(a) à central oficial de atendimento da **Família Royal**. Selecione 
 > `📎` Apresente informações claras e as comprovações necessárias.
 > `⚠️` O uso indevido do sistema poderá resultar em medidas administrativas.
 """
+
+PAINEL_DESCRICAO = """\
+# <a:coroa:1564000189167960177> CENTRAL DE ATENDIMENTO ROYAL 🎄
+Seja bem-vindo(a) à **Central de Atendimento Natalina** da **Família Royal**! 🎁 Nossa equipe está pronta para receber a sua solicitação com atenção e respeito. Escolha a categoria correta no menu abaixo.
+
+**<:ImagemdoChatGPT25deoutde202615_4:1563986647144730826> CATEGORIAS DE ATENDIMENTO**
+> `📜` **Denúncias** — Relatar condutas irregulares ou infrações com segurança.
+> `🛡️` **Cargo do E.B** — Solicitar cargos de divisões ou organizações.
+> `🤝` **Parcerias** — Apresentar propostas de colaboração.
+> `✉️` **Outros Assuntos** — Encaminhar dúvidas e solicitações gerais.
+
+**<:ImagemdoChatGPT25deoutde202615_4:1563986753830912070> HORÁRIO DE ATENDIMENTO**
+> `⏳` **Segunda a Sexta:** 09h às 22h.
+> `⏳` **Sábados e Domingos:** 11h às 18h.
+> `🎅` Nosso clima é natalino, mas os horários permanecem os mesmos.
+
+**<:ImagemdoChatGPT25deoutde202615_4:1563986790753378424> ORIENTAÇÕES IMPORTANTES**
+> `⚖️` Toda solicitação será analisada conforme as normas da Família Royal.
+> `📎` Descreva seu caso com clareza e anexe as comprovações necessárias.
+> `🔒` Denúncias contra a equipe terão tratamento reservado.
+> `⚠️` O uso indevido do sistema poderá resultar em medidas administrativas.
+
+`🎄` **Família Royal** — Natal 2026
+"""
+
 
 PRIORIDADES = {
     "baixa": ("🟢", "Baixa"),
@@ -351,6 +403,8 @@ F_ESTADOS = os.path.join(PASTA_DADOS, "tickets_abertos.json")
 F_HISTORICO = os.path.join(PASTA_DADOS, "historico.json")
 F_AVALIACOES = os.path.join(PASTA_DADOS, "avaliacoes.json")
 F_BLOQUEIOS = os.path.join(PASTA_DADOS, "bloqueados.json")
+F_TEMA = os.path.join(PASTA_DADOS, "tema.json")
+F_PAINEIS = os.path.join(PASTA_DADOS, "paineis.json")
 
 for _antigo, _novo in (
     ("tickets_contador.json", F_CONTADOR),
@@ -379,6 +433,112 @@ _CACHE: dict[str, object] = {}
 _POOL = None
 _PENDENTES: set[str] = set()
 _TAREFAS: set[asyncio.Task] = set()
+_VERSOES: dict[str, int] = {}
+_CONFIRMADAS: dict[str, int] = {}
+_TRAVAS_DB: dict[str, asyncio.Lock] = {}
+
+SQL_ARQUIVOS = """
+CREATE TABLE IF NOT EXISTS royal_tickets_transcripts (
+    guild_id BIGINT NOT NULL,
+    channel_id BIGINT NOT NULL,
+    ticket_no BIGINT NOT NULL,
+    owner_id BIGINT NOT NULL,
+    fechado_por BIGINT NOT NULL,
+    criado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
+    protocolo TEXT NOT NULL,
+    arquivo_html BYTEA NOT NULL,
+    confidencial BOOLEAN NOT NULL DEFAULT FALSE,
+    PRIMARY KEY (guild_id, channel_id)
+);
+CREATE INDEX IF NOT EXISTS idx_royal_transcripts_owner
+ON royal_tickets_transcripts (guild_id, owner_id, criado_em DESC);
+"""
+SQL_REVIEWS = """
+CREATE TABLE IF NOT EXISTS royal_tickets_reviews (
+    guild_id BIGINT NOT NULL,
+    ticket_no BIGINT NOT NULL,
+    owner_id BIGINT NOT NULL,
+    staff_id BIGINT,
+    categoria TEXT NOT NULL,
+    nota SMALLINT NOT NULL CHECK (nota BETWEEN 1 AND 5),
+    comentario TEXT NOT NULL DEFAULT '',
+    criado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (guild_id, ticket_no)
+);
+"""
+SQL_NATAL = """
+CREATE TABLE IF NOT EXISTS royal_tickets_cartas_natal (
+    id BIGSERIAL PRIMARY KEY,
+    guild_id BIGINT NOT NULL,
+    remetente_id BIGINT NOT NULL,
+    destinatario_id BIGINT NOT NULL,
+    mensagem TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pendente',
+    criado_em TIMESTAMPTZ NOT NULL DEFAULT now(),
+    aprovado_por BIGINT,
+    entrega_em TIMESTAMPTZ,
+    entregue_em TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_royal_cartas_entrega
+ON royal_tickets_cartas_natal (status, entrega_em);
+"""
+
+
+def tema_atual() -> str:
+    atual = _ler_json(F_TEMA, {"tema": TEMA_PADRAO}).get("tema", TEMA_PADRAO)
+    return atual if atual in ("natal", "classico") else "natal"
+
+
+def cor_tema() -> int:
+    return COR_NATAL_VERDE if tema_atual() == "natal" else COR_AZUL
+
+
+def descricao_tema() -> str:
+    return PAINEL_DESCRICAO if tema_atual() == "natal" else PAINEL_DESCRICAO_CLASSICO
+
+
+def banner_tema(chave: str | None = None) -> str | None:
+    if tema_atual() == "natal":
+        env_key = chave.upper() if chave else None
+        url = BANNERS_NATAL.get(env_key, "") if env_key else BANNER_NATAL
+        if banner_valido(url):
+            return url
+    if chave:
+        return CATEGORIAS.get(chave, {}).get("banner") or BANNER_TICKET_PADRAO
+    return BANNER_PRINCIPAL
+
+
+def ticket_confidencial(t: dict) -> bool:
+    if t.get("confidencial"):
+        return True
+    return t.get("cat") == "denuncia" and any(
+        label == "Tipo da denúncia" and valor == "Membro da staff"
+        for label, valor in t.get("respostas", [])
+    )
+
+
+def autorizado_no_ticket(membro, t: dict) -> bool:
+    if not isinstance(membro, discord.Member):
+        return False
+    if ticket_confidencial(t):
+        if membro.id == membro.guild.owner_id:
+            return True
+        return any(r.id in CARGOS_CORREGEDORIA for r in membro.roles)
+    return eh_staff(membro)
+
+
+def ticket_status(t: dict) -> str:
+    valor = t.get("status") or ("em_analise" if t.get("claim") else "aguardando")
+    return valor if valor in STATUS_TICKET else "aguardando"
+
+
+STATUS_TICKET = {
+    "aguardando": ("⏳", "Aguardando equipe"),
+    "em_analise": ("🔎", "Em análise"),
+    "aguardando_usuario": ("✉️", "Aguardando solicitante"),
+    "concluido": ("✅", "Concluído"),
+    "suspenso": ("🔒", "Solicitante ausente"),
+}
 
 
 def _ler_json(caminho: str, padrao):
@@ -394,14 +554,31 @@ def _ler_json(caminho: str, padrao):
     return padrao
 
 
+async def _persistir_versao(chave: str):
+    if _POOL is None:
+        return False
+    trava = _TRAVAS_DB.setdefault(chave, asyncio.Lock())
+    async with trava:
+        atual = _VERSOES.get(chave, 0)
+        if atual <= _CONFIRMADAS.get(chave, -1):
+            return True
+        dados = json.dumps(_CACHE.get(chave), ensure_ascii=False)
+        await _POOL.execute(SQL_KV_UPSERT, chave, dados)
+        _CONFIRMADAS[chave] = atual
+        return True
+
+
 async def _persistir(chave: str):
     try:
-        await asyncio.sleep(0.5)  # agrupa várias alterações seguidas
-        _PENDENTES.discard(chave)
-        valor = json.dumps(_CACHE.get(chave), ensure_ascii=False)
-        await _POOL.execute(SQL_KV_UPSERT, chave, valor)
-    except Exception as e:  # noqa: BLE001
-        print(f"[tickets] erro ao salvar '{chave}' no PostgreSQL: {type(e).__name__}: {e}")
+        await asyncio.sleep(0.2)
+        for _ in range(50):
+            if await _persistir_versao(chave):
+                if _CONFIRMADAS.get(chave, -1) >= _VERSOES.get(chave, 0):
+                    break
+            else:
+                break
+    except Exception:
+        LOG.exception("Erro ao salvar '%s' no PostgreSQL", chave)
     finally:
         _PENDENTES.discard(chave)
 
@@ -422,14 +599,35 @@ def _agendar_persistencia(chave: str):
 def _salvar_json(caminho: str, dados):
     chave = os.path.basename(caminho)
     _CACHE[chave] = copy.deepcopy(dados)
+    _VERSOES[chave] = _VERSOES.get(chave, 0) + 1
     try:
         tmp = caminho + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(dados, f, ensure_ascii=False, indent=2)
         os.replace(tmp, caminho)
     except OSError:
-        pass
+        LOG.warning("Impossível gravar cache local '%s'", chave)
     _agendar_persistencia(chave)
+
+
+async def confirmar_gravacao(*caminhos: str) -> bool:
+    """Confirma em PostgreSQL antes de responder uma ação crítica."""
+    if _POOL is None:
+        return False
+    try:
+        for caminho in caminhos:
+            chave = os.path.basename(caminho)
+            for _ in range(5):
+                if not await _persistir_versao(chave):
+                    return False
+                if _CONFIRMADAS.get(chave, -1) >= _VERSOES.get(chave, 0):
+                    break
+            else:
+                return False
+        return True
+    except Exception:
+        LOG.exception("Falha ao confirmar persistência de %s", caminhos)
+        return False
 
 
 async def carregar_armazenamento(bot: commands.Bot) -> bool:
@@ -444,10 +642,14 @@ async def carregar_armazenamento(bot: commands.Bot) -> bool:
         return False
     try:
         await pool.execute(SQL_KV)
+        await pool.execute(SQL_ARQUIVOS)
+        await pool.execute("ALTER TABLE royal_tickets_transcripts ADD COLUMN IF NOT EXISTS confidencial BOOLEAN NOT NULL DEFAULT FALSE")
+        await pool.execute(SQL_REVIEWS)
+        await pool.execute(SQL_NATAL)
         for r in await pool.fetch("SELECT chave, valor FROM tickets_kv"):
             valor = r["valor"]
             _CACHE[r["chave"]] = json.loads(valor) if isinstance(valor, str) else valor
-        for caminho in (F_CONTADOR, F_ESTADOS, F_HISTORICO, F_AVALIACOES, F_BLOQUEIOS):
+        for caminho in (F_CONTADOR, F_ESTADOS, F_HISTORICO, F_AVALIACOES, F_BLOQUEIOS, F_TEMA, F_PAINEIS):
             chave = os.path.basename(caminho)
             if chave not in _CACHE and os.path.exists(caminho):
                 dados = _ler_json(caminho, None)
@@ -455,7 +657,37 @@ async def carregar_armazenamento(bot: commands.Bot) -> bool:
                     _CACHE[chave] = dados
                     await pool.execute(SQL_KV_UPSERT, chave, json.dumps(dados, ensure_ascii=False))
                     print(f"[tickets] '{chave}' migrado para o PostgreSQL.")
+        # Conciliar avaliações já confirmadas na tabela dedicada com o cache
+        # legado. Isto protege o ranking se houve uma falha no JSONB após o INSERT.
+        chave_av = os.path.basename(F_AVALIACOES)
+        atuais = list(_CACHE.get(chave_av) or [])
+        existentes = {(a.get("guild_id"), a.get("ticket")) for a in atuais}
+        novos = await pool.fetch("""
+            SELECT guild_id, ticket_no, owner_id, staff_id, categoria,
+                   nota, comentario, EXTRACT(EPOCH FROM criado_em)::BIGINT AS ts
+            FROM royal_tickets_reviews
+        """)
+        alterou = False
+        for a in novos:
+            ident = (a["guild_id"], a["ticket_no"])
+            if ident in existentes:
+                continue
+            atuais.append({
+                "guild_id": a["guild_id"], "ticket": a["ticket_no"],
+                "usuario": a["owner_id"], "staff": a["staff_id"] or 0,
+                "categoria": a["categoria"], "nota": a["nota"],
+                "comentario": a["comentario"], "ts": a["ts"],
+                "data": datetime.fromtimestamp(a["ts"], FUSO).strftime("%d/%m/%Y %H:%M:%S"),
+            })
+            existentes.add(ident)
+            alterou = True
+        if alterou:
+            _CACHE[chave_av] = atuais
+            await pool.execute(SQL_KV_UPSERT, chave_av,
+                               json.dumps(atuais, ensure_ascii=False))
         _POOL = pool
+        for chave in _CACHE:
+            _CONFIRMADAS[chave] = _VERSOES.get(chave, 0)
         print("[tickets] Armazenamento no PostgreSQL ativo.")
         return True
     except Exception as e:  # noqa: BLE001
@@ -463,11 +695,22 @@ async def carregar_armazenamento(bot: commands.Bot) -> bool:
         return False
 
 
-def proximo_numero() -> int:
-    dados = _ler_json(F_CONTADOR, {"contador": 0})
-    dados["contador"] = int(dados.get("contador", 0)) + 1
-    _salvar_json(F_CONTADOR, dados)
-    return dados["contador"]
+async def proximo_numero() -> int:
+    """Contador atômico no banco: evita protocolos duplicados entre reinícios."""
+    if _POOL is None:
+        raise RuntimeError("PostgreSQL indisponível para gerar protocolo")
+    registro = await _POOL.fetchrow("""
+        INSERT INTO tickets_kv (chave, valor)
+        VALUES ($1, '{"contador": 1}'::jsonb)
+        ON CONFLICT (chave) DO UPDATE
+        SET valor = jsonb_build_object('contador',
+                      COALESCE((tickets_kv.valor->>'contador')::BIGINT, 0) + 1),
+            atualizado_em = now()
+        RETURNING (valor->>'contador')::BIGINT AS numero
+    """, os.path.basename(F_CONTADOR))
+    numero = int(registro["numero"])
+    _CACHE[os.path.basename(F_CONTADOR)] = {"contador": numero}
+    return numero
 
 
 def estados() -> dict:
@@ -568,7 +811,19 @@ def agora() -> str:
 
 
 def banner_valido(url) -> bool:
-    return bool(url) and str(url).startswith("http") and "link_do_banner" not in url
+    if not url or "link_do_banner" in str(url):
+        return False
+    p = urlparse(str(url))
+    if p.scheme not in ("https", "http") or not p.netloc:
+        return False
+    expiracao = parse_qs(p.query).get("ex", [None])[0]
+    if expiracao:
+        try:
+            if int(expiracao, 16) < int(time.time()) + 60:
+                return False
+        except ValueError:
+            return False
+    return True
 
 
 def estrelas(nota: int) -> str:
@@ -641,8 +896,16 @@ async def buscar_membro(bot, guild: discord.Guild, user_id: int):
         return None
 
 
-async def registrar(guild: discord.Guild, titulo: str, descricao: str, cor=COR_AZUL):
-    """Envia um log para o canal de logs."""
+async def registrar(guild: discord.Guild, titulo: str, descricao: str, cor=None,
+                    *, confidencial: bool = False):
+    """Registra ações gerais, sem publicar conteúdo sensível em canal comum."""
+    if not confidencial:
+        confidencial = any(
+            ticket_confidencial(t) and (c.mention in descricao or str(c.id) in descricao)
+            for c, t in listar_tickets(guild)
+        )
+    if confidencial:
+        descricao = "🔒 Ação em denúncia confidencial; detalhes disponíveis apenas no próprio ticket."
     canal = guild.get_channel(CANAL_LOGS_ID) if CANAL_LOGS_ID else None
     if not canal:
         return
@@ -651,7 +914,7 @@ async def registrar(guild: discord.Guild, titulo: str, descricao: str, cor=COR_A
             embed=discord.Embed(
                 title=titulo,
                 description=descricao,
-                color=cor,
+                color=cor if cor is not None else cor_tema(),
                 timestamp=datetime.now(FUSO),
             )
         )
@@ -688,6 +951,63 @@ def validar_resposta(tipo: str, valor: str) -> str | None:
         if not re.fullmatch(r"\d[\d.,\s]*", valor):
             return "informe apenas números (ex.: 500)"
     return None
+
+
+def minutos_uteis(desde: datetime, ate: datetime | None = None) -> int:
+    """Relógio de atendimento baseado nos horários publicados no painel."""
+    ate = (ate or datetime.now(timezone.utc)).astimezone(FUSO)
+    desde = desde.astimezone(FUSO)
+    if ate <= desde:
+        return 0
+    total = 0
+    dia = desde.date()
+    while dia <= ate.date():
+        fim_dia = 18 if dia.weekday() >= 5 else 22
+        inicio_dia = 11 if dia.weekday() >= 5 else 9
+        abertura = datetime.combine(dia, datetime.min.time(), FUSO).replace(hour=inicio_dia)
+        fechamento = datetime.combine(dia, datetime.min.time(), FUSO).replace(hour=fim_dia)
+        inicio = max(abertura, desde)
+        fim = min(fechamento, ate)
+        if fim > inicio:
+            total += int((fim - inicio).total_seconds() // 60)
+        dia += timedelta(days=1)
+    return total
+
+
+def fila_ordenada(guild: discord.Guild):
+    tickets = listar_tickets(guild)
+    nivel = {"urgente": 0, "alta": 1, "normal": 2, "baixa": 3}
+    return sorted(tickets, key=lambda x: (
+        x[1].get("claim") is not None,
+        nivel.get(x[1].get("prio", "normal"), 2),
+        x[0].created_at,
+    ))
+
+
+def resumo_7_dias(guild: discord.Guild, dias: int = 7) -> discord.Embed:
+    limite = time.time() - dias * 86400
+    historico = [h for h in _ler_json(F_HISTORICO, [])
+                 if h.get("fechado_ts", 0) >= limite
+                 and h.get("guild_id", guild.id) == guild.id]
+    abertos = listar_tickets(guild)
+    esperas = [h["espera_seg"] for h in historico if h.get("espera_seg") is not None]
+    duracoes = [h.get("duracao_seg", 0) for h in historico]
+    avaliacoes = [a for a in _ler_json(F_AVALIACOES, [])
+                  if a.get("guild_id", guild.id) == guild.id
+                  and a.get("ts", 0) >= limite]
+    espera = formatar_duracao(sum(esperas) / len(esperas)) if esperas else "—"
+    duracao = formatar_duracao(sum(duracoes) / len(duracoes)) if duracoes else "—"
+    avaliacao = f"{sum(a['nota'] for a in avaliacoes)/len(avaliacoes):.2f}/5" if avaliacoes else "—"
+    e = discord.Embed(title=f"📑 Relatório Royal — últimos {dias} dias", color=cor_tema())
+    e.description = "\n".join((
+        f"> `📬` **Abertos agora:** {len(abertos)}",
+        f"> `⏳` **Sem responsável:** {sum(not t.get('claim') for _, t in abertos)}",
+        f"> `✅` **Finalizados:** {len(historico)}",
+        f"> `⌛` **Espera média:** {espera}",
+        f"> `🕒` **Duração média:** {duracao}",
+        f"> `⭐` **Avaliação média:** {avaliacao}",
+    ))
+    return e
 
 
 def media_espera() -> float | None:
@@ -771,7 +1091,7 @@ def criar_card_v2(canal: discord.TextChannel, t: dict) -> discord.ui.LayoutView:
     )
     proto = protocolo_de(canal.created_at, int(t.get("num", 0)))
     nome = cat.get("nome", "Atendimento")
-    banner_ticket = cat.get("banner") or BANNER_TICKET_PADRAO
+    banner_ticket = banner_tema(t.get("cat"))
 
     blocos = []
     if banner_valido(banner_ticket):
@@ -779,10 +1099,11 @@ def criar_card_v2(canal: discord.TextChannel, t: dict) -> discord.ui.LayoutView:
         blocos.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
 
     linhas = [
-        f"## ⚜️ {nome.upper()}",
+        f"## {'🎄' if tema_atual() == 'natal' else '⚜️'} {nome.upper()}",
         f"> `📋` Protocolo: **{proto}**",
         f"> `👤` Solicitante: <@{t['owner']}>",
         f"> `🛡️` Responsável: " + (f"<@{t['claim']}>" if t.get("claim") else "Aguardando a equipe"),
+        f"> `📌` Etapa: **{STATUS_TICKET[ticket_status(t)][0]} {STATUS_TICKET[ticket_status(t)][1]}**",
     ]
     if t.get("prio", "normal") != "normal":
         linhas.append(f"> `⚑` Prioridade: **{PRIORIDADES.get(t['prio'], PRIORIDADES['normal'])[1]}**")
@@ -803,6 +1124,8 @@ def criar_card_v2(canal: discord.TextChannel, t: dict) -> discord.ui.LayoutView:
             f"> **{str(label)}**\n> {str(valor).replace(chr(10), chr(10) + '> ')}"
             for label, valor in respostas
         )
+        if len(texto) > 2300:
+            texto = texto[:2300].rstrip() + "\n> -# Solicitação resumida no cartão; dados completos disponíveis no histórico."
         blocos.extend(discord.ui.TextDisplay(p) for p in dividir_texto_card(texto))
 
     decisao = t.get("decisao")
@@ -813,7 +1136,7 @@ def criar_card_v2(canal: discord.TextChannel, t: dict) -> discord.ui.LayoutView:
         blocos.append(discord.ui.TextDisplay(
             f"**⚖️ DELIBERAÇÃO — {situacao}**\n"
             f"> Responsável: <@{decisao.get('por', 0)}>\n"
-            f"> {justificativa[:1000]}"
+            f"> {justificativa[:450]}"
         ))
 
     blocos.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
@@ -829,7 +1152,7 @@ def criar_card_v2(canal: discord.TextChannel, t: dict) -> discord.ui.LayoutView:
         "-# <a:animated_Settings:1556187476177981440> Família Royal"
     ))
     layout = TicketCardV2(controles)
-    layout.add_item(discord.ui.Container(*blocos, accent_colour=discord.Colour(COR_AZUL)))
+    layout.add_item(discord.ui.Container(*blocos, accent_colour=discord.Colour(cor_tema())))
     return layout
 
 
@@ -971,14 +1294,37 @@ async def fechar_ticket(
 
         await aviso_no_ticket(
             canal,
-            f"🔒 Ticket sendo fechado por {quem_fechou.mention}.\n"
-            f"Gerando logs... o canal será apagado em **{TEMPO_PARA_APAGAR}s**.",
+            f"🔒 Encerramento solicitado por {quem_fechou.mention}.\n"
+            "Confirmando o arquivamento dos registros antes de encerrar o canal.",
             COR_AZUL_CLARO,
         )
 
         pagina, total_msgs = await gerar_transcript_html(canal, t)
         dados = pagina.encode("utf-8")
         nome_arquivo = f"logs_{canal.name}.html"
+        confidencial = ticket_confidencial(t)
+        if len(dados) > MAX_TRANSCRICAO_BYTES:
+            LOG.error("Transcrição muito grande (%s bytes), ticket %s preservado", len(dados), canal.id)
+            await aviso_no_ticket(canal, "⚠️ O histórico excedeu o limite seguro de arquivamento. O canal foi preservado. Solicite suporte administrativo.")
+            return False
+
+        salvo_no_banco = False
+        if _POOL is not None:
+            try:
+                await _POOL.execute("""
+                    INSERT INTO royal_tickets_transcripts
+                    (guild_id, channel_id, ticket_no, owner_id, fechado_por,
+                     protocolo, arquivo_html, confidencial)
+                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+                    ON CONFLICT (guild_id, channel_id) DO UPDATE
+                    SET arquivo_html=EXCLUDED.arquivo_html,
+                        fechado_por=EXCLUDED.fechado_por,
+                        confidencial=EXCLUDED.confidencial
+                """, guild.id, canal.id, numero, dono_id, quem_fechou.id,
+                     proto, dados, confidencial)
+                salvo_no_banco = True
+            except Exception:
+                LOG.exception("Falha ao arquivar transcrição %s no PostgreSQL", canal.id)
 
         def base_embed() -> discord.Embed:
             e = discord.Embed(
@@ -1011,6 +1357,67 @@ async def fechar_ticket(
             e.add_field(name="Motivo", value=motivo or "Não informado", inline=False)
             e.set_footer(text=NOME_SERVIDOR)
             return e
+
+        # Log completo para a staff: UMA mensagem (embed + arquivo)
+        embed_staff = base_embed()
+        embed_staff.insert_field_at(
+            5, name="Prioridade", value=f"{p_emoji} {p_nome}", inline=True
+        )
+        embed_staff.add_field(name="Mensagens", value=str(total_msgs), inline=True)
+        if dec.get("motivo"):
+            embed_staff.add_field(
+                name="Motivo da decisão", value=dec["motivo"][:1024], inline=False
+            )
+        notas = t.get("notas", [])
+        if notas:
+            texto_notas = "\n".join(f"• **{n['autor']}**: {n['texto']}" for n in notas)
+            embed_staff.add_field(
+                name="📝 Notas internas", value=texto_notas[:1024], inline=False
+            )
+        canal_logs = guild.get_channel(CANAL_LOGS_ID) if CANAL_LOGS_ID else None
+        # Denúncias internas jamais enviam suas transcrições para logs comuns.
+        logs_enviados = False
+        privado = (canal_logs and not canal_logs.permissions_for(guild.default_role).view_channel)
+        if canal_logs and privado and not confidencial:
+            try:
+                await canal_logs.send(
+                    embed=embed_staff,
+                    file=discord.File(io.BytesIO(dados), filename=nome_arquivo),
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+                logs_enviados = True
+            except discord.HTTPException:
+                LOG.exception("Falha ao publicar transcrição no canal staff")
+
+        if not salvo_no_banco and not logs_enviados:
+            await aviso_no_ticket(canal,
+                "⚠️ Falha no arquivamento seguro. O ticket NÃO será apagado. "
+                "Verifique PostgreSQL e permissões do canal de logs.")
+            return False
+
+        registrar_historico(
+            {
+                "num": numero,
+                "guild_id": guild.id,
+                "protocolo": proto,
+                "cat": cat_key,
+                "owner": dono_id,
+                "claim": staff_id,
+                "prio": t.get("prio", "normal"),
+                "duracao_seg": int(duracao),
+                "espera_seg": espera,
+                "decisao": dec.get("status") if dec else None,
+                "mensagens": total_msgs,
+                "fechado_por": quem_fechou.id,
+                "motivo": motivo,
+                "fechado_ts": int(time.time()),
+            }
+        )
+
+        if not await confirmar_gravacao(F_HISTORICO):
+            await aviso_no_ticket(canal,
+                "⚠️ Histórico de encerramento ainda não persistido. O canal permanecerá aberto.")
+            return False
 
         # DM para quem abriu: UMA mensagem (resumo + logs + avaliação)
         dm_ok = False
@@ -1050,56 +1457,6 @@ async def fechar_ticket(
             except (discord.Forbidden, discord.HTTPException):
                 pass
 
-        # Log completo para a staff: UMA mensagem (embed + arquivo)
-        embed_staff = base_embed()
-        embed_staff.insert_field_at(
-            5, name="Prioridade", value=f"{p_emoji} {p_nome}", inline=True
-        )
-        embed_staff.add_field(name="Mensagens", value=str(total_msgs), inline=True)
-        if dec.get("motivo"):
-            embed_staff.add_field(
-                name="Motivo da decisão", value=dec["motivo"][:1024], inline=False
-            )
-        notas = t.get("notas", [])
-        if notas:
-            texto_notas = "\n".join(f"• **{n['autor']}**: {n['texto']}" for n in notas)
-            embed_staff.add_field(
-                name="📝 Notas internas", value=texto_notas[:1024], inline=False
-            )
-        if dono and not dm_ok:
-            embed_staff.add_field(
-                name="⚠️ DM",
-                value="Não foi possível enviar logs/avaliação (DMs fechadas).",
-                inline=False,
-            )
-
-        canal_logs = guild.get_channel(CANAL_LOGS_ID) if CANAL_LOGS_ID else None
-        if canal_logs:
-            try:
-                await canal_logs.send(
-                    embed=embed_staff,
-                    file=discord.File(io.BytesIO(dados), filename=nome_arquivo),
-                )
-            except discord.HTTPException:
-                pass
-
-        registrar_historico(
-            {
-                "num": numero,
-                "protocolo": proto,
-                "cat": cat_key,
-                "owner": dono_id,
-                "claim": staff_id,
-                "prio": t.get("prio", "normal"),
-                "duracao_seg": int(duracao),
-                "espera_seg": espera,
-                "decisao": dec.get("status") if dec else None,
-                "mensagens": total_msgs,
-                "fechado_por": quem_fechou.id,
-                "motivo": motivo,
-                "fechado_ts": int(time.time()),
-            }
-        )
 
         await asyncio.sleep(TEMPO_PARA_APAGAR)
         try:
@@ -1111,6 +1468,8 @@ async def fechar_ticket(
         CANAIS_FECHANDO.discard(canal.id)
         if apagado:
             remover_estado(canal.id)
+            await confirmar_gravacao(F_ESTADOS)
+    return apagado
 
 
 class ComentarioModal(discord.ui.Modal):
@@ -1134,23 +1493,54 @@ class ComentarioModal(discord.ui.Modal):
         comentario = str(self.comentario).strip()
         cat = CATEGORIAS.get(self.cat_key, {})
 
-        salvar_avaliacao(
-            {
-                "nota": self.nota,
-                "staff": self.staff_id,
-                "categoria": self.cat_key,
-                "ticket": self.numero,
-                "usuario": interaction.user.id,
-                "comentario": comentario,
-                "data": agora(),
-            }
-        )
+        historico = _ler_json(F_HISTORICO, [])
+        ticket = next((h for h in reversed(historico)
+                       if int(h.get("num", 0)) == self.numero
+                       and h.get("guild_id", self.guild_id) == self.guild_id), None)
+        if ticket is None or ticket.get("owner") != interaction.user.id:
+            return await interaction.response.send_message(
+                "❌ Somente quem abriu este ticket pode avaliá-lo após o encerramento.", ephemeral=True
+            )
+        if any(a.get("ticket") == self.numero and a.get("guild_id", self.guild_id) == self.guild_id
+               for a in _ler_json(F_AVALIACOES, [])):
+            return await interaction.response.send_message(
+                "ℹ️ Este atendimento já recebeu uma avaliação.", ephemeral=True
+            )
+        if _POOL is None:
+            return await interaction.response.send_message(
+                "⚠️ As avaliações estão indisponíveis no momento.", ephemeral=True
+            )
+        try:
+            linha = await _POOL.fetchrow("""
+                INSERT INTO royal_tickets_reviews
+                (guild_id, ticket_no, owner_id, staff_id, categoria, nota, comentario)
+                VALUES ($1,$2,$3,$4,$5,$6,$7)
+                ON CONFLICT (guild_id, ticket_no) DO NOTHING
+                RETURNING ticket_no
+            """, self.guild_id, self.numero, interaction.user.id,
+                 self.staff_id or None, self.cat_key, self.nota, comentario)
+        except Exception:
+            LOG.exception("Falha no registro da avaliação")
+            return await interaction.response.send_message(
+                "❌ Falha ao registrar avaliação. Tente novamente.", ephemeral=True
+            )
+        if linha is None:
+            return await interaction.response.send_message(
+                "ℹ️ Este atendimento já foi avaliado.", ephemeral=True
+            )
+        salvar_avaliacao({
+            "nota": self.nota, "staff": self.staff_id,
+            "categoria": self.cat_key, "ticket": self.numero,
+            "guild_id": self.guild_id, "usuario": interaction.user.id,
+            "comentario": comentario, "data": agora(), "ts": int(time.time()),
+        })
+        await confirmar_gravacao(F_AVALIACOES)
 
         guild = interaction.client.get_guild(self.guild_id)
         canal = (
             guild.get_channel(CANAL_AVALIACOES_ID or CANAL_LOGS_ID) if guild else None
         )
-        if canal:
+        if canal and not canal.permissions_for(guild.default_role).view_channel:
             embed = discord.Embed(
                 title="<a:coroa:1564000189167960177> Nova Avaliação de Atendimento",
                 description=(
@@ -1293,7 +1683,10 @@ async def _criar_ticket(
             attach_files=True,
         ),
     }
-    for cargo_id in dict.fromkeys(list(CARGOS_STAFF) + list(CARGOS_NOTIFICAR)):
+    dados_contexto = {"cat": chave, "respostas": respostas}
+    confidencial = ticket_confidencial(dados_contexto)
+    cargos_visiveis = CARGOS_CORREGEDORIA if confidencial else CARGOS_STAFF
+    for cargo_id in dict.fromkeys(cargos_visiveis):
         cargo = guild.get_role(cargo_id)
         if cargo:
             overwrites[cargo] = discord.PermissionOverwrite(
@@ -1306,7 +1699,14 @@ async def _criar_ticket(
             )
 
     categoria_discord = resolver_categoria(guild, cat, interaction.channel.category)
-    numero = proximo_numero()
+    try:
+        numero = await proximo_numero()
+    except Exception:
+        LOG.exception("PostgreSQL indisponível na abertura do ticket")
+        return await interaction.followup.send(
+            "❌ A central está temporariamente indisponível. A equipe já pode verificar o Railway.",
+            ephemeral=True,
+        )
     try:
         canal = await guild.create_text_channel(
             name=nome_canal(chave, respostas, numero),
@@ -1331,11 +1731,17 @@ async def _criar_ticket(
         claim=None,
         claim_ts=None,
         locked=False,
+        status="aguardando",
+        confidencial=confidencial,
         decisao=None,
         respostas=respostas,
         notas=[],
         card_id=None,
     )
+
+    if not await confirmar_gravacao(F_ESTADOS):
+        LOG.error("Ticket %s criado, mas persistência inicial falhou", canal.id)
+        await canal.send("⚠️ Registro inicial pendente de confirmação. Acione a administração.")
 
     # Confirmação com protocolo, posição na fila e espera média
     proto = protocolo_de(canal.created_at, numero)
@@ -1357,18 +1763,22 @@ async def _criar_ticket(
     confirmacao.set_footer(text=NOME_SERVIDOR)
     await interaction.followup.send(embed=confirmacao, ephemeral=True)
 
-    pings = " ".join(f"<@&{r}>" for r in cargos_para_notificar(chave))
-    await canal.send(
-        content=f"{user.mention} {pings}".strip(),
-        allowed_mentions=discord.AllowedMentions(users=True, roles=True),
-    )
+    if confidencial:
+        pings = (" ".join(f"<@&{r}>" for r in CARGOS_CORREGEDORIA)
+                 or f"<@{guild.owner_id}>")
+        allowed = discord.AllowedMentions(users=True, roles=bool(CARGOS_CORREGEDORIA))
+    else:
+        pings = " ".join(f"<@&{r}>" for r in cargos_para_notificar(chave))
+        allowed = discord.AllowedMentions(users=True, roles=True)
+    await canal.send(content=f"{user.mention} {pings}".strip(), allowed_mentions=allowed)
     if not await atualizar_card(canal):
         LOG.error("Ticket criado mas cartão V2 não publicado: canal %s", canal.id)
     # (Sem log de abertura no canal de logs: só uma mensagem, ao fechar.)
 
 
 class PerguntasModal(discord.ui.Modal):
-    def __init__(self, chave: str, escolha: tuple[str, str] | None = None):
+    def __init__(self, chave: str, escolha: tuple[str, str] | None = None,
+                 anteriores: dict[str, str] | None = None):
         cat = CATEGORIAS[chave]
         super().__init__(title=f"{cat['emoji']} {cat['nome']}"[:45], timeout=600)
         self.chave = chave
@@ -1382,6 +1792,7 @@ class PerguntasModal(discord.ui.Modal):
                 style=discord.TextStyle.paragraph if longo else discord.TextStyle.short,
                 required=p.get("obrigatorio", True),
                 max_length=800 if longo else 200,
+                default=(anteriores or {}).get(p["label"], "") or None,
             )
             self.add_item(campo)
             self.campos.append((p, campo))
@@ -1397,7 +1808,11 @@ class PerguntasModal(discord.ui.Modal):
                 if erro:
                     return await interaction.response.send_message(
                         f"⚠️ **{pergunta['label']}:** {erro}.\n"
-                        "Abra o ticket novamente e corrija essa informação.",
+                        "Use o botão abaixo para corrigir, sem perder as outras respostas.",
+                        view=CorrigirFormularioView(
+                            self.chave, self.escolha,
+                            {p["label"]: str(c) for p, c in self.campos}
+                        ),
                         ephemeral=True,
                     )
             respostas.append([pergunta["label"], valor])
@@ -1406,6 +1821,21 @@ class PerguntasModal(discord.ui.Modal):
 
         await interaction.response.defer(ephemeral=True)
         await criar_ticket(interaction, self.chave, respostas)
+
+
+class CorrigirFormularioView(discord.ui.View):
+    def __init__(self, chave, escolha, anteriores):
+        super().__init__(timeout=600)
+        self.chave = chave
+        self.escolha = escolha
+        self.anteriores = anteriores
+
+    @discord.ui.button(label="Corrigir formulário", emoji="✏️",
+                       style=discord.ButtonStyle.primary)
+    async def corrigir(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(
+            PerguntasModal(self.chave, self.escolha, self.anteriores)
+        )
 
 
 class EscolhaSelect(discord.ui.Select):
@@ -1564,13 +1994,17 @@ class TicketView(discord.ui.LayoutView):
 
     def __init__(self):
         super().__init__(timeout=None)
-        elementos = [discord.ui.TextDisplay(PAINEL_DESCRICAO)]
-        if banner_valido(BANNER_PRINCIPAL):
-            elementos.insert(0, discord.ui.MediaGallery(discord.MediaGalleryItem(media=BANNER_PRINCIPAL)))
+        elementos = [discord.ui.TextDisplay(descricao_tema())]
+        banner = banner_tema()
+        if banner_valido(banner):
+            elementos.insert(0, discord.ui.MediaGallery(discord.MediaGalleryItem(media=banner)))
         elementos.append(discord.ui.Separator())
         elementos.append(discord.ui.ActionRow(TicketSelect()))
-        elementos.append(discord.ui.TextDisplay('-# <a:animated_Settings:1556187476177981440> Família Royal'))
-        self.add_item(discord.ui.Container(*elementos, accent_colour=discord.Colour(COR_AZUL)))
+        elementos.append(discord.ui.TextDisplay(
+            '-# <a:animated_Settings:1556187476177981440> Família Royal • '
+            + ('🎄 Edição de Natal' if tema_atual() == 'natal' else 'Central oficial')
+        ))
+        self.add_item(discord.ui.Container(*elementos, accent_colour=discord.Colour(cor_tema())))
 
 
 # ════════════════════════════════════════════════════════════════
@@ -1588,11 +2022,14 @@ class MotivoFechamentoModal(discord.ui.Modal, title="Fechar Ticket"):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.send_message(
-            "🔒 Fechando o ticket...", ephemeral=True
-        )
-        await fechar_ticket(
+        await interaction.response.defer(ephemeral=True)
+        ok = await fechar_ticket(
             interaction.client, interaction.channel, interaction.user, str(self.motivo)
+        )
+        await interaction.followup.send(
+            "✅ Ticket encerrado e arquivado." if ok else
+            "⚠️ O canal foi preservado porque não foi possível confirmar o encerramento.",
+            ephemeral=True,
         )
 
 
@@ -1626,6 +2063,8 @@ class DecisaoModal(discord.ui.Modal):
             return await interaction.response.send_message(
                 f"⚠️ Já decidido por <@{t['decisao'].get('por')}>.", ephemeral=True
             )
+        if not autorizado_no_ticket(interaction.user, t):
+            return await interaction.response.send_message("❌ Sem permissão neste caso.", ephemeral=True)
 
         cat = CATEGORIAS.get(t.get("cat", ""), {})
         motivo = str(self.motivo).strip()
@@ -1719,11 +2158,11 @@ class RespostasSelect(discord.ui.Select):
         self.canal = canal
 
     async def callback(self, interaction: discord.Interaction):
-        if not eh_staff(interaction.user):
-            return await interaction.response.send_message(
-                "❌ Apenas a equipe.", ephemeral=True
-            )
         t = ler_ticket(self.canal)
+        if not autorizado_no_ticket(interaction.user, t):
+            return await interaction.response.send_message(
+                "❌ Apenas a equipe autorizada.", ephemeral=True
+            )
         nome, emoji, texto = RESPOSTAS_PRONTAS[self.values[0]]
         texto = texto.replace("{usuario}", f"<@{t.get('owner')}>")
         await interaction.response.send_message(
@@ -1745,6 +2184,37 @@ class RespostasView(discord.ui.View):
     def __init__(self, canal: discord.TextChannel):
         super().__init__(timeout=120)
         self.add_item(RespostasSelect(canal))
+
+
+class EtapaSelect(discord.ui.Select):
+    def __init__(self, canal: discord.TextChannel):
+        super().__init__(
+            placeholder="Atualizar etapa do atendimento",
+            options=[discord.SelectOption(label=nome, value=chave, emoji=emoji)
+                     for chave, (emoji, nome) in STATUS_TICKET.items()
+                     if chave != "suspenso"],
+        )
+        self.canal = canal
+
+    async def callback(self, interaction: discord.Interaction):
+        t = ler_ticket(self.canal)
+        if not autorizado_no_ticket(interaction.user, t):
+            return await interaction.response.send_message("❌ Sem autorização.", ephemeral=True)
+        etapa = self.values[0]
+        salvar_estado(self.canal.id, status=etapa)
+        if not await confirmar_gravacao(F_ESTADOS):
+            return await interaction.response.send_message("⚠️ Falha ao persistir a etapa.", ephemeral=True)
+        await atualizar_card(self.canal)
+        emoji, nome = STATUS_TICKET[etapa]
+        await interaction.response.send_message(f"✅ Etapa alterada para {emoji} **{nome}**.", ephemeral=True)
+        await registrar(interaction.guild, "📌 Etapa atualizada",
+                        f"{interaction.user.mention} alterou a etapa para {nome} em {self.canal.mention}")
+
+
+class EtapaView(discord.ui.View):
+    def __init__(self, canal: discord.TextChannel):
+        super().__init__(timeout=180)
+        self.add_item(EtapaSelect(canal))
 
 
 class TicketControls(discord.ui.View):
@@ -1770,7 +2240,7 @@ class TicketControls(discord.ui.View):
     async def assumir(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        if not eh_staff(interaction.user):
+        if not autorizado_no_ticket(interaction.user, ler_ticket(interaction.channel)):
             return await interaction.response.send_message(
                 "❌ Apenas a equipe pode assumir tickets.", ephemeral=True
             )
@@ -1788,7 +2258,10 @@ class TicketControls(discord.ui.View):
             interaction.channel.id,
             claim=interaction.user.id,
             claim_ts=t.get("claim_ts") or time.time(),
+            status="em_analise",
+            alerta_nivel=len(ALERTAS_ESCALONADOS_MINUTOS),
         )
+        await confirmar_gravacao(F_ESTADOS)
         await atualizar_card(interaction.channel)
         await aviso_no_ticket(
             interaction.channel,
@@ -1799,6 +2272,7 @@ class TicketControls(discord.ui.View):
             interaction.guild,
             "🙋 Ticket Assumido",
             f"{interaction.user.mention} assumiu {interaction.channel.mention}",
+            confidencial=ticket_confidencial(t),
         )
 
     @discord.ui.button(
@@ -1815,7 +2289,7 @@ class TicketControls(discord.ui.View):
         if not t:
             return await interaction.response.send_message("Ticket não encontrado no registro.", ephemeral=True)
         eh_dono = t.get("owner") == interaction.user.id
-        if not (eh_dono or eh_staff(interaction.user)):
+        if not (eh_dono or autorizado_no_ticket(interaction.user, ler_ticket(interaction.channel))):
             return await interaction.response.send_message(
                 "❌ Você não pode fechar este ticket.", ephemeral=True
             )
@@ -1832,7 +2306,7 @@ class TicketControls(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         t = ler_ticket(interaction.channel)
-        if eh_staff(interaction.user):
+        if autorizado_no_ticket(interaction.user, ler_ticket(interaction.channel)):
             return await interaction.response.send_message(
                 "ℹ️ Você já faz parte da equipe.", ephemeral=True
             )
@@ -1852,6 +2326,8 @@ class TicketControls(discord.ui.View):
 
         if t.get("claim"):
             mencao = f"<@{t['claim']}>"
+        elif ticket_confidencial(t):
+            mencao = " ".join(f"<@&{r}>" for r in CARGOS_CORREGEDORIA) or f"<@{interaction.guild.owner_id}>"
         else:
             ids = cargos_para_notificar(t.get("cat", "")) or list(CARGOS_STAFF)
             mencao = " ".join(f"<@&{r}>" for r in ids)
@@ -1875,7 +2351,7 @@ class TicketControls(discord.ui.View):
     async def painel(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        if not eh_staff(interaction.user):
+        if not autorizado_no_ticket(interaction.user, ler_ticket(interaction.channel)):
             return await interaction.response.send_message(
                 "❌ Apenas a equipe pode abrir o painel staff.", ephemeral=True
             )
@@ -1896,7 +2372,7 @@ class TicketControls(discord.ui.View):
     async def respostas(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        if not eh_staff(interaction.user):
+        if not autorizado_no_ticket(interaction.user, ler_ticket(interaction.channel)):
             return await interaction.response.send_message(
                 "❌ Apenas a equipe pode usar as respostas prontas.", ephemeral=True
             )
@@ -1905,6 +2381,15 @@ class TicketControls(discord.ui.View):
             view=RespostasView(interaction.channel),
             ephemeral=True,
         )
+
+    @discord.ui.button(label="Etapa", emoji="📌", style=discord.ButtonStyle.secondary,
+                       custom_id="sants_ticket_etapa", row=1)
+    async def etapa(self, interaction: discord.Interaction, button: discord.ui.Button):
+        t = ler_ticket(interaction.channel)
+        if not autorizado_no_ticket(interaction.user, t):
+            return await interaction.response.send_message("❌ Apenas responsáveis autorizados.", ephemeral=True)
+        await interaction.response.send_message("📌 Selecione a etapa do atendimento:",
+                                                view=EtapaView(interaction.channel), ephemeral=True)
 
     @discord.ui.button(
         label="Aprovar",
@@ -1916,7 +2401,7 @@ class TicketControls(discord.ui.View):
     async def aprovar(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        if not eh_staff(interaction.user):
+        if not autorizado_no_ticket(interaction.user, ler_ticket(interaction.channel)):
             return await interaction.response.send_message(
                 "❌ Apenas a equipe pode decidir.", ephemeral=True
             )
@@ -1936,7 +2421,7 @@ class TicketControls(discord.ui.View):
     async def recusar(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        if not eh_staff(interaction.user):
+        if not autorizado_no_ticket(interaction.user, ler_ticket(interaction.channel)):
             return await interaction.response.send_message(
                 "❌ Apenas a equipe pode decidir.", ephemeral=True
             )
@@ -1981,6 +2466,8 @@ class RenomearModal(discord.ui.Modal, title="Renomear Ticket"):
         self.canal = canal
 
     async def on_submit(self, interaction: discord.Interaction):
+        if not autorizado_no_ticket(interaction.user, ler_ticket(self.canal)):
+            return await interaction.response.send_message("❌ Sem autorização.", ephemeral=True)
         antigo = self.canal.name
         try:
             await asyncio.wait_for(self.canal.edit(name=str(self.nome)), timeout=8)
@@ -2019,6 +2506,8 @@ class AvisoDMModal(discord.ui.Modal, title="Avisar usuário por DM"):
 
     async def on_submit(self, interaction: discord.Interaction):
         t = ler_ticket(self.canal)
+        if not autorizado_no_ticket(interaction.user, t):
+            return await interaction.response.send_message("❌ Sem autorização.", ephemeral=True)
         dono = await buscar_membro(interaction.client, interaction.guild, t["owner"])
         if not dono:
             return await interaction.response.send_message(
@@ -2057,6 +2546,8 @@ class NotaInternaModal(discord.ui.Modal, title="Nota interna (só staff)"):
 
     async def on_submit(self, interaction: discord.Interaction):
         t = ler_ticket(self.canal)
+        if not autorizado_no_ticket(interaction.user, t):
+            return await interaction.response.send_message("❌ Sem autorização.", ephemeral=True)
         notas = list(t.get("notas", []))
         notas.append(
             {
@@ -2080,9 +2571,9 @@ class PainelTicketView(discord.ui.View):
         self.btn_trancar.label = "Destrancar" if t.get("locked") else "Trancar"
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if eh_staff(interaction.user):
+        if autorizado_no_ticket(interaction.user, ler_ticket(self.canal)):
             return True
-        await interaction.response.send_message("❌ Apenas a equipe.", ephemeral=True)
+        await interaction.response.send_message("❌ Apenas a equipe autorizada.", ephemeral=True)
         return False
 
     # ── Linha 0: prioridade ──
@@ -2126,6 +2617,10 @@ class PainelTicketView(discord.ui.View):
     async def sel_adicionar(
         self, interaction: discord.Interaction, select: discord.ui.UserSelect
     ):
+        if ticket_confidencial(ler_ticket(self.canal)):
+            return await interaction.response.send_message(
+                "🔒 Uma denúncia contra a equipe não permite inclusão manual de participantes.", ephemeral=True
+            )
         adicionados = []
         for u in select.values:
             m = u if isinstance(u, discord.Member) else interaction.guild.get_member(u.id)
@@ -2210,11 +2705,11 @@ class PainelTicketView(discord.ui.View):
         self, interaction: discord.Interaction, select: discord.ui.UserSelect
     ):
         alvo = select.values[0]
-        if not eh_staff(alvo):
-            return await interaction.response.send_message(
-                "❌ Só é possível transferir para alguém da equipe.", ephemeral=True
-            )
         t = ler_ticket(self.canal)
+        if not autorizado_no_ticket(alvo, t):
+            return await interaction.response.send_message(
+                "❌ Só é possível transferir para um responsável autorizado neste ticket.", ephemeral=True
+            )
         salvar_estado(
             self.canal.id, claim=alvo.id, claim_ts=t.get("claim_ts") or time.time()
         )
@@ -2244,6 +2739,8 @@ class PainelTicketView(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         t = ler_ticket(self.canal)
+        if not autorizado_no_ticket(interaction.user, t):
+            return await interaction.response.send_message("❌ Sem autorização.", ephemeral=True)
         dono = await buscar_membro(interaction.client, interaction.guild, t["owner"])
         if not isinstance(dono, discord.Member):
             return await interaction.response.send_message(
@@ -2289,6 +2786,8 @@ class PainelTicketView(discord.ui.View):
     ):
         await interaction.response.defer(ephemeral=True)
         t = ler_ticket(self.canal)
+        if not autorizado_no_ticket(interaction.user, t):
+            return await interaction.followup.send("❌ Sem autorização.", ephemeral=True)
         pagina, total = await gerar_transcript_html(self.canal, t)
         await interaction.followup.send(
             content=f"📄 Transcript parcial ({total} mensagens):",
@@ -2402,10 +2901,9 @@ def embed_estatisticas(guild: discord.Guild) -> discord.Embed:
     return embed
 
 
-def embed_lista_tickets(guild: discord.Guild) -> discord.Embed:
-    abertos = listar_tickets(guild)
-    ordem = {k: i for i, k in enumerate(reversed(list(PRIORIDADES)))}
-    abertos.sort(key=lambda x: (ordem.get(x[1].get("prio", "normal"), 9), x[0].created_at))
+def embed_lista_tickets(guild: discord.Guild, membro=None) -> discord.Embed:
+    abertos = [(c, t) for c, t in fila_ordenada(guild)
+               if not ticket_confidencial(t) or autorizado_no_ticket(membro, t)]
     embed = discord.Embed(title="📋 Tickets Abertos", color=COR_AZUL)
     if not abertos:
         embed.description = "✨ Nenhum ticket aberto no momento."
@@ -2415,9 +2913,10 @@ def embed_lista_tickets(guild: discord.Guild) -> discord.Embed:
         cat = CATEGORIAS.get(t.get("cat", ""), {})
         p_emoji = PRIORIDADES.get(t.get("prio", "normal"), PRIORIDADES["normal"])[0]
         atendente = f"🙋 <@{t['claim']}>" if t.get("claim") else "⏳ sem atendente"
+        etapa = STATUS_TICKET[ticket_status(t)][1]
         linhas.append(
             f"{p_emoji} {canal.mention} • {cat.get('emoji', '')} {cat.get('nome', '')} "
-            f"• <@{t['owner']}> • {atendente} • <t:{int(canal.created_at.timestamp())}:R>"
+            f"• <@{t['owner']}> • {atendente} • {etapa} • <t:{int(canal.created_at.timestamp())}:R>"
         )
     embed.description = "\n".join(linhas)
     if len(abertos) > 20:
@@ -2478,6 +2977,10 @@ def embed_config(guild: discord.Guild, bot: commands.Bot) -> discord.Embed:
         return "\n".join(out)
 
     embed.add_field(name="🛡️ Cargos staff", value=cargos_txt(CARGOS_STAFF), inline=False)
+    embed.add_field(name="🔒 Cargos da Corregedoria",
+                    value=cargos_txt(CARGOS_CORREGEDORIA) if CARGOS_CORREGEDORIA
+                          else "⚠️ Não configurados; denúncias contra staff ficam restritas ao dono do servidor.",
+                    inline=False)
     if CARGOS_NOTIFICAR:
         embed.add_field(
             name="🔔 Cargos notificados", value=cargos_txt(CARGOS_NOTIFICAR), inline=False
@@ -2535,44 +3038,291 @@ def embed_config(guild: discord.Guild, bot: commands.Bot) -> discord.Embed:
 # ════════════════════════════════════════════════════════════════
 
 
-class PainelStaffView(discord.ui.View):
+class PainelStaffView(discord.ui.LayoutView):
+    """Central da equipe 100% Components V2 (sem embeds no mesmo envio)."""
+
     def __init__(self):
         super().__init__(timeout=None)
+        itens = [
+            discord.ui.TextDisplay(
+                "## 🛡️ CENTRAL ADMINISTRATIVA ROYAL\n"
+                "> `📋` Gestão de solicitações por prioridade.\n"
+                "> `⏱️` Fila com tempo de espera e etapas.\n"
+                "> `📊` Relatórios, satisfação e verificação da configuração."
+            ),
+            discord.ui.Separator(spacing=discord.SeparatorSpacing.small),
+        ]
+        botoes = [
+            ("Fila de tickets", "📋", "royal_staff_fila_v3", self.lista),
+            ("Estatísticas", "📊", "royal_staff_stats_v3", self.stats),
+            ("Relatório 7 dias", "📑", "royal_staff_relatorio_v3", self.relatorio),
+            ("Avaliações", "⭐", "royal_staff_avaliacoes_v3", self.ranking),
+            ("Configuração", "⚙️", "royal_staff_config_v3", self.config),
+        ]
+        row = discord.ui.ActionRow()
+        for label, emoji, custom_id, acao in botoes:
+            botao = discord.ui.Button(
+                label=label, emoji=emoji, custom_id=custom_id,
+                style=discord.ButtonStyle.secondary,
+            )
+            botao.callback = acao
+            row.add_item(botao)
+        itens.append(row)
+        itens.append(discord.ui.TextDisplay(
+            "-# <a:animated_Settings:1556187476177981440> Família Royal • "
+            + ("🎄 Edição Natalina" if tema_atual() == "natal" else "Central oficial")
+        ))
+        self.add_item(discord.ui.Container(*itens, accent_colour=discord.Colour(cor_tema())))
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if eh_staff(interaction.user):
             return True
-        await interaction.response.send_message(
-            "❌ Apenas a equipe pode usar este painel.", ephemeral=True
-        )
+        await interaction.response.send_message("❌ Apenas a equipe autorizada.", ephemeral=True)
         return False
 
-    @discord.ui.button(label="Tickets Abertos", emoji="📋", style=discord.ButtonStyle.primary, custom_id="sants_staff_lista", row=0)
-    async def lista(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def lista(self, interaction: discord.Interaction):
         await interaction.response.send_message(
-            embed=embed_lista_tickets(interaction.guild), ephemeral=True
-        )
+            embed=embed_lista_tickets(interaction.guild, interaction.user), ephemeral=True)
 
-    @discord.ui.button(label="Estatísticas", emoji="📊", style=discord.ButtonStyle.primary, custom_id="sants_staff_stats", row=0)
-    async def stats(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def stats(self, interaction: discord.Interaction):
         await interaction.response.send_message(
-            embed=embed_estatisticas(interaction.guild), ephemeral=True
-        )
+            embed=embed_estatisticas(interaction.guild), ephemeral=True)
 
-    @discord.ui.button(label="Ranking", emoji="🏆", style=discord.ButtonStyle.secondary, custom_id="sants_staff_rank", row=1)
-    async def ranking(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def relatorio(self, interaction: discord.Interaction):
+        await interaction.response.send_message(
+            embed=resumo_7_dias(interaction.guild), ephemeral=True)
+
+    async def ranking(self, interaction: discord.Interaction):
         embed = embed_avaliacoes()
-        if not embed:
-            return await interaction.response.send_message(
-                "📭 Ainda não há avaliações.", ephemeral=True
-            )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @discord.ui.button(label="Configuração", emoji="⚙️", style=discord.ButtonStyle.secondary, custom_id="sants_staff_config", row=1)
-    async def config(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message(
-            embed=embed_config(interaction.guild, interaction.client), ephemeral=True
+            embed=embed, ephemeral=True) if embed else await interaction.response.send_message(
+            "📭 Ainda não há avaliações.", ephemeral=True)
+
+    async def config(self, interaction: discord.Interaction):
+        await interaction.response.send_message(
+            embed=embed_config(interaction.guild, interaction.client), ephemeral=True)
+
+
+# ════════════════════════════════════════════════════════════════
+#              CORREIO NATALINO — OPCIONAL / MODERADO
+# ════════════════════════════════════════════════════════════════
+
+TRAVAS_CARTAS: dict[tuple[int, int], asyncio.Lock] = {}
+
+
+def entrega_natal() -> datetime:
+    """Data de entrega local (BRT) configurável por variável de ambiente."""
+    texto = os.getenv("ROYAL_NATAL_DATA_ENTREGA", "").strip()
+    try:
+        if texto:
+            return datetime.strptime(texto, "%Y-%m-%d %H:%M").replace(tzinfo=FUSO)
+    except ValueError:
+        LOG.warning("ROYAL_NATAL_DATA_ENTREGA inválida; usando 24/12 18h")
+    hoje = datetime.now(FUSO)
+    ano = hoje.year if hoje.month < 12 or (hoje.month == 12 and hoje.day <= 24) else hoje.year + 1
+    return datetime(ano, 12, 24, 18, 0, tzinfo=FUSO)
+
+
+async def entregar_cartas_aprovadas(bot: commands.Bot):
+    if _POOL is None:
+        return
+    try:
+        await _POOL.execute("""
+            UPDATE royal_tickets_cartas_natal SET status='aprovada'
+            WHERE status='enviando' AND entrega_em < now() - interval '10 minutes'
+        """)
+        rows = await _POOL.fetch("""
+            SELECT id, guild_id, remetente_id, destinatario_id, mensagem
+            FROM royal_tickets_cartas_natal
+            WHERE status='aprovada' AND entrega_em <= now()
+            ORDER BY id LIMIT 15
+        """)
+        for r in rows:
+            claimed = await _POOL.fetchrow("""
+                UPDATE royal_tickets_cartas_natal SET status='enviando'
+                WHERE id=$1 AND status='aprovada'
+                RETURNING id
+            """, r["id"])
+            if not claimed:
+                continue
+            try:
+                alvo = await bot.fetch_user(r["destinatario_id"])
+                await alvo.send(
+                    "🎄 **CORREIO NATALINO ROYAL** 🎁\n\n"
+                    "Você recebeu uma mensagem especial de um integrante da Família Royal!\n\n"
+                    f"> {str(r['mensagem']).replace(chr(10), chr(10) + '> ')}\n\n"
+                    "-# <a:coroa:1564000189167960177> Família Royal • Boas festas!",
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+                await _POOL.execute("""
+                    UPDATE royal_tickets_cartas_natal
+                    SET status='entregue', entregue_em=now() WHERE id=$1
+                """, r["id"])
+            except discord.HTTPException:
+                await _POOL.execute("""
+                    UPDATE royal_tickets_cartas_natal SET status='falha' WHERE id=$1
+                """, r["id"])
+            except Exception:
+                LOG.exception("Falha no envio da carta %s", r["id"])
+                await _POOL.execute("""
+                    UPDATE royal_tickets_cartas_natal SET status='falha' WHERE id=$1
+                """, r["id"])
+    except Exception:
+        LOG.exception("Falha no processamento do Correio Natalino")
+
+
+class CartaNatalModal(discord.ui.Modal):
+    mensagem = discord.ui.TextInput(
+        label="Sua mensagem de Natal", style=discord.TextStyle.paragraph,
+        placeholder="Escreva um recado de carinho ou agradecimento...",
+        min_length=10, max_length=500,
+    )
+
+    def __init__(self, destinatario: int, guild_id: int):
+        super().__init__(title="🎄 Correio Natalino Royal", timeout=300)
+        self.destinatario = destinatario
+        self.guild_id = guild_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if not interaction.guild or interaction.guild.id != self.guild_id:
+            return await interaction.response.send_message("❌ Servidor inválido.", ephemeral=True)
+        if interaction.user.id == self.destinatario:
+            return await interaction.response.send_message("⚠️ Escolha outro membro para receber a carta.", ephemeral=True)
+        if _POOL is None:
+            return await interaction.response.send_message("⚠️ Correio indisponível no momento.", ephemeral=True)
+        chave = (self.guild_id, interaction.user.id)
+        trava = TRAVAS_CARTAS.setdefault(chave, asyncio.Lock())
+        async with trava:
+            try:
+                count = await _POOL.fetchval("""
+                    SELECT count(*) FROM royal_tickets_cartas_natal
+                    WHERE guild_id=$1 AND remetente_id=$2
+                      AND criado_em >= now() - interval '24 hours'
+                """, self.guild_id, interaction.user.id)
+                if count >= 3:
+                    return await interaction.response.send_message(
+                        "⏳ Você atingiu o limite de 3 cartas nas últimas 24 horas.", ephemeral=True
+                    )
+                await _POOL.execute("""
+                    INSERT INTO royal_tickets_cartas_natal
+                    (guild_id, remetente_id, destinatario_id, mensagem)
+                    VALUES ($1,$2,$3,$4)
+                """, self.guild_id, interaction.user.id, self.destinatario,
+                     str(self.mensagem).strip())
+            except Exception:
+                LOG.exception("Falha ao registrar carta")
+                return await interaction.response.send_message("❌ Não consegui registrar a carta.", ephemeral=True)
+        await interaction.response.send_message(
+            "✅ Mensagem recebida! Ela será revisada pela equipe antes da entrega de Natal.",
+            ephemeral=True,
         )
+
+
+class DestinatarioNatal(discord.ui.UserSelect):
+    def __init__(self):
+        super().__init__(placeholder="🎁 Escolha quem receberá a mensagem",
+                         min_values=1, max_values=1)
+
+    async def callback(self, interaction: discord.Interaction):
+        alvo = self.values[0]
+        if alvo.bot:
+            return await interaction.response.send_message("❌ Escolha um membro, não um bot.", ephemeral=True)
+        await interaction.response.send_modal(CartaNatalModal(alvo.id, interaction.guild.id))
+
+
+class EscolherDestinatarioNatal(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=180)
+        self.add_item(DestinatarioNatal())
+
+
+class CorreioNatalView(discord.ui.LayoutView):
+    def __init__(self):
+        super().__init__(timeout=None)
+        botao = discord.ui.Button(
+            label="Escrever uma carta", emoji="💌",
+            custom_id="royal_correio_natal_enviar_v1",
+            style=discord.ButtonStyle.success,
+        )
+        botao.callback = self.comecar
+        self.add_item(discord.ui.Container(
+            discord.ui.TextDisplay(
+                "## 🎄 CORREIO NATALINO ROYAL\n"
+                "Envie uma mensagem positiva a alguém da Família! 🎁\n"
+                "> `💌` Escolha o destinatário e escreva seu recado.\n"
+                "> `🛡️` As cartas passam pela aprovação da equipe.\n"
+                "> `📅` Entrega programada para **24 de dezembro**, ou na data definida pela staff."
+            ),
+            discord.ui.Separator(),
+            discord.ui.ActionRow(botao),
+            discord.ui.TextDisplay("-# <a:coroa:1564000189167960177> Família Royal • União e respeito"),
+            accent_colour=discord.Colour(COR_NATAL_VERDE),
+        ))
+
+    async def comecar(self, interaction: discord.Interaction):
+        if _POOL is None:
+            return await interaction.response.send_message(
+                "⚠️ O Correio Natalino está indisponível no momento.", ephemeral=True)
+        await interaction.response.send_message(
+            "🎁 Quem deve receber sua carta?", view=EscolherDestinatarioNatal(), ephemeral=True)
+
+
+class ModerarCartaView(discord.ui.LayoutView):
+    def __init__(self, carta: dict):
+        super().__init__(timeout=600)
+        self.carta = carta
+        botoes = []
+        for texto, emoji, nome, estilo in (
+            ("Aprovar", "✅", "aprovada", discord.ButtonStyle.success),
+            ("Rejeitar", "❌", "rejeitada", discord.ButtonStyle.danger),
+        ):
+            b = discord.ui.Button(label=texto, emoji=emoji, style=estilo)
+            b.callback = self.acao_aprovar if nome == "aprovada" else self.acao_rejeitar
+            botoes.append(b)
+        self.add_item(discord.ui.Container(
+            discord.ui.TextDisplay(
+                f"## 💌 CARTA NATALINA #{carta['id']}\n"
+                f"> `👤` Remetente: <@{carta['remetente_id']}>\n"
+                f"> `🎯` Destinatário: <@{carta['destinatario_id']}>\n"
+                f"> `📝` Mensagem:\n> {str(carta['mensagem']).replace(chr(10), chr(10) + '> ')}"
+            ),
+            discord.ui.Separator(),
+            discord.ui.ActionRow(*botoes),
+            accent_colour=discord.Colour(COR_NATAL_OURO),
+        ))
+
+    async def revisar(self, interaction: discord.Interaction, status: str):
+        if not eh_staff(interaction.user):
+            return await interaction.response.send_message("❌ Apenas a equipe.", ephemeral=True)
+        if _POOL is None:
+            return await interaction.response.send_message("❌ PostgreSQL indisponível.", ephemeral=True)
+        data = entrega_natal()
+        try:
+            salvo = await _POOL.fetchrow("""
+                UPDATE royal_tickets_cartas_natal
+                SET status=$2, aprovado_por=$3, entrega_em=$4
+                WHERE id=$1 AND status='pendente' AND guild_id=$5
+                RETURNING id
+            """, self.carta["id"], status, interaction.user.id,
+                 data if status == "aprovada" else None, interaction.guild.id)
+        except Exception:
+            LOG.exception("Erro ao moderar carta %s", self.carta["id"])
+            return await interaction.response.send_message("❌ Erro na moderação.", ephemeral=True)
+        if not salvo:
+            return await interaction.response.send_message("ℹ️ Carta já analisada.", ephemeral=True)
+        await interaction.response.edit_message(view=discord.ui.LayoutView().add_item(
+            discord.ui.Container(discord.ui.TextDisplay(
+                f"## 💌 CARTA #{self.carta['id']}\n**Decisão:** {status} "
+                f"por {interaction.user.mention}."
+            ), accent_colour=discord.Colour(COR_NATAL_VERDE))))
+        if status == "aprovada" and data <= datetime.now(FUSO):
+            await entregar_cartas_aprovadas(interaction.client)
+
+    async def acao_aprovar(self, interaction: discord.Interaction):
+        await self.revisar(interaction, "aprovada")
+
+    async def acao_rejeitar(self, interaction: discord.Interaction):
+        await self.revisar(interaction, "rejeitada")
 
 
 # ════════════════════════════════════════════════════════════════
@@ -2588,6 +3338,7 @@ class TicketsCog(commands.Cog):
         await carregar_armazenamento(self.bot)
         self.bot.add_view(TicketView())
         self.bot.add_view(PainelStaffView())
+        self.bot.add_view(CorreioNatalView())
         self.bot.add_dynamic_items(BotaoNota)
         self.monitorar.start()
 
@@ -2622,12 +3373,22 @@ class TicketsCog(commands.Cog):
     # ── Monitoramento: alerta sem atendente + inatividade ───────
     @tasks.loop(minutes=1)
     async def monitorar(self):
+        await entregar_cartas_aprovadas(self.bot)
         agora_utc = datetime.now(timezone.utc)
         for cid in list(estados().keys()):
             try:
                 canal = self.bot.get_channel(int(cid))
                 if canal is None:
-                    remover_estado(cid)
+                    try:
+                        canal = await self.bot.fetch_channel(int(cid))
+                    except discord.NotFound:
+                        remover_estado(cid)
+                        await confirmar_gravacao(F_ESTADOS)
+                        continue
+                    except discord.HTTPException:
+                        LOG.warning("Não foi possível consultar o canal %s; mantendo estado", cid)
+                        continue
+                if not isinstance(canal, discord.TextChannel):
                     continue
                 if canal.id in CANAIS_FECHANDO:
                     continue
@@ -2637,7 +3398,8 @@ class TicketsCog(commands.Cog):
                 guild = canal.guild
 
                 # 0) Fechamento automático após a decisão
-                if t.get("fechar_em") and time.time() >= t["fechar_em"]:
+                if (t.get("fechar_em") and time.time() >= t["fechar_em"]
+                        and not ticket_confidencial(t) and not t.get("solicitante_saiu_ts")):
                     salvar_estado(canal.id, fechar_em=None)
                     asyncio.create_task(
                         fechar_ticket(
@@ -2646,26 +3408,32 @@ class TicketsCog(commands.Cog):
                     )
                     continue
 
-                # 1) Ninguém assumiu
-                if (
-                    ALERTA_SEM_ATENDENTE_MINUTOS
-                    and not t.get("claim")
-                    and not t.get("alertado")
-                    and (agora_utc - canal.created_at).total_seconds()
-                    >= ALERTA_SEM_ATENDENTE_MINUTOS * 60
-                ):
-                    salvar_estado(canal.id, alertado=True)
-                    ids = cargos_para_notificar(t.get("cat", "")) or list(CARGOS_STAFF)
-                    await canal.send(
-                        content=" ".join(f"<@&{r}>" for r in ids) or None,
-                        embed=discord.Embed(
-                            description="⏰ **Ticket sem atendente** há "
-                            f"{ALERTA_SEM_ATENDENTE_MINUTOS}+ minutos. "
-                            "Alguém pode assumir?",
-                            color=COR_AZUL_CLARO,
-                        ),
-                        allowed_mentions=discord.AllowedMentions(roles=True),
-                    )
+                # 1) Escalonamento respeitando o horário publicado no painel.
+                if not t.get("claim") and ticket_status(t) not in ("concluido", "suspenso"):
+                    uteis = minutos_uteis(canal.created_at, agora_utc)
+                    nivel_antigo = int(t.get("alerta_nivel", 1 if t.get("alertado") else 0))
+                    nivel = min(len(ALERTAS_ESCALONADOS_MINUTOS),
+                                sum(uteis >= m for m in ALERTAS_ESCALONADOS_MINUTOS))
+                    if nivel > nivel_antigo:
+                        confidencial = ticket_confidencial(t)
+                        if confidencial:
+                            destinatarios = (" ".join(f"<@&{r}>" for r in CARGOS_CORREGEDORIA)
+                                             or f"<@{guild.owner_id}>")
+                        else:
+                            destinatarios = " ".join(f"<@&{r}>" for r in cargos_para_notificar(t.get("cat", "")))
+                        await canal.send(
+                            content=destinatarios or None,
+                            embed=discord.Embed(
+                                description=(f"⏰ **Acompanhamento:** ticket sem responsável "
+                                             f"há **{uteis} minutos úteis**. "
+                                             "Solicitamos atenção da equipe responsável."),
+                                color=COR_NATAL_OURO,
+                            ),
+                            allowed_mentions=discord.AllowedMentions(users=confidencial,
+                                                                      roles=True),
+                        )
+                        salvar_estado(canal.id, alerta_nivel=nivel, alertado=True)
+                # Tickets em análise/aguardando usuário não causam spam de alerta.
 
                 # 2) Inatividade
                 if INATIVIDADE_AVISO_HORAS:
@@ -2683,14 +3451,13 @@ class TicketsCog(commands.Cog):
                             INATIVIDADE_FECHAR_APOS_AVISO_HORAS
                             and parado >= INATIVIDADE_FECHAR_APOS_AVISO_HORAS * 3600
                         ):
-                            asyncio.create_task(
-                                fechar_ticket(
-                                    self.bot,
-                                    canal,
-                                    guild.me,
-                                    "Fechado automaticamente por inatividade.",
+                            if not ticket_confidencial(t) and not t.get("solicitante_saiu_ts"):
+                                asyncio.create_task(
+                                    fechar_ticket(
+                                        self.bot, canal, guild.me,
+                                        "Fechado automaticamente por inatividade.",
+                                    )
                                 )
-                            )
                     elif parado >= INATIVIDADE_AVISO_HORAS * 3600:
                         extra = (
                             f" Se ninguém responder em "
@@ -2724,30 +3491,140 @@ class TicketsCog(commands.Cog):
             await ctx.message.delete()
         except discord.HTTPException:
             pass
-        await ctx.send(view=TicketView(), allowed_mentions=discord.AllowedMentions.none())
+        msg = await ctx.send(view=TicketView(), allowed_mentions=discord.AllowedMentions.none())
+        paineis = _ler_json(F_PAINEIS, {})
+        paineis[str(ctx.guild.id)] = {"canal": ctx.channel.id, "mensagem": msg.id}
+        _salvar_json(F_PAINEIS, paineis)
+        await confirmar_gravacao(F_PAINEIS)
 
     @commands.command(name="painelstaff")
     @apenas_staff()
     async def painelstaff(self, ctx: commands.Context):
-        """Cria o painel de controle da equipe (use num canal privado)."""
-        embed = discord.Embed(
-            title=f"🛡️ Painel da Equipe — {NOME_SERVIDOR}",
-            description=(
-                "Controle rápido do sistema de tickets:\n\n"
-                "📋 **Tickets Abertos** — lista por prioridade\n"
-                "📊 **Estatísticas** — números gerais do atendimento\n"
-                "🏆 **Ranking** — avaliações dos atendentes\n"
-                "⚙️ **Configuração** — confere se os IDs e permissões estão certos\n\n"
-                "*Dentro de cada ticket, use o botão* **🛠️ Painel Staff** *para "
-                "prioridade, transferir, trancar, adicionar membros e mais.*"
-            ),
-            color=COR_AZUL,
-        )
+        """Cria a central administrativa V2 somente em canal privado."""
+        if ctx.channel.permissions_for(ctx.guild.default_role).view_channel:
+            return await ctx.send("🔒 Use o comando em um canal privado da administração.")
         try:
             await ctx.message.delete()
         except discord.HTTPException:
             pass
-        await ctx.send(embed=embed, view=PainelStaffView())
+        await ctx.send(view=PainelStaffView(), allowed_mentions=discord.AllowedMentions.none())
+
+    @commands.command(name="tematicket")
+    @apenas_staff()
+    async def tematicket(self, ctx: commands.Context, tema: str = "natal"):
+        """!tematicket natal|classico: troca visual e atualiza painéis conhecidos."""
+        tema = tema.strip().lower()
+        if tema not in ("natal", "classico"):
+            return await ctx.send("⚠️ Use `!tematicket natal` ou `!tematicket classico`.")
+        _salvar_json(F_TEMA, {"tema": tema})
+        if not await confirmar_gravacao(F_TEMA):
+            return await ctx.send("❌ Falha ao salvar o tema no PostgreSQL.")
+        resultado = []
+        painel = _ler_json(F_PAINEIS, {}).get(str(ctx.guild.id), {})
+        if painel:
+            try:
+                canal = ctx.guild.get_channel(int(painel["canal"]))
+                if canal:
+                    mensagem = await canal.fetch_message(int(painel["mensagem"]))
+                    await mensagem.edit(view=TicketView(),
+                                        allowed_mentions=discord.AllowedMentions.none())
+                    resultado.append("Painel principal atualizado")
+            except (discord.HTTPException, KeyError, ValueError):
+                LOG.warning("Painel principal antigo não encontrado para atualização")
+        atualizados = 0
+        for canal, _ in listar_tickets(ctx.guild):
+            if await atualizar_card(canal):
+                atualizados += 1
+            await asyncio.sleep(0.15)
+        await ctx.send(f"✅ Tema **{tema}** aplicado. "
+                       f"{atualizados} ticket(s) atualizados. "
+                       + ("• ".join(resultado) if resultado else
+                          "Use `!painelticket` para publicar o novo painel natalino, caso o antigo não esteja registrado."))
+
+    @commands.command(name="correionatal")
+    @apenas_staff()
+    async def correionatal(self, ctx: commands.Context):
+        """Publica o painel opcional do Correio Natalino."""
+        await ctx.send(view=CorreioNatalView(), allowed_mentions=discord.AllowedMentions.none())
+
+    @commands.command(name="cartasnatal")
+    @apenas_staff()
+    async def cartasnatal(self, ctx: commands.Context):
+        """Modera cartas apenas em canal privado de staff."""
+        if ctx.channel.permissions_for(ctx.guild.default_role).view_channel:
+            return await ctx.send("🔒 Execute este comando em um canal privado.")
+        if _POOL is None:
+            return await ctx.send("❌ PostgreSQL indisponível.")
+        r = await _POOL.fetchrow("""
+            SELECT id, remetente_id, destinatario_id, mensagem
+            FROM royal_tickets_cartas_natal
+            WHERE guild_id=$1 AND status='pendente'
+            ORDER BY criado_em ASC LIMIT 1
+        """, ctx.guild.id)
+        if not r:
+            return await ctx.send("📭 Nenhuma carta aguardando revisão.")
+        await ctx.send(view=ModerarCartaView(dict(r)),
+                       allowed_mentions=discord.AllowedMentions.none())
+
+    @commands.command(name="reentregarcarta")
+    @apenas_staff()
+    async def reentregarcarta(self, ctx: commands.Context, carta_id: int):
+        if ctx.author.id != ctx.guild.owner_id and not ctx.author.guild_permissions.administrator:
+            return await ctx.send("🔒 Somente administradores podem tentar reenviar cartas.")
+        if _POOL is None:
+            return await ctx.send("❌ PostgreSQL indisponível.")
+        r = await _POOL.fetchrow("""
+            UPDATE royal_tickets_cartas_natal
+            SET status='aprovada', entrega_em=now()
+            WHERE id=$1 AND guild_id=$2 AND status='falha'
+            RETURNING id
+        """, carta_id, ctx.guild.id)
+        if not r:
+            return await ctx.send("⚠️ Carta não encontrada ou não está em falha.")
+        await entregar_cartas_aprovadas(self.bot)
+        await ctx.send("✅ Reenvio solicitado; consulte o estado no banco.")
+
+    @commands.command(name="filaticket")
+    @apenas_staff()
+    async def filaticket(self, ctx: commands.Context):
+        if ctx.channel.permissions_for(ctx.guild.default_role).view_channel:
+            return await ctx.send("🔒 Consulte a fila em um canal privado.")
+        await ctx.send(embed=embed_lista_tickets(ctx.guild, ctx.author))
+
+    @commands.command(name="relatorioticket")
+    @apenas_staff()
+    async def relatorioticket(self, ctx: commands.Context, dias: int = 7):
+        if ctx.channel.permissions_for(ctx.guild.default_role).view_channel:
+            return await ctx.send("🔒 Consulte relatórios em um canal privado.")
+        dias = min(90, max(1, dias))
+        await ctx.send(embed=resumo_7_dias(ctx.guild, dias))
+
+    @commands.command(name="arquivoticket")
+    @apenas_staff()
+    async def arquivoticket(self, ctx: commands.Context, numero: int):
+        """Recupera um transcript arquivado; entrega por DM para não vazar dados."""
+        if _POOL is None:
+            return await ctx.send("❌ PostgreSQL indisponível.")
+        registro = await _POOL.fetchrow("""
+            SELECT protocolo, arquivo_html, confidencial FROM royal_tickets_transcripts
+            WHERE guild_id=$1 AND ticket_no=$2 ORDER BY criado_em DESC LIMIT 1
+        """, ctx.guild.id, numero)
+        if not registro:
+            return await ctx.send("📭 Não há transcrição arquivada com esse número.")
+        if registro["confidencial"] and not (
+            ctx.author.id == ctx.guild.owner_id
+            or any(r.id in CARGOS_CORREGEDORIA for r in ctx.author.roles)
+        ):
+            return await ctx.send("🔒 Este histórico é reservado à Corregedoria.")
+        try:
+            await ctx.author.send(
+                content=f"📄 Histórico arquivado • `{registro['protocolo']}`",
+                file=discord.File(io.BytesIO(bytes(registro["arquivo_html"])),
+                                  filename=f"{registro['protocolo']}.html"),
+            )
+            await ctx.send("✅ Transcrição enviada por mensagem privada.", delete_after=10)
+        except discord.HTTPException:
+            await ctx.send("⚠️ Não consegui entregar o arquivo por DM.")
 
     @commands.command(name="configticket")
     @apenas_staff()
@@ -2764,7 +3641,13 @@ class TicketsCog(commands.Cog):
             title="📖 Comandos de Tickets",
             description=(
                 f"`{p}painelticket` — cria o painel público\n"
-                f"`{p}painelstaff` — cria o painel da equipe\n"
+                f"`{p}painelstaff` — cria a central V2 da equipe\n"
+                f"`{p}filaticket` — fila por prioridade\n"
+                f"`{p}relatorioticket [dias]` — relatório de 7 a 90 dias\n"
+                f"`{p}tematicket natal|classico` — muda o tema\n"
+                f"`{p}arquivoticket número` — transcrição arquivada por DM\n"
+                f"`{p}correionatal` — publica o Correio Natalino\n"
+                f"`{p}cartasnatal` — revisar as cartas num canal privado\n"
                 f"`{p}recuperarticket` — restaura os botões do ticket\n"
                 f"`{p}configticket` — verifica a configuração\n"
                 f"`{p}avaliacoes` — ranking de avaliações\n"
@@ -2782,7 +3665,8 @@ class TicketsCog(commands.Cog):
 
     # ── Comandos dentro do ticket ───────────────────────────────
     def _eh_ticket(self, ctx: commands.Context) -> bool:
-        return bool(ler_ticket(ctx.channel))
+        t = ler_ticket(ctx.channel)
+        return bool(t) and autorizado_no_ticket(ctx.author, t)
 
     @commands.command(name="recuperarticket")
     @apenas_staff()
@@ -2811,7 +3695,9 @@ class TicketsCog(commands.Cog):
     async def adicionar(self, ctx: commands.Context, membro: discord.Member):
         """Adiciona um membro ao ticket atual."""
         if not self._eh_ticket(ctx):
-            return await ctx.send("❌ Use dentro de um ticket.", delete_after=5)
+            return await ctx.send("❌ Você não tem acesso a este ticket.", delete_after=5)
+        if ticket_confidencial(ler_ticket(ctx.channel)):
+            return await ctx.send("🔒 Não é permitido incluir participantes em denúncia interna.")
         await ctx.channel.set_permissions(
             membro,
             view_channel=True,
@@ -2829,6 +3715,8 @@ class TicketsCog(commands.Cog):
         t = ler_ticket(ctx.channel)
         if not t:
             return await ctx.send("❌ Use dentro de um ticket.", delete_after=5)
+        if not autorizado_no_ticket(ctx.author, t):
+            return await ctx.send("❌ Sem autorização neste atendimento.", delete_after=5)
         if t.get("owner") == membro.id:
             return await ctx.send(
                 "❌ Não dá para remover quem abriu o ticket.", delete_after=5
@@ -2893,22 +3781,47 @@ class TicketsCog(commands.Cog):
             f"{ctx.author.mention} desbloqueou {membro.mention}",
         )
 
-    # ── Membro saiu do servidor: fecha o ticket dele ────────────
+    @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member):
+        """Reabre o fluxo de quem saiu e retornou, sem apagar o histórico."""
+        for canal, t in listar_tickets(member.guild):
+            if t.get("owner") != member.id or not t.get("solicitante_saiu_ts"):
+                continue
+            try:
+                ow = canal.overwrites_for(member)
+                ow.view_channel = True
+                ow.read_message_history = True
+                ow.send_messages = not t.get("locked", False)
+                await canal.set_permissions(member, overwrite=ow,
+                                            reason="Solicitante voltou ao servidor")
+            except discord.HTTPException:
+                LOG.exception("Falha ao restaurar acesso ao ticket %s", canal.id)
+                continue
+            salvar_estado(canal.id, solicitante_saiu_ts=None,
+                         status="em_analise" if t.get("claim") else "aguardando")
+            await confirmar_gravacao(F_ESTADOS)
+            await atualizar_card(canal)
+            await aviso_no_ticket(canal,
+                f"🎄 {member.mention} retornou ao servidor. Seu atendimento foi retomado.")
+
+    # ── Saída de membro: nunca destrói prova ou atendimento pendente ──
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
         for canal, t in listar_tickets(member.guild):
-            if t.get("owner") == member.id:
-                await aviso_no_ticket(
-                    canal,
-                    "👋 O membro saiu do servidor. Este ticket será encerrado "
-                    "automaticamente.",
-                    COR_AZUL_CLARO,
-                )
-                asyncio.create_task(
-                    fechar_ticket(
-                        self.bot, canal, member.guild.me, "O membro saiu do servidor."
-                    )
-                )
+            if t.get("owner") != member.id:
+                continue
+            salvar_estado(canal.id, status="suspenso", solicitante_saiu_ts=int(time.time()))
+            await confirmar_gravacao(F_ESTADOS)
+            await aviso_no_ticket(
+                canal,
+                "🔒 O solicitante saiu do servidor. O histórico foi preservado "
+                "para análise e encerramento manual pela equipe responsável.",
+                COR_NATAL_OURO,
+            )
+            if not ticket_confidencial(t):
+                await registrar(member.guild, "📂 Atendimento preservado",
+                                f"Solicitante <@{member.id}> saiu; ticket {canal.id} permanece aberto.")
+
 
 
 async def setup(bot: commands.Bot):
