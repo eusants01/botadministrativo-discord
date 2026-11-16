@@ -791,7 +791,7 @@ def _container_sorteio(g: dict) -> discord.ui.Container:
         tema = TEMAS.get(g.get("tema", "azul"), TEMAS["azul"])
         componentes.append(discord.ui.TextDisplay(
             f"## {tema['emoji']} {titulo_sorteio(g)}\n"
-            f"-# ✧ {str(g.get('subtitulo') or 'UMA NOVA PREMIAÇÃO DO REINO').strip()[:180]}"
+            f"-# {str(g.get('subtitulo') or 'UMA NOVA PREMIAÇÃO DO REINO').strip()[:180]}"
         ))
         componentes.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
         componentes.append(discord.ui.TextDisplay(
@@ -824,7 +824,7 @@ def _container_sorteio(g: dict) -> discord.ui.Container:
             RoyalSorteioBotao("lista"),
         ))
         componentes.append(discord.ui.TextDisplay(
-            f"-# ✧ {str(g.get('rodape') or '🎄 Família Royal • Natal 2026').strip()[:180]}"
+            f"-# {str(g.get('rodape') or '❄️ Família Royal • Natal 2026').strip()[:180]}"
         ))
     elif status == "encerrado":
         banner, _ = banner_sorteio(g)
@@ -834,7 +834,7 @@ def _container_sorteio(g: dict) -> discord.ui.Container:
         ganhadores = g.get("ganhadores", [])
         componentes.append(discord.ui.TextDisplay(
             f"## {tema['emoji']} {titulo_sorteio(g)}\n"
-            f"-# ✧ {str(g.get('subtitulo') or 'SORTEIO ENCERRADO').strip()[:180]}"
+            f"-# {str(g.get('subtitulo') or 'SORTEIO ENCERRADO').strip()[:180]}"
         ))
         componentes.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
         componentes.append(discord.ui.TextDisplay(
@@ -850,7 +850,7 @@ def _container_sorteio(g: dict) -> discord.ui.Container:
         ))
         componentes.append(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
         componentes.append(discord.ui.TextDisplay(
-            f"-# ✧ {str(g.get('rodape') or '🎄 Família Royal • Natal 2026').strip()[:180]}"
+            f"-# {str(g.get('rodape') or '❄️ Família Royal • Natal 2026').strip()[:180]}"
         ))
     else:
         componentes.append(discord.ui.TextDisplay("## 🚫 SORTEIO CANCELADO"))
@@ -1969,7 +1969,7 @@ class PainelConfigRoyal(discord.ui.LayoutView):
             await interaction.response.send_modal(ConfigVisualModal(interaction.guild.id))
         botao_visual.callback = editar_visuais
         elementos.append(discord.ui.ActionRow(botao_visual))
-        elementos.append(discord.ui.TextDisplay("-# ✧ Família Royal • Preferências salvas no PostgreSQL"))
+        elementos.append(discord.ui.TextDisplay("-# Família Royal • Boa sorte!"))
         self.add_item(discord.ui.Container(*elementos, accent_colour=discord.Colour(COR_AZUL)))
 
 
@@ -2072,7 +2072,7 @@ class PainelSorteioRoyal(discord.ui.LayoutView):
             botao.callback = clique
             botoes.append(botao)
         componentes.append(discord.ui.ActionRow(*botoes))
-        componentes.append(discord.ui.TextDisplay("-# 🎄 Família Royal • Natal 2026"))
+        componentes.append(discord.ui.TextDisplay("-# ❄️ Família Royal • Natal 2026"))
         self.add_item(discord.ui.Container(*componentes, accent_colour=discord.Colour(COR_AZUL)))
 
 
