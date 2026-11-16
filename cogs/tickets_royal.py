@@ -2137,7 +2137,7 @@ class TicketView(discord.ui.LayoutView):
         elementos.append(discord.ui.Separator())
         elementos.append(discord.ui.ActionRow(TicketSelect()))
         elementos.append(discord.ui.TextDisplay(
-            '-# <a:animated_Settings:1556187476177981440> Família Royal • '
+            '-# Família Royal • 2026'
         ))
         self.add_item(discord.ui.Container(*elementos, accent_colour=discord.Colour(cor_tema())))
 
@@ -3205,7 +3205,7 @@ class PainelStaffView(discord.ui.LayoutView):
             row.add_item(botao)
         itens.append(row)
         itens.append(discord.ui.TextDisplay(
-            "-# <a:animated_Settings:1556187476177981440> Família Royal • "
+            "-# Família Royal • 2026 "
             + ("🎄 Edição Natalina" if tema_atual() == "natal" else "Central oficial")
         ))
         self.add_item(discord.ui.Container(*itens, accent_colour=discord.Colour(cor_tema())))
@@ -3391,7 +3391,7 @@ class CorreioNatalView(discord.ui.LayoutView):
             ),
             discord.ui.Separator(),
             discord.ui.ActionRow(botao),
-            discord.ui.TextDisplay("-# <a:coroa:1564000189167960177> Família Royal • União e respeito"),
+            discord.ui.TextDisplay("-# <a:coroa:1564000189167960177> Família Royal • Natal 2026"),
             accent_colour=discord.Colour(COR_NATAL_VERDE),
         ))
 
