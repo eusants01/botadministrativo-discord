@@ -546,7 +546,7 @@ def cartao(titulo: str, texto: str, banner: str = "", *, teste: bool = False) ->
 
     caixa.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
 
-    caixa.add_item(discord.ui.TextDisplay("-# 👑 Família ROYAL • Honra · União · Lealdade"))
+    caixa.add_item(discord.ui.TextDisplay(""))
 
     painel.add_item(caixa)
 
@@ -591,11 +591,11 @@ class PainelLucky(discord.ui.LayoutView):
               "A contagem começa a partir da sua **primeira abertura** e você tem "
               "apenas **três tentativas** por ciclo, que se renovam após 24h!\n\n"
             + "### Premiações\n"
-              "> ☰ `👹` Cargo exclusivo secreto <@&1569948996573597726>\n"
+              "> ☰ `👹` Cargo exclusivo <@&1572848152548085871> ou <@&1569948996573597726>\n"
               "> ☰ `💜` Discord Nitro (**Básico** ou **Normal**)\n"
               "> ☰ `🎨` Decoração de Perfil\n"
               "> ☰ `🤓` Sub Civil no **E.B**\n"
-              "> ☰ `💸` Robux de **100 a 500**\n\n"
+              "> ☰ `💸` Robux de **100 a 500**\n"
             + "### Observações\n"
               "> ☰ `🛎️` As chances são __extremamente baixas__, então depende muito da sua sorte.\n"
               "> ☰ `🛎️` Novo estoque __será notificado__ a todos quando chegar.\n"
@@ -1085,7 +1085,7 @@ class LuckyBlockRoyal(commands.Cog):
 
             canal = await self.pegar_canal(guild, CANAL_REGISTROS)
 
-            view = cartao("🎉 PRÊMIO ESPECIAL ENCONTRADO!", texto, banner)
+            view = cartao("<a:1151259013175054336:1553900891315376240> PRÊMIO ESPECIAL ENCONTRADO!", texto, banner)
 
             mensagem = await canal.send(
 
@@ -1151,7 +1151,7 @@ class LuckyBlockRoyal(commands.Cog):
 
         msg = await canal.fetch_message(item["public_message_id"])
 
-        view = cartao("🎉 PRÊMIO ESPECIAL ENCONTRADO!", texto, banner)
+        view = cartao("<a:1151259013175054336:1553900891315376240> PRÊMIO ESPECIAL ENCONTRADO!", texto, banner)
 
         await msg.edit(view=view, **anexos_para_edicao(view))
 
@@ -1209,21 +1209,20 @@ class LuckyBlockRoyal(commands.Cog):
 
                         f"{resultado['id']:06d}", situacao)
 
-                    texto += (f"\n🎟️ **Restantes:** {resultado['restantes']}/{ABERTURAS_POR_CICLO}"
+                    texto += (f"\n`🎟️` **Restantes:** {resultado['restantes']}/{ABERTURAS_POR_CICLO}"
 
-                              f"\n⏳ **Renovação:** <t:{int(resultado['renovacao'].timestamp())}:R>")
+                              f"\n`⏳` **Renovação:** <t:{int(resultado['renovacao'].timestamp())}:R>")
 
-                    view = cartao("🎁 VOCÊ ENCONTROU UMA RECOMPENSA!", texto, premio["banner"])
+                    view = cartao("<a:1151259013175054336:1553900891315376240> VOCÊ ENCONTROU UMA RECOMPENSA!", texto, premio["banner"])
 
                 else:
 
-                    texto = ("A caixa veio vazia. Tente novamente em sua próxima abertura."
+                    texto = ("A caixa veio vazia, boa sorte na próxima!"
 
-                             f"\n🎟️ **Restantes:** {resultado['restantes']}/{ABERTURAS_POR_CICLO}"
+                             f"\n`🎟️` **Restantes:** {resultado['restantes']}/{ABERTURAS_POR_CICLO}"
+                             f"\n`⏳` **Renovação:** <t:{int(resultado['renovacao'].timestamp())}:R>")
 
-                             f"\n⏳ **Renovação:** <t:{int(resultado['renovacao'].timestamp())}:R>")
-
-                    view = cartao("📦 CAIXA VAZIA", texto, BANNER_CAIXA_VAZIA)
+                    view = cartao("<:gift:1570666397745549322> CAIXA VAZIA", texto, BANNER_CAIXA_VAZIA)
 
                 await interaction.followup.send(view=view, ephemeral=True,
 
@@ -1273,11 +1272,11 @@ class LuckyBlockRoyal(commands.Cog):
 
                 texto = "\n".join(linhas) if linhas else "Você ainda não abriu nenhuma caixa."
 
-                texto += f"\n\n🎟️ **Disponíveis:** {restantes}/{ABERTURAS_POR_CICLO}"
+                texto += f"\n\n`🎟️` **Disponíveis:** {restantes}/{ABERTURAS_POR_CICLO}"
 
                 if renovacao:
 
-                    texto += f"\n⏳ **Renovação:** <t:{int(renovacao.timestamp())}:R>"
+                    texto += f"\n`⏳` **Renovação:** <t:{int(renovacao.timestamp())}:R>"
 
                 await interaction.followup.send(view=cartao("📜 MEU HISTÓRICO", texto), ephemeral=True)
 
@@ -1303,9 +1302,9 @@ class LuckyBlockRoyal(commands.Cog):
 
                 texto = "\n".join(
 
-                    f"**{i}.** <@{item['user_id']}> — **{item['pontos']} pontos**"
+                    f"`**{i}.**` <@{item['user_id']}> — `**{item['pontos']} pontos**`"
 
-                    f" ({item['total']} caixas)" for i, item in enumerate(rows, 1)
+                    f" (`{item['total']} caixas`)" for i, item in enumerate(rows, 1)
 
                 ) or "Ainda não houve nenhuma abertura."
 
