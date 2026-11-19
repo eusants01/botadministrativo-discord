@@ -19,8 +19,11 @@ from discord.ext import commands
 LOGGER = logging.getLogger("sants.bot.lucky_block")
 
 # ===========================================================================
+
 # CONFIGURAÇÃO PRIVADA — MUDE AQUI E APENAS AQUI PARA ADICIONAR PREMIAÇÕES
+
 # ===========================================================================
+
 CANAL_PAINEL = 1572785659108917439
 
 CANAL_REGISTROS = 1572355776377266176
@@ -30,26 +33,43 @@ ABERTURAS_POR_CICLO = 3
 DURACAO_CICLO_HORAS = 24
 
 # 0 = somente o proprietário real da aplicação/bot (bot.is_owner).
+
 # Para restringir a um único usuário, substitua 0 pelo SEU ID do Discord.
+
 ID_DONO_DISCORD = 0
 
 BANNER_PAINEL = "assets/lucky_block/painel.png"           # assets/lucky_block/painel.png (ou assets/painel.png)
+
 BANNER_CAIXA_VAZIA = "caixa_vazia" # assets/lucky_block/caixa_vazia.png
+
 MOSTRAR_CHANCES_NO_PAINEL = False # Recomenda-se False para o catálogo secreto
+
 ANUNCIAR_SECRETOS = True         # Se False, prêmios da raridade secreta ficam sem log público
+
 CONCEDER_CARGOS_AUTOMATICAMENTE = True  # Exige 'Gerenciar Cargos' e hierarquia
+
 # Chance = probabilidade ABSOLUTA por abertura, escrita em % (5 casas decimais).
+
 # Ex.: 0.5 = 0,5% | 0.02 = 0,02% | 0.0001 = 0,0001% (1 em 1.000.000).
+
 # Use número entre aspas (ex.: "0.0001") para evitar imprecisão de ponto flutuante.
+
 # A chance de 'caixa vazia' é automaticamente 100% menos a soma das premiações.
+
 # Se um prêmio for sorteado sem estoque, a caixa ficará vazia SEM refazer sorteio.
+
 # 'estoque': total configurado. Ao aumentar o total, somam-se novas unidades ao saldo.
+
 # 'ativo': False bloqueia novos sorteios sem perder o histórico.
+
 # 'cargo_id': ID para atribuição automática de cargos; 0 para entrega manual.
+
 # 'banner': nome de arquivo na pasta assets (vazio = detectar pelo código do prêmio).
+
 PREMIACOES = {
 
     # =================== RARAS ===================
+
     "candidato_divisao": {
 
         "nome": "Candidato em uma divisão",
@@ -91,6 +111,7 @@ PREMIACOES = {
     },
 
     # =================== ÉPICAS ===================
+
     "100_robux": {
 
         "nome": "100 Robux",
@@ -172,6 +193,7 @@ PREMIACOES = {
     },
 
     # =================== LENDÁRIAS ===================
+
     "300_robux": {
 
         "nome": "300 Robux",
@@ -259,8 +281,11 @@ PREMIACOES = {
         "raridade": "legendary",
 
         "chance": "0.0002",  # 1 chance em 500.000 aberturas
+
         "estoque": 1,        # ALTERE PARA 1 quando quiser liberar este cargo
+
         "banner": "",       # COLOQUE O BANNER DA CLOVER AQUI
+
         "cargo_id": 1572848152548085871,
 
         "ativo": True,
@@ -270,6 +295,7 @@ PREMIACOES = {
     },
 
     # =================== SECRETA ===================
+
     "demon_night": {
 
         "nome": "Demon Night",
@@ -277,8 +303,11 @@ PREMIACOES = {
         "raridade": "legendary",
 
         "chance": "0.0001",  # 1 chance em 1.000.000 aberturas
+
         "estoque": 1,        # ALTERE PARA 1 quando quiser liberar este cargo
+
         "banner": "",       # COLOQUE O BANNER DA DEMON NIGHT AQUI
+
         "cargo_id": 1569948996573597726,
 
         "ativo": True,
@@ -290,6 +319,7 @@ PREMIACOES = {
 }
 
 # Detecta automaticamente banners por código, sem exigir configurações individuais.
+
 for _codigo_banner, _premio_banner in PREMIACOES.items():
 
     if not _premio_banner["banner"]:
@@ -297,9 +327,13 @@ for _codigo_banner, _premio_banner in PREMIACOES.items():
         _premio_banner["banner"] = _codigo_banner
 
 # ===========================================================================
+
 # IMPLEMENTAÇÃO — NÃO É NECESSÁRIO EDITAR A PARTIR DESTE PONTO
+
 # ===========================================================================
+
 TOTAL_SORTEIO = 10_000_000  # 1 unidade = 0,00001%; inclui chances como 0,00065%
+
 COR_ROYAL = discord.Colour.from_rgb(91, 79, 187)
 
 PASTA_ASSETS = Path(__file__).resolve().parent.parent / "assets"
@@ -451,59 +485,99 @@ def visivel_em_registros(raridade: str) -> bool:
     return raridade in {"epic", "legendary"} or (raridade == "secret" and ANUNCIAR_SECRETOS)
 
 def localizar_banner(banner: str) -> str | Path | None:
+
     """Busca imagens locais em assets/lucky_block e assets.
 
     Aceita 'painel', 'painel.png', 'assets/lucky_block/painel.png',
+
     'lucky_block/painel.png' e nomes próprios de cada premiação.
+
     """
+
     if not banner:
+
         return None
+
     if banner.startswith("https://"):
+
         return banner  # Compatibilidade com registros antigos.
 
-    nome = banner.replace("\\", "/").strip()
+    nome = banner.replace("\\\\", "/").strip()
+
     relativo = Path(nome)
+
     if relativo.is_absolute() or ".." in relativo.parts or ":" in nome:
+
         LOGGER.warning("Banner com caminho inválido: %s", banner)
+
         return None
 
     # O usuário pode escrever um caminho completo relativo ao projeto.
+
     if relativo.parts and relativo.parts[0].lower() == "assets":
+
         relativo = Path(*relativo.parts[1:])
+
     if not relativo.parts:
+
         return None
 
     prefixo = Path("lucky_block")
+
     possibilidades = [PASTA_ASSETS / relativo]
+
     if relativo.parts[0].lower() != "lucky_block":
+
         possibilidades.insert(0, PASTA_ASSETS / prefixo / relativo)
+
     else:
+
         # Também aceita o banner na raiz de assets/.
+
         possibilidades.append(PASTA_ASSETS / relativo.name)
 
     candidatos = []
+
     for base in possibilidades:
+
         if base.suffix:
+
             candidatos.append(base)
+
         else:
+
             candidatos.extend(base.with_suffix(ext) for ext in FORMATOS_BANNER)
 
     raiz = PASTA_ASSETS.resolve()
+
     for caminho in candidatos:
+
         if caminho.resolve().is_relative_to(raiz) and caminho.is_file():
+
             return caminho
 
     # Diferentes sistemas podem ter nomes com extensões em maiúsculo.
+
     for base in possibilidades:
+
         diretorio = base.parent
+
         if not diretorio.is_dir():
+
             continue
+
         for arquivo in diretorio.iterdir():
+
             if (arquivo.is_file() and arquivo.suffix.lower() in FORMATOS_BANNER
+
                 and arquivo.stem.casefold() == base.stem.casefold()
+
                 and (not base.suffix or arquivo.suffix.casefold() == base.suffix.casefold())):
+
                 return arquivo
+
     LOGGER.warning("Banner não encontrado em assets: %s", banner)
+
     return None
 
 def inserir_banner(container: discord.ui.Container, banner: str) -> Path | None:
@@ -523,13 +597,19 @@ def inserir_banner(container: discord.ui.Container, banner: str) -> Path | None:
     return origem if isinstance(origem, Path) else None
 
 def arquivo_do_banner(view: discord.ui.LayoutView) -> dict:
+
     """Anexo para envios: channel.send, DM.send e followup.send."""
+
     caminho = getattr(view, "_royal_banner_path", None)
+
     return {"file": discord.File(str(caminho), filename=caminho.name)} if caminho else {}
 
 def anexos_para_edicao(view: discord.ui.LayoutView) -> dict:
+
     """Message.edit aceita 'attachments' (inclusive File), mas não 'file'."""
+
     caminho = getattr(view, "_royal_banner_path", None)
+
     return {"attachments": [discord.File(str(caminho), filename=caminho.name)]} if caminho else {"attachments": []}
 
 def cartao(titulo: str, texto: str, banner: str = "", *, teste: bool = False) -> discord.ui.LayoutView:
@@ -543,10 +623,6 @@ def cartao(titulo: str, texto: str, banner: str = "", *, teste: bool = False) ->
     prefixo = "🧪 **SIMULAÇÃO — NÃO É PREMIAÇÃO REAL**\n\n" if teste else ""
 
     caixa.add_item(discord.ui.TextDisplay(f"{prefixo}## {titulo}\n{texto}"))
-
-    caixa.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
-
-    caixa.add_item(discord.ui.TextDisplay(""))
 
     painel.add_item(caixa)
 
@@ -578,28 +654,44 @@ class PainelLucky(discord.ui.LayoutView):
 
     def __init__(self, *, teste: bool = False):
 
-        super().__init__(timeout=None)
+        super().__init__(timeout=180 if teste else None)
 
         caixa = discord.ui.Container(accent_colour=COR_ROYAL)
 
         self._royal_banner_path = inserir_banner(caixa, BANNER_PAINEL)
 
         texto = (
+
             ("🧪 **PRÉVIA — BOTÕES DESATIVADOS**\n\n" if teste else "")
+
             + "## <:luckblock:1572868783725609083> LUCKY BLOCK - FAMÍLIA ROYAL\n\n"
+
             + "Teste a sua sorte através das nossas Lucky Blocks e concorra a prêmios exclusivos. "
+
               "A contagem começa a partir da sua **primeira abertura** e você tem "
+
               "apenas **três tentativas** por ciclo, que se renovam após 24h!\n\n"
+
             + "### Premiações\n"
+
               "> ☰ `👹` Cargo exclusivo <@&1572848152548085871> ou <@&1569948996573597726>\n"
+
               "> ☰ `💜` Discord Nitro (**Básico** ou **Normal**)\n"
+
               "> ☰ `🎨` Decoração de Perfil\n"
+
               "> ☰ `🤓` Sub Civil no **E.B**\n"
+
               "> ☰ `💸` Robux de **100 a 500**\n"
+
             + "### Observações\n"
+
               "> ☰ `🛎️` As chances são __extremamente baixas__, então depende muito da sua sorte.\n"
+
               "> ☰ `🛎️` Novo estoque __será notificado__ a todos quando chegar.\n"
+
               "> ☰ `🛎️` Não é possível doar a recompensa a outro usuário."
+
         )
 
         if MOSTRAR_CHANCES_NO_PAINEL:
@@ -799,6 +891,7 @@ class LuckyBlockRoyal(commands.Cog):
                 await con.execute(f"ALTER TABLE lucky_wins ADD COLUMN IF NOT EXISTS {coluna} {tipo}")
 
         # O mesmo custom_id do painel anterior continua funcionando.
+
         self.bot.add_view(PainelLucky())
 
         LOGGER.info("Lucky Block carregado; painel=%s registros=%s", CANAL_PAINEL, CANAL_REGISTROS)
@@ -922,7 +1015,9 @@ class LuckyBlockRoyal(commands.Cog):
                 if premio is not None:
 
                     # UPDATE condicional é atômico sob concorrência: somente 1 vence
+
                     # a disputa pela última unidade do prêmio.
+
                     disponivel = await con.fetchval("""
 
                         UPDATE lucky_reward_stock SET stock_available=stock_available-1
@@ -996,6 +1091,7 @@ class LuckyBlockRoyal(commands.Cog):
         if role is None or role in membro.roles:
 
             return False  # caso já possua, a equipe decide como proceder
+
         try:
 
             await membro.add_roles(role, reason=f"Lucky Block ROYAL #{abertura_id}")
@@ -1057,6 +1153,7 @@ class LuckyBlockRoyal(commands.Cog):
             return False
 
         # Para histórico antigo, os campos opcionais podem estar vazios.
+
         premio_atual = PREMIACOES.get(row["reward_code"], {})
 
         raridade = row["reward_rarity"] or premio_atual.get("raridade", "empty")
@@ -1153,7 +1250,7 @@ class LuckyBlockRoyal(commands.Cog):
 
         view = cartao("<a:1151259013175054336:1553900891315376240> PRÊMIO ESPECIAL ENCONTRADO!", texto, banner)
 
-        await msg.edit(view=view, **anexos_para_edicao(view))
+        await msg.edit(view=view, content=None, embeds=[], **anexos_para_edicao(view))
 
     async def interagir(self, interaction: discord.Interaction, acao: str) -> None:
 
@@ -1220,6 +1317,7 @@ class LuckyBlockRoyal(commands.Cog):
                     texto = ("A caixa veio vazia, boa sorte na próxima!"
 
                              f"\n`🎟️` **Restantes:** {resultado['restantes']}/{ABERTURAS_POR_CICLO}"
+
                              f"\n`⏳` **Renovação:** <t:{int(resultado['renovacao'].timestamp())}:R>")
 
                     view = cartao("<:gift:1570666397745549322> CAIXA VAZIA", texto, BANNER_CAIXA_VAZIA)
@@ -1302,7 +1400,7 @@ class LuckyBlockRoyal(commands.Cog):
 
                 texto = "\n".join(
 
-                    f"`**{i}.**` <@{item['user_id']}> — `**{item['pontos']} pontos**`"
+                    f"**{i}.** <@{item['user_id']}> — **{item['pontos']} pontos**"
 
                     f" (`{item['total']} caixas`)" for i, item in enumerate(rows, 1)
 
@@ -1371,6 +1469,10 @@ class LuckyBlockRoyal(commands.Cog):
             await ctx.send("❌ Abra suas DMs para receber a prévia privada.", delete_after=10)
 
             return False
+        except discord.HTTPException:
+            LOGGER.exception("Falha HTTP ao enviar a prévia do Lucky Block por DM")
+            await ctx.send("❌ Não consegui enviar a prévia. Confira o log do bot e o banner em assets.", delete_after=15)
+            return False
 
     @commands.command(name="painellucky")
 
@@ -1402,8 +1504,8 @@ class LuckyBlockRoyal(commands.Cog):
 
                 view = PainelLucky()
 
-                await msg.edit(view=view, allowed_mentions=discord.AllowedMentions.none(),
-
+                await msg.edit(view=view, content=None, embeds=[],
+                               allowed_mentions=discord.AllowedMentions.none(),
                                **anexos_para_edicao(view))
 
                 await ctx.send(f"✅ Painel atualizado em {canal.mention}.")
@@ -1451,6 +1553,10 @@ class LuckyBlockRoyal(commands.Cog):
         await self.apagar_comando(ctx)
 
         codigo, destino = codigo.strip().lower(), destino.strip().lower()
+
+        # Aceita também a abreviação comum do nome Clover.
+        if codigo == "clove":
+            codigo = "clover"
 
         if destino not in {"dm", "registros"}:
 
@@ -1528,7 +1634,10 @@ class LuckyBlockRoyal(commands.Cog):
 
                 if premio is None:
 
-                    await self.enviar_dm(ctx, f"❌ Código não encontrado: `{cod}`.")
+                    from difflib import get_close_matches
+                    sugestoes = get_close_matches(cod, PREMIACOES.keys(), n=1, cutoff=0.55)
+                    dica = f" Você quis dizer `!testarlucky {sugestoes[0]}`?" if sugestoes else " Use `!testarlucky lista`."
+                    await self.enviar_dm(ctx, f"❌ Código não encontrado: `{cod}`.{dica}")
 
                     return
 
