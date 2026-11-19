@@ -36,7 +36,7 @@ ID_DONO_DISCORD = 0
 BANNER_PAINEL = "assets/lucky_block/painel.png"           # assets/lucky_block/painel.png (ou assets/painel.png)
 BANNER_CAIXA_VAZIA = "caixa_vazia" # assets/lucky_block/caixa_vazia.png
 MOSTRAR_CHANCES_NO_PAINEL = False # Recomenda-se False para o catálogo secreto
-ANUNCIAR_SECRETOS = True         # Se False, Demon Night fica sem log público
+ANUNCIAR_SECRETOS = True         # Se False, prêmios da raridade secreta ficam sem log público
 CONCEDER_CARGOS_AUTOMATICAMENTE = True  # Exige 'Gerenciar Cargos' e hierarquia
 # Chance = probabilidade ABSOLUTA por abertura, escrita em % (5 casas decimais).
 # Ex.: 0.5 = 0,5% | 0.02 = 0,02% | 0.0001 = 0,0001% (1 em 1.000.000).
@@ -74,7 +74,7 @@ PREMIACOES = {
 
         "nome": "Sub Civil",
 
-        "raridade": "rare",
+        "raridade": "secret",
 
         "chance": "0.030",
 
@@ -95,7 +95,7 @@ PREMIACOES = {
 
         "nome": "100 Robux",
 
-        "raridade": "epic",
+        "raridade": "legendary",
 
         "chance": "0.00065",
 
@@ -115,7 +115,7 @@ PREMIACOES = {
 
         "nome": "200 Robux",
 
-        "raridade": "epic",
+        "raridade": "legendary",
 
         "chance": "0.00035",
 
@@ -274,7 +274,7 @@ PREMIACOES = {
 
         "nome": "Demon Night",
 
-        "raridade": "secret",
+        "raridade": "legendary",
 
         "chance": "0.0001",  # 1 chance em 1.000.000 aberturas
         "estoque": 1,        # ALTERE PARA 1 quando quiser liberar este cargo
@@ -585,23 +585,21 @@ class PainelLucky(discord.ui.LayoutView):
         self._royal_banner_path = inserir_banner(caixa, BANNER_PAINEL)
 
         texto = (
-
             ("🧪 **PRÉVIA — BOTÕES DESATIVADOS**\n\n" if teste else "")
-
-            + "## 🎁 LUCKY BLOCK • FAMÍLIA ROYAL\n"
-
-            + "**3 aberturas a cada 24h!** A contagem começa na primeira abertura. "
-
-              "Você pode usar as três de uma vez, e elas retornam 24 horas após "
-
-              "a primeira abertura do ciclo.\n\n"
-
-            + "🔒 **Recompensas surpresa** — descubra o que a caixa esconde!\n"
-
-              "🏆 Os prêmios épicos e lendários são anunciados nos registros.\n"
-
-              "📦 Premiações podem ter estoque limitado."
-
+            + "## <:luckblock:1572868783725609083> LUCKY BLOCK - FAMÍLIA ROYAL\n\n"
+            + "Teste a sua sorte através das nossas Lucky Blocks e concorra a prêmios exclusivos. "
+              "A contagem começa a partir da sua **primeira abertura** e você tem "
+              "apenas **três tentativas** por ciclo, que se renovam após 24h!\n\n"
+            + "### Premiações\n"
+              "> ☰ `👹` Cargo exclusivo secreto <@&1569948996573597726>\n"
+              "> ☰ `💜` Discord Nitro (**Básico** ou **Normal**)\n"
+              "> ☰ `🎨` Decoração de Perfil\n"
+              "> ☰ `🤓` Sub Civil no **E.B**\n"
+              "> ☰ `💸` Robux de **100 a 500**\n\n"
+            + "### Observações\n"
+              "> ☰ `🛎️` As chances são __extremamente baixas__, então depende muito da sua sorte.\n"
+              "> ☰ `🛎️` Novo estoque __será notificado__ a todos quando chegar.\n"
+              "> ☰ `🛎️` Não é possível doar a recompensa a outro usuário."
         )
 
         if MOSTRAR_CHANCES_NO_PAINEL:
@@ -628,11 +626,11 @@ class PainelLucky(discord.ui.LayoutView):
 
         botoes = discord.ui.ActionRow()
 
-        botoes.add_item(BotaoLucky("abrir", "Abrir Lucky Block", discord.ButtonStyle.success, "🎁"))
+        botoes.add_item(BotaoLucky("abrir", "Abrir", discord.ButtonStyle.success, "<:luckblock:1572868783725609083>"))
 
-        botoes.add_item(BotaoLucky("historico", "Meu histórico", discord.ButtonStyle.secondary, "📜"))
+        botoes.add_item(BotaoLucky("historico", "Histórico", discord.ButtonStyle.secondary, "📜"))
 
-        botoes.add_item(BotaoLucky("ranking", "Ranking", discord.ButtonStyle.secondary, "🏆"))
+        botoes.add_item(BotaoLucky("ranking", "Ranking", discord.ButtonStyle.secondary, "<:versustrophy:1564669597440016485>"))
 
         if teste:
 
