@@ -329,8 +329,8 @@ def mensagem_premio(guild_id: int, abertura: dict, *, teste=False,
     cont.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
     linha = discord.ui.ActionRow()
     if teste:
-        linha.add_item(discord.ui.Button(label=("Abrir ticket para resgatar" if visual_real
-                                             else "Abrir ticket (simulação)"), emoji="🎟️",
+        linha.add_item(discord.ui.Button(label=("Solicitar" if visual_real
+                                             else "Abrir ticket (simulação)"), emoji="<:christmascard:1570666450161639464>",
                                          style=discord.ButtonStyle.secondary, disabled=True))
     else:
         linha.add_item(BotaoTicket(guild_id, abertura["id"]))
