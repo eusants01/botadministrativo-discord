@@ -1,4 +1,9 @@
+"""Lucky Block ROYAL — discord.py 2.6+, asyncpg, Components V2.
 
+Instale APENAS este arquivo em cogs/lucky_block.py; exige bot.pool e cogs.tickets.
+Banco e prêmios são persistentes. Apenas o dono vê estoque e detalhes de testes.
+Não insira tokens ou credenciais no repositório.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -18,11 +23,14 @@ LOG = logging.getLogger("sants.bot.lucky_block")
 # ========================= CONFIGURAÇÃO PRIVADA =========================
 CANAL_PAINEL = 1572785659108917439
 CANAL_REGISTROS = 1572355776377266176
-ID_DONO_DISCORD = 0  # 0 = proprietário da aplicação Discord
+CANAL_ESTOQUE = 1573584140719357972  # Avisos públicos de reposição
+ID_DONO_DISCORD = 925863471902503033  # Única conta autorizada a consultar/alterar estoque
 ABERTURAS_POR_CICLO = 5
 HORAS_APOS_ULTIMA_ABERTURA = 8  # a espera começa SOMENTE após a 5ª abertura
 BANNER_PAINEL = "assets/lucky_block/painel.png"
 BANNER_CAIXA_VAZIA = "caixa_vazia"
+BANNER_PREMIO_SECRETO = "recompensa_secreta"  # assets/lucky_block/recompensa_secreta.png
+# O banner secreto aparece no anúncio público. A DM preserva a imagem individual do prêmio.
 AVISAR_EVERYONE_SECRETOS = True
 CONCEDER_CARGOS_AUTOMATICAMENTE = True
 # Todas as chances são percentuais ABSOLUTAS por abertura; não são pesos relativos.
@@ -34,11 +42,11 @@ PREMIACOES = {
                                descricao="Candidatura em divisão do E.B; requisitos sujeitos à validação da equipe."),
     "sub_civil": dict(nome="Sub Civil", raridade="legendary", chance="0.030", estoque=1, cargo_id=0, banner="", ativo=True,
                       descricao="Sub Civil no E.B. A equipe confirmará as condições no ticket."),
-    "nitro_basico": dict(nome="Discord Nitro Básico", raridade="secret", chance="0.00045", estoque=1, cargo_id=0, banner="", ativo=True,
+    "nitro_basico": dict(nome="Discord Nitro Básico", raridade="secret", chance="0.00015", estoque=1, cargo_id=0, banner="", ativo=True,
                          descricao="Nitro Básico; resgate sujeito à elegibilidade e disponibilidade."),
-    "nitro_normal": dict(nome="Discord Nitro Normal", raridade="secret", chance="0.00048", estoque=1, cargo_id=0, banner="", ativo=True,
+    "nitro_normal": dict(nome="Discord Nitro Normal", raridade="secret", chance="0.00018", estoque=1, cargo_id=0, banner="", ativo=True,
                          descricao="Nitro Normal; resgate sujeito à elegibilidade e disponibilidade."),
-    "500_robux": dict(nome="500 Robux", raridade="secret", chance="0.00035", estoque=1, cargo_id=0, banner="", ativo=True,
+    "500_robux": dict(nome="500 Robux", raridade="secret", chance="0.00015", estoque=1, cargo_id=0, banner="", ativo=True,
                       descricao="500 Robux; a forma de entrega será acertada no ticket."),
     "clover": dict(nome="Clover", raridade="legendary", chance="0.2", estoque=1,
                    cargo_id=1572848152548085871, banner="", ativo=True,
@@ -166,6 +174,20 @@ def anexo_edicao(view: discord.ui.LayoutView) -> dict:
     return {"attachments": [discord.File(str(caminho), filename=caminho.name)]} if caminho else {"attachments": []}
 
 
+def banner_anuncio_premio(raridade: str, banner_individual: str) -> str:
+    """Exibe a arte especial em ganhos secretos sem alterar a DM individual."""
+    return BANNER_PREMIO_SECRETO if raridade == "secret" else banner_individual
+
+
+def texto_anuncio_premio(usuario_id: int, nome: str, raridade: str, protocolo: str) -> str:
+    """Conteúdo idêntico para anúncio verdadeiro e prévia visual."""
+    return (f"`🏆` **Vencedor:** <@{usuario_id}>\n"
+            f"`🎁` **Premiação:** {nome}\n"
+            f"`💎` **Raridade:** {raridade_nome(raridade)}\n"
+            f"`📜` **Registro:** `{protocolo}`\n"
+            f"`🎟️` **Resgate:** comprovante disponível ao abrir o ticket do vencedor")
+
+
 def cartao(titulo: str, conteudo: str, banner: str = "", *, teste=False) -> discord.ui.LayoutView:
     view = discord.ui.LayoutView(timeout=180)
     cont = discord.ui.Container(accent_colour=CORES)
@@ -177,20 +199,34 @@ def cartao(titulo: str, conteudo: str, banner: str = "", *, teste=False) -> disc
 
 
 def recibo(abertura: dict, membro_id: int, *, teste=False) -> str:
+    """Comprovante vinculado ao vencedor; só o PostgreSQL confirma sua autenticidade."""
     id_ = abertura["id"]
     premio = abertura["premio"]
-    data = abertura.get("created_at", agora())
-    registro = "TESTE" if teste else f"LB-{id_:06d}"
-    texto = (f"**Comprovante ROYAL**\n"
-             f"> **Protocolo:** `{registro}`\n"
-             f"> **Beneficiário:** <@{membro_id}> (`{membro_id}`)\n"
-             f"> **Premiação:** {premio['nome']}\n"
-             f"> **Raridade:** {raridade_nome(premio['raridade'])}\n"
-             f"> **Data:** <t:{int(data.timestamp())}:F>\n"
-             f"> **Situação:** {abertura.get('status', 'Aguardando atendimento')}\n\n"
-             "Este comprovante está vinculado ao vencedor e **não é transferível**. "
-             "A equipe poderá confirmar o protocolo no banco de dados.")
-    return texto
+    data = abertura.get("created_at") or agora()
+    registro = "TESTE-SEM-VALIDADE" if teste else f"LB-{id_:06d}"
+    status_raw = str(abertura.get("status") or "pending")
+    status = {
+        "pending": "⏳ Aguardando validação/entrega",
+        "delivered": "✅ Entregue",
+        "TESTE": "🧪 Simulação, sem premiação real",
+    }.get(status_raw, status_raw)
+    return (
+        "**☰ IDENTIFICAÇÃO DO GANHADOR**\n"
+        f"> `👤` **Beneficiário:** <@{membro_id}>\n"
+        f"> `🆔` **ID do Discord:** `{membro_id}`\n"
+        f"> `📜` **Protocolo único:** `{registro}`\n"
+        f"> `📅` **Data do sorteio:** <t:{int(data.timestamp())}:F>\n\n"
+        "**☰ INFORMAÇÕES DA PREMIAÇÃO**\n"
+        f"> `🎁` **Recompensa:** {premio['nome']}\n"
+        f"> `💎` **Raridade:** {raridade_nome(premio['raridade'])}\n"
+        f"> `📋` **Situação:** {status}\n\n"
+        "**☰ AUTENTICIDADE E RESGATE**\n"
+        "> `🔐` Este comprovante é **individual e intransferível**.\n"
+        "> `🎟️` A entrega é conferida pela equipe neste ticket.\n"
+        "> `✅` A administração valida o protocolo no banco com `!luckyvalidar ID`.\n"
+        + ("\n-# 🧪 Documento demonstrativo; não gera direito a prêmio."
+           if teste else "\n-# 👑 Família ROYAL • Registro oficial do Lucky Block")
+    )
 
 
 class AcaoPainel(discord.ui.Button):
@@ -245,7 +281,7 @@ class BotaoTicket(discord.ui.DynamicItem[discord.ui.Button],
     def __init__(self, guild_id: int, premio_id: int):
         self.guild_id = guild_id
         self.premio_id = premio_id
-        super().__init__(discord.ui.Button(label="Abrir ticket para resgatar", emoji="🎟️",
+        super().__init__(discord.ui.Button(label="Solicitar", emoji="<:christmascard:1570666450161639464>",
             style=discord.ButtonStyle.success,
             custom_id=f"royal_lucky:resgate:{guild_id}:{premio_id}"))
 
@@ -260,29 +296,63 @@ class BotaoTicket(discord.ui.DynamicItem[discord.ui.Button],
         await cog.abrir_ticket_premio(interaction, self.guild_id, self.premio_id)
 
 
-def mensagem_premio(guild_id: int, abertura: dict, *, teste=False) -> discord.ui.LayoutView:
+def mensagem_premio(guild_id: int, abertura: dict, *, teste=False,
+                   visual_real=False) -> discord.ui.LayoutView:
+    """DM de prêmio com etapas de resgate e botão individual de ticket."""
     premio = abertura["premio"]
-    registro = "TESTE" if teste else f"LB-{abertura['id']:06d}"
-    texto = (f"🎁 **Recompensa:** {premio['nome']}\n"
-             f"💎 **Raridade:** {raridade_nome(premio['raridade'])}\n"
-             f"📜 **Registro:** `{registro}`\n"
-             f"🧾 **Comprovante:** entregue no ticket de resgate.\n"
-             f"ℹ️ {premio['descricao']}\n\n"
-             "O prêmio é exclusivo do vencedor e não pode ser transferido.")
+    registro = "TESTE" if teste and not visual_real else f"LB-{abertura['id']:06d}"
+    data = abertura.get("created_at") or agora()
+    texto = (
+        "Sua Lucky Block revelou uma recompensa especial! "
+        "O prêmio foi registrado em seu nome.\n\n"
+        "**☰ SUA CONQUISTA**\n"
+        f"> `🎁` **Premiação:** {premio['nome']}\n"
+        f"> `💎` **Raridade:** {raridade_nome(premio['raridade'])}\n"
+        f"> `📜` **Protocolo:** `{registro}`\n"
+        f"> `📅` **Conquista:** <t:{int(data.timestamp())}:F>\n\n"
+        "**☰ COMO RESGATAR**\n"
+        "> `1.` Clique no botão **Abrir ticket para resgatar** abaixo.\n"
+        "> `2.` Seu comprovante exclusivo será enviado ao ticket.\n"
+        "> `3.` Aguarde a validação ou confirmação da equipe.\n\n"
+        "**☰ OBSERVAÇÕES**\n"
+        f"> `🏆` {premio['descricao']}\n"
+        "> `🗃️` A recompensa é **individual e intransferível**.\n"
+        "> `🧾` Guarde o protocolo para acompanhamento."
+    )
     view = discord.ui.LayoutView(timeout=180 if teste else None)
     cont = discord.ui.Container(accent_colour=CORES)
     view._lucky_banner = adicionar_banner(cont, premio["banner"])
-    cont.add_item(discord.ui.TextDisplay(("🧪 **TESTE — NÃO RESGATÁVEL**\n\n" if teste else "")
-                                         + "## 🎉 VOCÊ GANHOU NO LUCKY BLOCK!\n" + texto))
+    cont.add_item(discord.ui.TextDisplay(
+        ("🧪 **TESTE — SEM PRÊMIO REAL OU DIREITO A RESGATE**\n\n" if teste and not visual_real else "")
+        + "## <a:Presenteghost:1553872045492797550> VOCÊ GANHOU NO LUCKY BLOCK!\n\n" + texto
+    ))
+    cont.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
     linha = discord.ui.ActionRow()
     if teste:
-        linha.add_item(discord.ui.Button(label="Abrir ticket (simulação)", emoji="🎟️",
+        linha.add_item(discord.ui.Button(label=("Abrir ticket para resgatar" if visual_real
+                                             else "Abrir ticket (simulação)"), emoji="🎟️",
                                          style=discord.ButtonStyle.secondary, disabled=True))
     else:
         linha.add_item(BotaoTicket(guild_id, abertura["id"]))
     cont.add_item(linha)
     view.add_item(cont)
     return view
+
+
+def cartao_reposicao(*, teste=False) -> discord.ui.LayoutView:
+    """Anúncio sem revelar recompensas ou estoques internos."""
+    conteudo = (
+        "As Lucky Blocks da Família ROYAL receberam **novas unidades de premiações**!\n\n"
+        "**☰ INFORMAÇÕES DA REPOSIÇÃO**\n"
+        "> `📦` **Situação:** estoque atualizado e disponível.\n"
+        f"> `🎁` **Onde participar:** <#{CANAL_PAINEL}>\n"
+        "> `🎟️` **Tentativas:** 5 aberturas; após a quinta, renovação em 8 horas.\n"
+        "> `🔒` O catálogo completo e as quantidades continuam reservados à administração.\n\n"
+        "**☰ BOA SORTE!**\n"
+        "> `🍀` Sua próxima abertura pode guardar uma surpresa.\n"
+        "-# 👑 Família ROYAL • Notificação de reposição"
+    )
+    return cartao("<:luckblock:1572868783725609083> NOVO ESTOQUE NO LUCKY BLOCK", conteudo, teste=teste)
 
 
 class ModalEstoque(discord.ui.Modal, title="Estoque • Lucky Block"):
@@ -336,7 +406,7 @@ class PainelEstoque(discord.ui.LayoutView):
     def __init__(self, guild_id: int, texto: str):
         super().__init__(timeout=900)
         cont = discord.ui.Container(accent_colour=CORES)
-        cont.add_item(discord.ui.TextDisplay("## 📦 ESTOQUE PRIVADO — LUCKY BLOCK\n" + texto +
+        cont.add_item(discord.ui.TextDisplay("## <:luckblock:1572868783725609083> ESTOQUE PRIVADO — LUCKY BLOCK\n" + texto +
                     "\nSelecione uma premiação para definir a quantidade de unidades **disponíveis**. "
                     "O banco preserva a quantidade após reiniciar o bot."))
         linha = discord.ui.ActionRow()
@@ -426,7 +496,8 @@ class LuckyBlockRoyal(commands.Cog):
         return guild
 
     async def usuario_dono(self, usuario: discord.abc.User) -> bool:
-        return usuario.id == ID_DONO_DISCORD if ID_DONO_DISCORD else await self.bot.is_owner(usuario)
+        # Autorização estrita: nem administradores nem outros donos da aplicação têm acesso.
+        return usuario.id == ID_DONO_DISCORD
 
     async def exigir_dono(self, ctx: commands.Context) -> bool:
         if await self.usuario_dono(ctx.author):
@@ -548,14 +619,13 @@ class LuckyBlockRoyal(commands.Cog):
             LOG.warning("Não foi possível avisar o dono sobre estoque esgotado: %s", codigo)
 
     async def avisar_reposicao(self, guild: discord.Guild):
-        """Notifica a reposição pública sem identificar qual prêmio foi abastecido."""
+        """Anúncio de reposição só no canal específico, sem expor a premiação/quantidade."""
         try:
-            canal = await self.buscar_canal(guild, CANAL_REGISTROS)
-            await canal.send(view=cartao("📦 NOVO ESTOQUE NO LUCKY BLOCK",
-                "O sistema recebeu uma reposição de premiações. Boa sorte nas próximas aberturas!"),
+            canal = await self.buscar_canal(guild, CANAL_ESTOQUE)
+            await canal.send(view=cartao_reposicao(),
                 allowed_mentions=discord.AllowedMentions.none())
-        except discord.HTTPException:
-            LOG.exception("Falha ao anunciar reposição de estoque")
+        except (discord.HTTPException, ValueError):
+            LOG.exception("Falha ao anunciar reposição no canal de estoque %s", CANAL_ESTOQUE)
 
     async def mandar_dm_vencedor(self, membro: discord.Member, abertura: dict) -> bool:
         try:
@@ -580,13 +650,11 @@ class LuckyBlockRoyal(commands.Cog):
             await self.bot.pool.execute("UPDATE lucky_wins SET public_claimed_at=NULL WHERE opening_id=$1", abertura_id)
             return False
         nome = row["reward_name"] or (premio["nome"] if premio else row["reward_code"])
-        mensagem = (f"🏆 **Vencedor:** <@{row['user_id']}>\n"
-                    f"🎁 **Premiação:** {nome}\n"
-                    f"💎 **Raridade:** {raridade_nome(raridade)}\n"
-                    f"📜 **Registro:** `LB-{abertura_id:06d}`\n"
-                    "🎟️ **Resgate:** comprovante disponível ao abrir o ticket do vencedor")
-        view = cartao("🎉 PRÊMIO ESPECIAL ENCONTRADO!", mensagem,
-                      row["reward_banner_url"] or (premio["banner"] if premio else ""))
+        mensagem = texto_anuncio_premio(
+            row["user_id"], nome, raridade, f"LB-{abertura_id:06d}")
+        banner = banner_anuncio_premio(
+            raridade, row["reward_banner_url"] or (premio["banner"] if premio else ""))
+        view = cartao("🎉 PRÊMIO ESPECIAL ENCONTRADO!", mensagem, banner)
         # A marcação de todos deve ser um content real: menções em componentes não geram ping.
         everyone = raridade == "secret" and AVISAR_EVERYONE_SECRETOS
         try:
@@ -624,7 +692,10 @@ class LuckyBlockRoyal(commands.Cog):
                f"✅ **Situação:** {'Entregue' if row['status'] == 'delivered' else 'Aguardando entrega'}")
         canal = await self.buscar_canal(guild, CANAL_REGISTROS)
         msg = await canal.fetch_message(row["public_message_id"])
-        view = cartao("🎉 PRÊMIO ESPECIAL ENCONTRADO!", txt, row["reward_banner_url"] or "")
+        banner = banner_anuncio_premio(
+            row["reward_rarity"] or (premio["raridade"] if premio else "empty"),
+            row["reward_banner_url"] or (premio["banner"] if premio else ""))
+        view = cartao("🎉 PRÊMIO ESPECIAL ENCONTRADO!", txt, banner)
         await msg.edit(content=None, embeds=[], view=view, **anexo_edicao(view))
 
     async def verificar_e_publicar_comprovante(self, ticket: discord.TextChannel, abertura_id: int, usuario_id: int) -> bool:
@@ -642,11 +713,13 @@ class LuckyBlockRoyal(commands.Cog):
                     # Ticket antigo não existe mais: permite registrar comprovante no novo ticket.
                     if ticket.guild.get_channel(int(row["ticket_channel_id"])) is not None:
                         return False
-                premio = PREMIACOES.get(row["reward_code"])
-                if not premio:
-                    premio = dict(nome=row["reward_name"] or row["reward_code"],
-                                  raridade=row["reward_rarity"] or "legendary",
-                                  banner=row["reward_banner_url"] or "", descricao="")
+                # Usa o nome e a raridade salvos no momento do ganho: uma edição
+                # futura no catálogo não pode mudar um comprovante antigo.
+                atual = PREMIACOES.get(row["reward_code"], {})
+                premio = dict(atual,
+                    nome=row["reward_name"] or atual.get("nome", row["reward_code"]),
+                    raridade=row["reward_rarity"] or atual.get("raridade", "legendary"),
+                    banner=row["reward_banner_url"] or atual.get("banner", ""))
                 entrada = {"id": abertura_id, "premio": premio,
                            "created_at": row["created_at"], "status": row["status"]}
                 view = cartao("🧾 COMPROVANTE OFICIAL DE PREMIAÇÃO",
@@ -958,9 +1031,18 @@ class LuckyBlockRoyal(commands.Cog):
                                            guild.id, abertura_id)
         if not row:
             return await self.dm(ctx, texto="❌ Comprovante não encontrado no banco.")
-        await self.dm(ctx, texto=(f"🧾 **COMPROVANTE VÁLIDO** `LB-{abertura_id:06d}`\n"
-            f"Vencedor: <@{row['user_id']}>\nPremiação: {row['reward_name']}\n"
-            f"Status: {row['status']}\nTicket: {row['ticket_channel_id'] or 'ainda não aberto'}"))
+        atual = PREMIACOES.get(row["reward_code"], {})
+        premio = dict(atual,
+            nome=row["reward_name"] or atual.get("nome", row["reward_code"]),
+            raridade=row["reward_rarity"] or atual.get("raridade", "legendary"),
+            banner=row["reward_banner_url"] or atual.get("banner", ""))
+        entrada = {"id": abertura_id, "premio": premio,
+                   "created_at": row["created_at"], "status": row["status"]}
+        ticket = f"<#{row['ticket_channel_id']}>" if row["ticket_channel_id"] else "Aguardando abertura"
+        view = cartao("✅ COMPROVANTE CONFERIDO NO BANCO",
+                      recibo(entrada, row["user_id"]) + f"\n\n> `🎟️` **Ticket:** {ticket}",
+                      row["reward_banner_url"] or premio["banner"])
+        await self.dm(ctx, view=view)
 
     @commands.command(name="testarlucky", aliases=["testelucky"])
     async def testarlucky(self, ctx: commands.Context, codigo: str="lista", destino: str="dm"):
@@ -974,8 +1056,9 @@ class LuckyBlockRoyal(commands.Cog):
             texto = "🧪 **Comandos de teste — privados**\n" + "\n".join(
                 f"`!testarlucky {c}` — {p['nome']} [{raridade_nome(p['raridade'])}]" for c,p in PREMIACOES.items())
             texto += ("\n`!testarlucky painel` · `!testarlucky vazia` · `!testarlucky todos`"
-                      "\n`!testarlucky sorteio` · `!testarlucky fluxo` · `!testarlucky estoque` · `!testarlucky comprovante` · `!testarlucky sem_estoque`"
-                      "\n`!testarlucky clover registros` (público, sem marcações)"
+                      "\n`!testarlucky sorteio` · `!testarlucky fluxo` · `!testarlucky estoque` · `!testarlucky comprovante` · `!testarlucky sem_estoque` · `!testarlucky reposicao`"
+                      "\n`!testarlucky clover registros` (prévia pública sem marcações)"
+                      "\n`!simularlucky nitro_basico` (DM + anúncio idênticos ao real, temporários)"
                       "\n`!luckyvalidar ID` (valida comprovante real)")
             return await self.dm(ctx, texto=texto)
         if codigo == "painel":
@@ -987,6 +1070,8 @@ class LuckyBlockRoyal(commands.Cog):
             sorteado = sortear_codigo()
             nome = PREMIACOES[sorteado]["nome"] if sorteado else "Caixa vazia"
             return await self.dm(ctx, texto=f"🧪 Sorteio simulado: **{nome}**. Nenhuma tentativa ou estoque consumido.")
+        if codigo == "reposicao":
+            return await self.dm(ctx, view=cartao_reposicao(teste=True))
         if codigo == "sem_estoque":
             return await self.dm(ctx, view=cartao("📦 RECOMPENSA SEM ESTOQUE — TESTE",
                 "Uma recompensa sorteada está sem estoque. Nenhum prêmio foi reservado. "
@@ -1027,16 +1112,74 @@ class LuckyBlockRoyal(commands.Cog):
                     dica = f" Você quis dizer `{sugestoes[0]}`?" if sugestoes else " Use `!testarlucky lista`."
                     return await self.dm(ctx, texto=f"❌ Código `{cod}` inexistente.{dica}")
                 teste_abertura = {"id": 0, "premio": premio, "created_at": agora()}
-                view = (cartao("🎉 PRÊMIO ESPECIAL — TESTE", recibo(teste_abertura, ctx.author.id, teste=True),
-                               premio["banner"], teste=True) if destino == "registros" else
-                        mensagem_premio(ctx.guild.id if ctx.guild else 0, teste_abertura, teste=True))
+                if destino == "registros":
+                    # Prévia da apresentação real, sem texto de teste. Não cria vitória no banco.
+                    conteudo = texto_anuncio_premio(
+                        ctx.author.id, premio["nome"], premio["raridade"], "LB-000000")
+                    view = cartao("🎉 PRÊMIO ESPECIAL ENCONTRADO!", conteudo,
+                        banner_anuncio_premio(premio["raridade"], premio["banner"]))
+                else:
+                    view = mensagem_premio(ctx.guild.id if ctx.guild else 0,
+                                           teste_abertura, teste=True)
             if destino == "registros":
                 # Sem @everyone, mesmo que a premiação simulada seja secreta.
-                await canal.send(view=view, allowed_mentions=discord.AllowedMentions.none(), **anexo_envio(view))
+                await canal.send(view=view, allowed_mentions=discord.AllowedMentions.none(),
+                                 delete_after=180, **anexo_envio(view))
             else:
                 if not await self.dm(ctx, view=view):
                     return
         await self.dm(ctx, texto=f"✅ Teste concluído: **{len(codigos)}** prévia(s). Sem consumo, sem tickets reais, sem menções.")
+
+
+    @commands.command(name="simularlucky", aliases=["simulalucky"])
+    @commands.guild_only()
+    async def simularlucky(self, ctx: commands.Context, codigo: str):
+        """!simularlucky clover — prévias visuais reais, sem sorteio, estoque nem @everyone.
+
+        Mostra ao dono a DM (botão desativado) e publica temporariamente o
+        anúncio no canal de registros. Publicações são apagadas em 3 minutos
+        para que não permaneçam como falsas conquistas da comunidade.
+        """
+        if not await self.exigir_dono(ctx):
+            return
+        await self.apagar_comando(ctx)
+        codigo = codigo.strip().lower()
+        if codigo == "clove":
+            codigo = "clover"
+        premio = PREMIACOES.get(codigo)
+        if premio is None:
+            from difflib import get_close_matches
+            sugestoes = get_close_matches(codigo, PREMIACOES.keys(), n=1, cutoff=0.45)
+            dica = f" Você quis dizer `!simularlucky {sugestoes[0]}`?" if sugestoes else ""
+            return await self.dm(ctx, texto=f"❌ Recompensa `{codigo}` inexistente.{dica}")
+
+        guild = ctx.guild
+        demonstracao = {"id": 0, "premio": premio, "created_at": agora()}
+        # DM com a mesma apresentação real, sem rótulo; ticket desativado.
+        view_dm = mensagem_premio(guild.id, demonstracao, teste=True, visual_real=True)
+        if not await self.dm(ctx, view=view_dm):
+            return
+
+        # Anúncio usa o mesmo layout e banner que um ganho efetivo.
+        titulo = "🎉 PRÊMIO ESPECIAL ENCONTRADO!"
+        texto = texto_anuncio_premio(ctx.author.id, premio["nome"],
+                                     premio["raridade"], "LB-000000")
+        banner = banner_anuncio_premio(premio["raridade"], premio["banner"])
+        view_publica = cartao(titulo, texto, banner)
+        try:
+            canal = await self.buscar_canal(guild, CANAL_REGISTROS)
+            # Sem @everyone ou outras menções reais. Nunca cria comprovante.
+            await canal.send(view=view_publica,
+                             allowed_mentions=discord.AllowedMentions.none(),
+                             delete_after=180, **anexo_envio(view_publica))
+        except (discord.Forbidden, discord.HTTPException, ValueError):
+            LOG.exception("Não foi possível enviar a simulação pública: %s", codigo)
+            return await self.dm(ctx, texto="❌ DM enviada, mas não foi possível publicar nos registros.")
+        await self.dm(ctx, texto=(
+            f"✅ Prévia de `{codigo}` enviada à DM e a {canal.mention}. "
+            "A mensagem pública será apagada em 3 minutos. "
+            "Nenhum sorteio, estoque, cargo, ticket ou @everyone foi acionado."))
+
 
 
 async def setup(bot: commands.Bot) -> None:
