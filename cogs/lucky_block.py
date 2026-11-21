@@ -29,6 +29,7 @@ ABERTURAS_POR_CICLO = 5
 HORAS_APOS_ULTIMA_ABERTURA = 8  # a espera começa SOMENTE após a 5ª abertura
 BANNER_PAINEL = "assets/lucky_block/painel.png"
 BANNER_CAIXA_VAZIA = "caixa_vazia"
+BANNER_REPOSICAO = "reposicao_estoque"  # assets/lucky_block/reposicao_estoque.png
 BANNER_PREMIO_SECRETO = "recompensa_secreta"  # assets/lucky_block/recompensa_secreta.png
 # O banner secreto aparece no anúncio público. A DM preserva a imagem individual do prêmio.
 AVISAR_EVERYONE_SECRETOS = True
@@ -37,25 +38,27 @@ CONCEDER_CARGOS_AUTOMATICAMENTE = True
 # Os valores abaixo conservam as chances da última versão fornecida pelo usuário.
 # "estoque" é inicial SOMENTE para prêmios ainda não existentes no banco.
 # O estoque atual passa a ser administrado pelo painel privado e nunca é reabastecido no reinício.
+# Banners individuais: coloque o nome do arquivo em assets/lucky_block/
+# (sem extensão aceita .png, .jpg, .jpeg, .webp ou .gif).
 PREMIACOES = {
-    "candidato_divisao": dict(nome="Candidato em uma divisão", raridade="epic", chance="0.0050", estoque=2, cargo_id=0, banner="", ativo=True,
+    "candidato_divisao": dict(nome="Candidato em uma divisão", raridade="epic", chance="0.0050", estoque=2, cargo_id=0, banner="candidato_divisao", ativo=True,
                                descricao="Candidatura em divisão do E.B; requisitos sujeitos à validação da equipe."),
-    "sub_civil": dict(nome="Sub Civil", raridade="legendary", chance="0.030", estoque=1, cargo_id=0, banner="", ativo=True,
+    "sub_civil": dict(nome="Sub Civil", raridade="legendary", chance="0.030", estoque=1, cargo_id=0, banner="sub_civil", ativo=True,
                       descricao="Sub Civil no E.B. A equipe confirmará as condições no ticket."),
-    "nitro_basico": dict(nome="Discord Nitro Básico", raridade="secret", chance="0.00015", estoque=1, cargo_id=0, banner="", ativo=True,
+    "nitro_basico": dict(nome="Discord Nitro Básico", raridade="secret", chance="0.00015", estoque=1, cargo_id=0, banner="nitro_basico", ativo=True,
                          descricao="Nitro Básico; resgate sujeito à elegibilidade e disponibilidade."),
-    "nitro_normal": dict(nome="Discord Nitro Normal", raridade="secret", chance="0.00018", estoque=1, cargo_id=0, banner="", ativo=True,
+    "nitro_normal": dict(nome="Discord Nitro Normal", raridade="secret", chance="0.00018", estoque=1, cargo_id=0, banner="nitro_normal", ativo=True,
                          descricao="Nitro Normal; resgate sujeito à elegibilidade e disponibilidade."),
-    "500_robux": dict(nome="500 Robux", raridade="secret", chance="0.00015", estoque=1, cargo_id=0, banner="", ativo=True,
+    "500_robux": dict(nome="500 Robux", raridade="secret", chance="0.00015", estoque=1, cargo_id=0, banner="500_robux", ativo=True,
                       descricao="500 Robux; a forma de entrega será acertada no ticket."),
     "clover": dict(nome="Clover", raridade="legendary", chance="0.2", estoque=1,
-                   cargo_id=1572848152548085871, banner="", ativo=True,
+                   cargo_id=1572848152548085871, banner="clover", ativo=True,
                    descricao="Cargo exclusivo Clover da Família ROYAL."),
     "demon_night": dict(nome="Demon Night", raridade="legendary", chance="0.001", estoque=1,
-                        cargo_id=1569948996573597726, banner="", ativo=True,
+                        cargo_id=1569948996573597726, banner="demon_night", ativo=True,
                         descricao="Cargo exclusivo Demon Night da Família ROYAL."),
     "decoracao_perfil": dict(nome="Decoração de Perfil Aleatória (Discord)", raridade="legendary", chance="0.00035", estoque=1,
-                             cargo_id=0, banner="", ativo=True,
+                             cargo_id=0, banner="decoracao_perfil", ativo=True,
                              descricao="Decoração de perfil aleatória; entrega sujeita à disponibilidade."),
 }
 # ========================================================================
@@ -221,7 +224,7 @@ def recibo(abertura: dict, membro_id: int, *, teste=False) -> str:
         f"> `💎` **Raridade:** {raridade_nome(premio['raridade'])}\n"
         f"> `📋` **Situação:** {status}\n\n"
         "**☰ AUTENTICIDADE E RESGATE**\n"
-        "> `🔐` Este comprovante é **individual e intransferível**.\n"
+        "> `🛒` Este comprovante é **individual e intransferível**.\n"
         "> `🎟️` A entrega é conferida pela equipe neste ticket.\n"
         "> `✅` A administração valida o protocolo no banco com `!luckyvalidar ID`.\n"
         + ("\n-# 🧪 Documento demonstrativo; não gera direito a prêmio."
@@ -262,7 +265,7 @@ class PainelLucky(discord.ui.LayoutView):
             "> ☰ `🛎️` As chances são extremamente baixas; depende da sua sorte.\n"
             "> ☰ `🛎️` Premiações têm estoque limitado, sujeito a reposição.\n"
             "> ☰ `🛎️` Os prêmios não podem ser transferidos para outro usuário.\n"
-            "> ☰ `🎟️` Ganhos exigem resgate via ticket e comprovante individual."
+            "> ☰ `🛒` Ganhos exigem resgate via ticket e comprovante individual."
         ))
         cont.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
         linha = discord.ui.ActionRow()
@@ -339,20 +342,25 @@ def mensagem_premio(guild_id: int, abertura: dict, *, teste=False,
     return view
 
 
-def cartao_reposicao(*, teste=False) -> discord.ui.LayoutView:
-    """Anúncio sem revelar recompensas ou estoques internos."""
+def cartao_reposicao(codigo: str, anterior: int, atual: int, *, teste=False) -> discord.ui.LayoutView:
+    """Anuncia o prêmio efetivamente reabastecido e suas quantidades."""
+    premio = PREMIACOES[codigo]
+    adicionadas = atual - anterior
     conteudo = (
         "As Lucky Blocks da Família ROYAL receberam **novas unidades de premiações**!\n\n"
         "**☰ INFORMAÇÕES DA REPOSIÇÃO**\n"
-        "> `📦` **Situação:** estoque atualizado e disponível.\n"
-        f"> `🎁` **Onde participar:** <#{CANAL_PAINEL}>\n"
-        "> `🎟️` **Tentativas:** 5 aberturas; após a quinta, renovação em 8 horas.\n"
-        "> `🔒` O catálogo completo e as quantidades continuam reservados à administração.\n\n"
+        f"> `🎁` **Recompensa:** {premio['nome']}\n"
+        f"> `💎` **Raridade:** {raridade_nome(premio['raridade'])}\n"
+        f"> `📦` **Unidades adicionadas:** +{adicionadas}\n"
+        f"> `📊` **Estoque disponível:** {anterior} → **{atual}**\n"
+        f"> `🎯` **Onde participar:** <#{CANAL_PAINEL}>\n"
+        f"> `🎟️` **Tentativas:** 5 aberturas; após a quinta, renovação em 8 horas.\n"
         "**☰ BOA SORTE!**\n"
-        "> `🍀` Sua próxima abertura pode guardar uma surpresa.\n"
-        "-# 👑 Família ROYAL • Notificação de reposição"
+        f"> `🍀` Sua próxima abertura pode guardar uma surpresa.\n"
+        f"> `🎉` Participe e concorra a prêmios exclusivos da Família ROYAL."
     )
-    return cartao("<:luckblock:1572868783725609083> NOVO ESTOQUE NO LUCKY BLOCK", conteudo, teste=teste)
+    return cartao("<:luckblock:1572868783725609083> NOVO ESTOQUE NO LUCKY BLOCK",
+                  conteudo, BANNER_REPOSICAO, teste=teste)
 
 
 class ModalEstoque(discord.ui.Modal, title="Estoque • Lucky Block"):
@@ -618,11 +626,12 @@ class LuckyBlockRoyal(commands.Cog):
         except (discord.HTTPException, AttributeError):
             LOG.warning("Não foi possível avisar o dono sobre estoque esgotado: %s", codigo)
 
-    async def avisar_reposicao(self, guild: discord.Guild):
-        """Anúncio de reposição só no canal específico, sem expor a premiação/quantidade."""
+    async def avisar_reposicao(self, guild: discord.Guild, codigo: str, anterior: int, atual: int):
+        """Anúncio de reposição com os dados da alteração realizada."""
         try:
             canal = await self.buscar_canal(guild, CANAL_ESTOQUE)
-            await canal.send(view=cartao_reposicao(),
+            view = cartao_reposicao(codigo, anterior, atual)
+            await canal.send(view=view, **anexo_envio(view),
                 allowed_mentions=discord.AllowedMentions.none())
         except (discord.HTTPException, ValueError):
             LOG.exception("Falha ao anunciar reposição no canal de estoque %s", CANAL_ESTOQUE)
@@ -912,7 +921,7 @@ class LuckyBlockRoyal(commands.Cog):
         if anterior is not None and quantidade > anterior:
             guild = self.bot.get_guild(guild_id)
             if guild:
-                await self.avisar_reposicao(guild)
+                await self.avisar_reposicao(guild, codigo, anterior, quantidade)
 
     @commands.command(name="luckyresgatar")
     @commands.guild_only()
@@ -1071,7 +1080,7 @@ class LuckyBlockRoyal(commands.Cog):
             nome = PREMIACOES[sorteado]["nome"] if sorteado else "Caixa vazia"
             return await self.dm(ctx, texto=f"🧪 Sorteio simulado: **{nome}**. Nenhuma tentativa ou estoque consumido.")
         if codigo == "reposicao":
-            return await self.dm(ctx, view=cartao_reposicao(teste=True))
+            return await self.dm(ctx, view=cartao_reposicao("clover", 0, 2, teste=True))
         if codigo == "sem_estoque":
             return await self.dm(ctx, view=cartao("📦 RECOMPENSA SEM ESTOQUE — TESTE",
                 "Uma recompensa sorteada está sem estoque. Nenhum prêmio foi reservado. "
