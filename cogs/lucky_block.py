@@ -26,7 +26,7 @@ CANAL_REGISTROS = 1572355776377266176
 CANAL_ESTOQUE = 1573584140719357972  # Avisos públicos de reposição
 ID_DONO_DISCORD = 925863471902503033  # Única conta autorizada a consultar/alterar estoque
 ABERTURAS_POR_CICLO = 7
-HORAS_APOS_ULTIMA_ABERTURA = 4  # a espera começa SOMENTE após a 5ª abertura
+HORAS_APOS_ULTIMA_ABERTURA = 3  # a espera começa SOMENTE após a 5ª abertura
 BANNER_PAINEL = "assets/lucky_block/painel.png"
 BANNER_CAIXA_VAZIA = "caixa_vazia"
 BANNER_REPOSICAO = "reposicao_estoque"  # assets/lucky_block/reposicao_estoque.png
@@ -257,11 +257,12 @@ class PainelLucky(discord.ui.LayoutView):
         cont.add_item(discord.ui.TextDisplay(
             aviso + "## <:luckblock:1572868783725609083> LUCKY BLOCK - FAMÍLIA ROYAL\n\n"
             "Teste sua sorte nas Lucky Blocks e concorra a prêmios exclusivos. "
-            "Você possui **5 aberturas**; ao terminar as cinco, novas tentativas "
-            "ficam disponíveis **8 horas depois da última abertura**.\n\n"
+            "Você possui **7 aberturas**; ao terminar as sete, novas tentativas "
+            "ficam disponíveis **3 horas depois da última abertura**.\n\n"
             "### Premiações\n"
             "> ☰ `👹` Cargos exclusivos da Família ROYAL\n"
             "> ☰ `💜` Discord Nitro (Básico ou Normal)\n"
+            "> ☰ `🍊` Fruta permanente aleatória(blox Fruit) \n"
             "> ☰ `🎨` Decoração de perfil\n"
             "> ☰ `🐆` Candidato do CIGS\n"
             "> ☰ `💎` Minério aleatório (cargo no E.B)\n"
