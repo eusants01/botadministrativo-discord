@@ -8,6 +8,10 @@ Comandos (apenas prefixo):
   !configurarlogs #registros #relatorios   (administrador)
   !logs                                   (no canal de painéis)
   !logs @membro                           (histórico envolvendo o membro)
+  !painellogs                             (configurar cada tipo de evento)
+  !statuslogs                             (estado do sistema e da fila)
+  !logsreprocessar                        (tentar novamente entregas falhas)
+  !logsignorar #canal                     (ignorar/designorar mensagens de um canal)
 
 Canais: #registros recebe ocorrências; #relatorios recebe alertas críticos.
 Por segurança, !logs só funciona no canal de painéis ID 1571744772652269588.
@@ -23,9 +27,12 @@ Notas:
 - Não captura histórico anterior à instalação.
 - Não identifica com certeza o executor de TODA exclusão de mensagem.
 - Para eventos auditáveis, exige permissão Ver Registro de Auditoria.
-- Não substitui o sistema de logs preexistente; desative outro coletor
-  duplicado se houver para evitar mensagens repetidas.
-- Os botões do painel expiram após 10 minutos. Use !logs para abrir outro.
+- Desative o coletor antigo para evitar duplicidades.
+- As configurações e o histórico ficam no PostgreSQL; a fila de entregas
+  também sobrevive a reinicializações do processo.
+- Não recupera eventos ocorridos enquanto o bot estava offline.
+- Em reinício entre enviar e confirmar a entrega, uma notificação pode repetir.
+- Os botões expiram após 10 minutos no histórico e 15 na configuração.
 - O conteúdo original de mensagens fica desativado por padrão.
 """
 
@@ -37,6 +44,7 @@ import json
 import logging
 import os
 import re
+import time
 import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -77,6 +85,7 @@ ACTION_NAMES = {
     'channel_create': 'Canal criado',
     'channel_delete': 'Canal excluído',
     'channel_update': 'Canal atualizado',
+    'channel_permissions': 'Permissões do canal alteradas',
     'nickname_update': 'Apelido atualizado',
 }
 
@@ -102,8 +111,29 @@ CATEGORIES = {
     'administracao': '⚙️ Administração',
 }
 CRITICAL_ACTIONS = {
-    'ban', 'kick', 'channel_delete', 'role_delete',
+    'ban', 'kick', 'channel_delete', 'role_delete', 'channel_permissions',
     'role_permissions', 'timeout_apply', 'timeout_change', 'timeout_remove',
+}
+# 0 = desligado; 1 = somente PostgreSQL; 2 = PostgreSQL + registros;
+# 3 = PostgreSQL + registros + relatórios críticos.
+# Começa silencioso para eventos rotineiros. Escolhas são persistidas por servidor.
+DEFAULT_MODES = {key: 0 for key in ACTION_NAMES}
+DEFAULT_MODES.update({
+    'ban': 3, 'unban': 2, 'kick': 3,
+    'timeout_apply': 3, 'timeout_change': 2, 'timeout_remove': 3,
+    'message_bulk_delete': 2,
+    'role_added': 1, 'role_removed': 1, 'role_create': 1,
+    'role_delete': 3, 'role_permissions': 3,
+    'channel_create': 1, 'channel_delete': 3, 'channel_permissions': 3,
+})
+MODE_NAMES = {0: 'Desligado', 1: 'Só histórico', 2: 'Notificar', 3: 'Alerta'}
+MODE_ICONS = {0: '⚫', 1: '🗃️', 2: '🔔', 3: '🚨'}
+ACTION_CATEGORIES = {
+    'mensagens': ('message_delete', 'message_edit', 'message_bulk_delete'),
+    'moderacao': ('ban', 'unban', 'kick', 'timeout_apply', 'timeout_change', 'timeout_remove', 'timeout_expire'),
+    'cargos': ('role_added', 'role_removed', 'role_create', 'role_delete', 'role_update', 'role_permissions'),
+    'membros': ('member_join', 'member_leave', 'nickname_update'),
+    'administracao': ('channel_create', 'channel_delete', 'channel_update', 'channel_permissions'),
 }
 
 
@@ -121,12 +151,16 @@ def event_target(action: str, target_id: int | None,
             return safe(role_name, 100)
     if action.startswith('channel_'):
         name = details.get('canal')
+        if action == 'channel_delete':
+            return f'#{safe(name or "canal excluído", 80)} (`{details.get("id") or channel_id or "?"}`)'
         if channel_id:
-            return f'<#{channel_id}>'
+            return f'<#{channel_id}> (`{channel_id}`)'
         if name:
             return f'#{safe(name, 80)}'
-    if action in ('message_edit', 'message_delete', 'message_bulk_delete') and channel_id:
-        return f'<#{channel_id}>'
+    if action == 'message_bulk_delete' and channel_id:
+        return f'Várias mensagens em <#{channel_id}>'
+    if action in ('message_edit', 'message_delete'):
+        return 'Autor não identificado (fora do cache)'
     return 'Não disponível'
 
 
@@ -137,6 +171,8 @@ def audit_status(actor_id: int | None, details: dict[str, Any]) -> str:
         return 'Identificado no registro de auditoria'
     if details.get('fonte') == 'auditoria do Discord':
         return 'Correlacionado com auditoria do Discord'
+    if details.get('fonte') == 'autor da mensagem (gateway)':
+        return 'Autor identificado pelo evento do Discord'
     return 'Registrado pelo sistema'
 
 
@@ -182,8 +218,21 @@ def build_notification(*, item_id: int, category: str, action: str, summary: str
             f'**`🎯` Alvo:** {target}'
         ))
     box.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
+    if details.get('role_id'):
+        role_id = int(details['role_id'])
+        cargo = (f'<@&{role_id}> (`{role_id}`)' if action != 'role_delete'
+                 else f'{safe(details.get("cargo") or "Cargo excluído", 80)} (`{role_id}`)')
+        box.add_item(discord.ui.TextDisplay(f'**`🎭` Cargo envolvido:** {cargo}'))
+    if details.get('alvo_permissao_id'):
+        perm_id = int(details['alvo_permissao_id'])
+        perm_kind = details.get('alvo_permissao_tipo')
+        perm_text = (f'<@&{perm_id}>' if perm_kind == 'role' else
+                     f'<@{perm_id}>' if perm_kind == 'member' else f'`{perm_id}`')
+        box.add_item(discord.ui.TextDisplay(f'**`🔐` Permissões alteradas para:** {perm_text}'))
     if channel_id:
-        box.add_item(discord.ui.TextDisplay(f'**`📍` Canal relacionado:** {format_channel(channel_id)}'))
+        related = (f'#{safe(details.get("canal") or "canal excluído", 80)} (`{channel_id}`)'
+                   if action == 'channel_delete' else format_channel(channel_id))
+        box.add_item(discord.ui.TextDisplay(f'**`📍` Canal relacionado:** {related}'))
     box.add_item(discord.ui.TextDisplay(
         f'`🕒` <t:{stamp}:f>  •  {safe(audit_status(actor_id, details), 110)}\n'
     ))
@@ -291,7 +340,7 @@ class PeriodSelect(discord.ui.Select):
             placeholder='Período da pesquisa',
             options=[discord.SelectOption(label=f'Últimos {d} dias' if d > 1 else 'Últimas 24 horas',
                                           value=str(d), default=d == parent.days)
-                     for d in (1, 7, 30)],
+                     for d in (1, 7, 30, 90)],
         )
 
     async def callback(self, interaction: discord.Interaction) -> None:
@@ -520,11 +569,173 @@ class LogsDetailView(discord.ui.LayoutView):
         return cls(source, item)
 
 
+class ActionCategorySelect(discord.ui.Select):
+    def __init__(self, parent: 'LogsConfigView'):
+        self.parent_panel = parent
+        super().__init__(
+            placeholder='Escolha a categoria de eventos',
+            options=[discord.SelectOption(label=CATEGORIES[k], value=k, default=k == parent.category)
+                     for k in ACTION_CATEGORIES],
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not await self.parent_panel.validate(interaction):
+            return
+        await self.parent_panel.rebuild(interaction, category=self.values[0], selected=())
+
+
+class ActionMultiSelect(discord.ui.Select):
+    def __init__(self, parent: 'LogsConfigView'):
+        self.parent_panel = parent
+        group = ACTION_CATEGORIES[parent.category]
+        super().__init__(
+            placeholder='Selecione 1 ou vários eventos para alterar',
+            min_values=1, max_values=len(group),
+            options=[discord.SelectOption(
+                label=action_name(key), value=key,
+                description=f'{MODE_ICONS[parent.settings["modes"][key]]} '
+                            f'{MODE_NAMES[parent.settings["modes"][key]]}',
+                default=key in parent.selected,
+            ) for key in group],
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if await self.parent_panel.validate(interaction):
+            await self.parent_panel.rebuild(interaction, selected=tuple(self.values))
+
+
+class DestinationSelect(discord.ui.ChannelSelect):
+    def __init__(self, parent: 'LogsConfigView', which: str):
+        self.parent_panel = parent
+        self.which = which
+        text = 'registros' if which == 'registros' else 'relatórios críticos'
+        super().__init__(
+            placeholder=f'Canal de {text}',
+            channel_types=[discord.ChannelType.text],
+            min_values=1, max_values=1,
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        parent = self.parent_panel
+        if not await parent.validate(interaction):
+            return
+        channel = self.values[0]
+        guild = interaction.guild
+        # O objeto selecionado é resolvido pela guild para verificar permissões.
+        selected = guild.get_channel(channel.id)
+        if not isinstance(selected, discord.TextChannel):
+            await respond_error(interaction, '❌ Selecione um canal de texto válido.')
+            return
+        other_id = (parent.settings['relatorios_channel_id'] if self.which == 'registros'
+                    else parent.settings['registros_channel_id'])
+        if selected.id == PANEL_CHANNEL_ID or selected.id == other_id:
+            await respond_error(interaction, '❌ O canal deve ser diferente do painel e do outro destino.')
+            return
+        if not parent.cog.can_send(guild, selected):
+            await respond_error(interaction, '❌ O bot precisa de Ver Canal e Enviar Mensagens.')
+            return
+        await parent.cog.set_channel(guild.id, self.which, selected.id, actor_id=interaction.user.id)
+        await parent.rebuild(interaction)
+
+
+class LogsConfigView(discord.ui.LayoutView):
+    """Configuração granular por servidor com estado armazenado no PostgreSQL."""
+    def __init__(self, cog: 'LogsRoyal', guild_id: int, invoker_id: int,
+                 settings: dict[str, Any], category: str = 'moderacao',
+                 selected: tuple[str, ...] = ()) -> None:
+        super().__init__(timeout=900)
+        self.cog = cog
+        self.guild_id = guild_id
+        self.invoker_id = invoker_id
+        self.category = category
+        self.selected = tuple(key for key in selected if key in ACTION_CATEGORIES[category])
+        self.settings = settings
+        self.message: discord.Message | None = None
+        modes = settings['modes']
+        items = ACTION_CATEGORIES[category]
+        summary = '\n'.join(
+            f'{MODE_ICONS[modes[key]]} **{action_name(key)}** — {MODE_NAMES[modes[key]]}'
+            for key in items
+        )
+        registro = settings['registros_channel_id']
+        alerta = settings['relatorios_channel_id']
+        box = discord.ui.Container(accent_colour=COLOR_GOLD)
+        box.add_item(discord.ui.TextDisplay(
+            '## 🛡️ CENTRAL DE CONFIGURAÇÃO DE LOGS\n'
+            'Escolha a categoria, selecione os eventos e aplique o destino.\n'
+            '-# Alterações são gravadas imediatamente no PostgreSQL e valem após reinicializações.'
+        ))
+        box.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
+        box.add_item(discord.ui.TextDisplay(
+            f'**{CATEGORIES[category]}**\n{summary}\n\n'
+            f'**Selecionados:** {len(self.selected)} • '
+            f'**Registros:** {f"<#{registro}>" if registro else "não definido"} • '
+            f'**Alertas:** {f"<#{alerta}>" if alerta else "não definido"}'
+        ))
+        box.add_item(discord.ui.ActionRow(ActionCategorySelect(self)))
+        box.add_item(discord.ui.ActionRow(ActionMultiSelect(self)))
+        buttons = []
+        for mode, label, style in (
+            (0, 'Desligar', discord.ButtonStyle.secondary),
+            (1, 'Só histórico', discord.ButtonStyle.secondary),
+            (2, 'Notificar', discord.ButtonStyle.primary),
+            (3, 'Alerta', discord.ButtonStyle.danger),
+        ):
+            button = discord.ui.Button(label=label, style=style, disabled=not self.selected)
+
+            async def apply(interaction: discord.Interaction, mode: int = mode) -> None:
+                if not await self.validate(interaction):
+                    return
+                if not self.selected:
+                    await respond_error(interaction, 'Selecione eventos antes de aplicar.')
+                    return
+                await self.cog.set_modes(self.guild_id, self.selected, mode, actor_id=interaction.user.id)
+                await self.rebuild(interaction)
+            button.callback = apply
+            buttons.append(button)
+        box.add_item(discord.ui.ActionRow(*buttons))
+        box.add_item(discord.ui.ActionRow(DestinationSelect(self, 'registros')))
+        box.add_item(discord.ui.ActionRow(DestinationSelect(self, 'relatorios')))
+        self.add_item(box)
+
+    async def validate(self, interaction: discord.Interaction) -> bool:
+        if (not interaction.guild or interaction.guild.id != self.guild_id
+                or interaction.channel_id != PANEL_CHANNEL_ID
+                or interaction.user.id != self.invoker_id
+                or not isinstance(interaction.user, discord.Member)
+                or not interaction.user.guild_permissions.administrator):
+            await respond_error(interaction, '🔒 Somente o administrador que abriu o painel pode editar.')
+            return False
+        return True
+
+    async def rebuild(self, interaction: discord.Interaction, *,
+                      category: str | None = None,
+                      selected: tuple[str, ...] | None = None) -> None:
+        await interaction.response.defer()
+        try:
+            new = LogsConfigView(
+                self.cog, self.guild_id, self.invoker_id,
+                await self.cog.get_settings(self.guild_id, refresh=True),
+                category=category or self.category,
+                selected=self.selected if selected is None else selected,
+            )
+            msg = self.message or interaction.message
+            if msg is None:
+                raise RuntimeError('Mensagem do painel não encontrada')
+            await msg.edit(view=new, allowed_mentions=discord.AllowedMentions.none())
+            new.message = msg
+        except Exception:
+            LOG.exception('Falha na atualização do painel de configuração')
+            await interaction.followup.send('❌ Falha ao atualizar configurações.', ephemeral=True)
+
+
 class LogsRoyal(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.ready = False
-        self.channels_cache: dict[int, tuple[int | None, int | None]] = {}
+        self.settings_cache: dict[int, dict[str, Any]] = {}
+        self._settings_lock: dict[int, asyncio.Lock] = {}
+        self._settings_loaded: dict[int, float] = {}
         self.retention = _intenv('ROYAL_LOGS_RETENTION_DAYS', 90)
         self.store_content = os.getenv('ROYAL_LOGS_STORE_CONTENT', '0') == '1'
         self._audit_lookup_locks: dict[int, asyncio.Lock] = {}
@@ -543,6 +754,9 @@ class LogsRoyal(commands.Cog):
                         relatorios_channel_id BIGINT
                     )
                 ''')
+                # Migração incremental: preserva histórico e destinos existentes.
+                await db.execute("ALTER TABLE royal_audit_settings ADD COLUMN IF NOT EXISTS action_modes JSONB NOT NULL DEFAULT '{}'::jsonb")
+                await db.execute("ALTER TABLE royal_audit_settings ADD COLUMN IF NOT EXISTS ignored_channels JSONB NOT NULL DEFAULT '[]'::jsonb")
                 await db.execute('''
                     CREATE TABLE IF NOT EXISTS royal_audit_events (
                         id BIGSERIAL PRIMARY KEY,
@@ -557,6 +771,42 @@ class LogsRoyal(commands.Cog):
                         dedupe_key TEXT,
                         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                     )
+                ''')
+                await db.execute('''
+                    CREATE TABLE IF NOT EXISTS royal_audit_delivery (
+                        id BIGSERIAL PRIMARY KEY,
+                        guild_id BIGINT NOT NULL,
+                        event_id BIGINT NOT NULL REFERENCES royal_audit_events(id) ON DELETE CASCADE,
+                        channel_id BIGINT NOT NULL,
+                        alert BOOLEAN NOT NULL DEFAULT FALSE,
+                        status TEXT NOT NULL DEFAULT 'pending',
+                        attempts INTEGER NOT NULL DEFAULT 0,
+                        next_attempt TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        locked_until TIMESTAMPTZ,
+                        sent_at TIMESTAMPTZ,
+                        sent_message_id BIGINT,
+                        last_error TEXT,
+                        UNIQUE (event_id, channel_id)
+                    )
+                ''')
+                await db.execute('''
+                    CREATE INDEX IF NOT EXISTS royal_audit_delivery_claim_idx
+                    ON royal_audit_delivery (status, next_attempt, locked_until, id)
+                ''')
+                await db.execute('''
+                    CREATE TABLE IF NOT EXISTS royal_audit_config_changes (
+                        id BIGSERIAL PRIMARY KEY,
+                        guild_id BIGINT NOT NULL,
+                        actor_id BIGINT,
+                        changed_item TEXT NOT NULL,
+                        before_state JSONB NOT NULL,
+                        after_state JSONB NOT NULL,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                ''')
+                await db.execute('''
+                    CREATE INDEX IF NOT EXISTS royal_audit_config_history_idx
+                    ON royal_audit_config_changes (guild_id, created_at DESC)
                 ''')
                 await db.execute('''
                     CREATE UNIQUE INDEX IF NOT EXISTS royal_audit_guild_dedupe
@@ -582,13 +832,16 @@ class LogsRoyal(commands.Cog):
             self.ready = True
             if self.retention > 0:
                 self.prune_events.start()
-            LOG.info('Sistema Royal Logs V2 inicializado')
+            self.deliver_pending.start()
+            LOG.info('Sistema Royal Logs V3 inicializado com fila PostgreSQL')
         except Exception:
             LOG.exception('Falha criando tabelas de auditoria')
 
     def cog_unload(self) -> None:
         if self.prune_events.is_running():
             self.prune_events.cancel()
+        if self.deliver_pending.is_running():
+            self.deliver_pending.cancel()
 
     @tasks.loop(hours=24)
     async def prune_events(self):
@@ -605,25 +858,108 @@ class LogsRoyal(commands.Cog):
     async def before_prune(self):
         await self.bot.wait_until_ready()
 
+    async def get_settings(self, guild_id: int, *, refresh: bool = False) -> dict[str, Any]:
+        if not self.ready:
+            raise RuntimeError('PostgreSQL indisponível')
+        if (not refresh and guild_id in self.settings_cache
+                and time.monotonic() - self._settings_loaded.get(guild_id, 0) < 20):
+            return self.settings_cache[guild_id]
+        lock = self._settings_lock.setdefault(guild_id, asyncio.Lock())
+        async with lock:
+            if (not refresh and guild_id in self.settings_cache
+                    and time.monotonic() - self._settings_loaded.get(guild_id, 0) < 20):
+                return self.settings_cache[guild_id]
+            row = await self.bot.pool.fetchrow('''
+                SELECT registros_channel_id, relatorios_channel_id, action_modes, ignored_channels
+                FROM royal_audit_settings WHERE guild_id=$1
+            ''', guild_id)
+            modes = DEFAULT_MODES.copy()
+            if row:
+                stored = row['action_modes']
+                if isinstance(stored, str):
+                    stored = json.loads(stored)
+                if isinstance(stored, dict):
+                    for action, level in stored.items():
+                        if action in modes and type(level) is int and 0 <= level <= 3:
+                            modes[action] = level
+                ignored = row['ignored_channels']
+                if isinstance(ignored, str):
+                    ignored = json.loads(ignored)
+                ignored = {int(x) for x in ignored if str(x).isdigit()} if isinstance(ignored, list) else set()
+            else:
+                ignored = set()
+            data = {
+                'modes': modes,
+                'registros_channel_id': row['registros_channel_id'] if row else None,
+                'relatorios_channel_id': row['relatorios_channel_id'] if row else None,
+                'ignored_channels': ignored,
+            }
+            self.settings_cache[guild_id] = data
+            self._settings_loaded[guild_id] = time.monotonic()
+            return data
+
+    async def is_enabled(self, guild: discord.Guild, action: str, channel_id: int | None = None) -> bool:
+        if not self.ready:
+            return False
+        settings = await self.get_settings(guild.id)
+        if channel_id in settings['ignored_channels'] and action.startswith('message_'):
+            return False
+        return settings['modes'].get(action, 0) > 0
+
+    async def track_config(self, guild_id: int, actor_id: int | None,
+                           item: str, before: Any, after: Any) -> None:
+        try:
+            await self.bot.pool.execute('''
+                INSERT INTO royal_audit_config_changes
+                    (guild_id, actor_id, changed_item, before_state, after_state)
+                VALUES ($1, $2, $3, $4::jsonb, $5::jsonb)
+            ''', guild_id, actor_id, item,
+                json.dumps(before, ensure_ascii=False), json.dumps(after, ensure_ascii=False))
+        except Exception:
+            LOG.exception('Falha registrando mudança na configuração de logs')
+
+    async def set_modes(self, guild_id: int, actions: tuple[str, ...], mode: int,
+                        *, actor_id: int | None = None) -> None:
+        if not actions or any(a not in DEFAULT_MODES for a in actions) or mode not in MODE_NAMES:
+            raise ValueError('Configuração inválida')
+        settings = await self.get_settings(guild_id)
+        new_modes = dict(settings['modes'])
+        for action in actions:
+            new_modes[action] = mode
+        await self.bot.pool.execute('''
+            INSERT INTO royal_audit_settings (guild_id, action_modes)
+            VALUES ($1, $2::jsonb)
+            ON CONFLICT (guild_id) DO UPDATE SET action_modes = EXCLUDED.action_modes
+        ''', guild_id, json.dumps(new_modes))
+        self.settings_cache.pop(guild_id, None)
+        await self.track_config(guild_id, actor_id, 'eventos',
+                                {a: settings['modes'][a] for a in actions},
+                                {a: mode for a in actions})
+
+    async def set_channel(self, guild_id: int, which: str, channel_id: int,
+                          *, actor_id: int | None = None) -> None:
+        before = await self.get_settings(guild_id)
+        if which not in ('registros', 'relatorios'):
+            raise ValueError('Destino inválido')
+        column = 'registros_channel_id' if which == 'registros' else 'relatorios_channel_id'
+        await self.bot.pool.execute(f'''
+            INSERT INTO royal_audit_settings (guild_id, {column})
+            VALUES ($1, $2)
+            ON CONFLICT (guild_id) DO UPDATE SET {column} = EXCLUDED.{column}
+        ''', guild_id, channel_id)
+        self.settings_cache.pop(guild_id, None)
+        field = 'registros_channel_id' if which == 'registros' else 'relatorios_channel_id'
+        await self.track_config(guild_id, actor_id, 'canal:' + which,
+                                {'channel_id': before[field]}, {'channel_id': channel_id})
+
     async def get_channels(self, guild: discord.Guild) -> tuple[discord.TextChannel | None, discord.TextChannel | None]:
-        ids = self.channels_cache.get(guild.id)
-        if ids is None:
-            ids = (None, None)
-            if self.ready:
-                try:
-                    record = await self.bot.pool.fetchrow(
-                        'SELECT registros_channel_id, relatorios_channel_id FROM royal_audit_settings WHERE guild_id=$1',
-                        guild.id,
-                    )
-                    if record:
-                        ids = (record['registros_channel_id'], record['relatorios_channel_id'])
-                except Exception:
-                    LOG.exception('Erro consultando configuração de canais')
-            self.channels_cache[guild.id] = ids
-        registros = guild.get_channel(ids[0]) if ids[0] else matched_name(guild, 'registros')
-        relatorios = guild.get_channel(ids[1]) if ids[1] else matched_name(guild, 'relatorios')
-        return (registros if isinstance(registros, discord.TextChannel) else None,
-                relatorios if isinstance(relatorios, discord.TextChannel) else None)
+        config = await self.get_settings(guild.id)
+        reg_id = config['registros_channel_id']
+        rel_id = config['relatorios_channel_id']
+        reg = guild.get_channel(reg_id) if reg_id else matched_name(guild, 'registros')
+        rel = guild.get_channel(rel_id) if rel_id else matched_name(guild, 'relatorios')
+        return (reg if isinstance(reg, discord.TextChannel) else None,
+                rel if isinstance(rel, discord.TextChannel) else None)
 
     @staticmethod
     def can_send(guild: discord.Guild, channel: discord.TextChannel) -> bool:
@@ -637,7 +973,7 @@ class LogsRoyal(commands.Cog):
                             member_id: int | None, page: int, window_end: datetime):
         if not self.ready:
             raise RuntimeError('PostgreSQL indisponível')
-        if category not in CATEGORIES or days not in (1, 7, 30):
+        if category not in CATEGORIES or days not in (1, 7, 30, 90):
             raise ValueError('Filtro inválido')
         args: list[Any] = [guild_id, window_end - timedelta(days=days), window_end]
         clauses = ['guild_id=$1', 'created_at >= $2', 'created_at <= $3']
@@ -674,48 +1010,141 @@ class LogsRoyal(commands.Cog):
                     critical: bool = False) -> None:
         if not self.ready or category not in CATEGORIES or category == 'todos':
             return
-        reg, rel = await self.get_channels(guild)
-        if category == 'mensagens' and channel_id and channel_id in (
-            PANEL_CHANNEL_ID, getattr(reg, 'id', None), getattr(rel, 'id', None)
-        ):
-            return  # Impede loops de mensagens no painel e nos canais de auditoria.
-
+        config = await self.get_settings(guild.id)
+        mode = config['modes'].get(action, 0)
+        if mode == 0:
+            return
+        if category == 'mensagens':
+            reg, rel = await self.get_channels(guild)
+            if channel_id in (PANEL_CHANNEL_ID, getattr(reg, 'id', None),
+                              getattr(rel, 'id', None)):
+                return
+            if channel_id in config['ignored_channels']:
+                return
+            if target_id == getattr(self.bot.user, 'id', None):
+                return
+        # Nunca logar como auditoria as próprias ações de notificação do bot.
+        if actor_id == getattr(self.bot.user, 'id', None) and category == 'mensagens':
+            return
+        reg, rel = await self.get_channels(guild) if mode >= 2 else (None, None)
+        destinations = []
+        if mode >= 2 and reg:
+            destinations.append((reg.id, False))
+        if mode == 3 and rel and rel != reg:
+            destinations.append((rel.id, True))
         try:
-            inserted = await self.bot.pool.fetchrow('''
-                INSERT INTO royal_audit_events
-                    (guild_id, category, action, actor_id, target_id,
-                     channel_id, summary, details, dedupe_key)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)
-                ON CONFLICT (guild_id, dedupe_key) WHERE dedupe_key IS NOT NULL
-                DO NOTHING RETURNING id, created_at
-            ''', guild.id, category, action, actor_id, target_id, channel_id,
-                summary[:1200], json.dumps(details or {}, ensure_ascii=False, default=str), dedupe_key)
+            async with self.bot.pool.acquire() as db:
+                async with db.transaction():
+                    inserted = await db.fetchrow('''
+                        INSERT INTO royal_audit_events
+                            (guild_id, category, action, actor_id, target_id,
+                             channel_id, summary, details, dedupe_key)
+                        VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)
+                        ON CONFLICT (guild_id, dedupe_key) WHERE dedupe_key IS NOT NULL
+                        DO NOTHING RETURNING id
+                    ''', guild.id, category, action, actor_id, target_id, channel_id,
+                        summary[:1200], json.dumps(details or {}, ensure_ascii=False, default=str),
+                        dedupe_key)
+                    if not inserted:
+                        return
+                    for dest_id, is_alert in destinations:
+                        await db.execute('''
+                            INSERT INTO royal_audit_delivery
+                                (guild_id, event_id, channel_id, alert)
+                            VALUES ($1,$2,$3,$4)
+                            ON CONFLICT (event_id, channel_id) DO NOTHING
+                        ''', guild.id, inserted['id'], dest_id, is_alert)
         except Exception:
             LOG.exception('Erro persistindo log %s', action)
+
+    @tasks.loop(seconds=5)
+    async def deliver_pending(self) -> None:
+        if not self.ready:
             return
-        if not inserted:
+        # Claim atômico: múltiplos workers não processam o mesmo item ao mesmo tempo.
+        # Lease vence caso o processo caia durante o envio.
+        try:
+            async with self.bot.pool.acquire() as db:
+                async with db.transaction():
+                    pending = await db.fetch('''
+                        WITH chosen AS (
+                            SELECT id FROM royal_audit_delivery
+                            WHERE (status IN ('pending', 'retry') AND next_attempt <= NOW())
+                               OR (status = 'sending' AND locked_until < NOW())
+                            ORDER BY id LIMIT 20 FOR UPDATE SKIP LOCKED
+                        )
+                        UPDATE royal_audit_delivery AS d
+                        SET status='sending', attempts=attempts+1,
+                            locked_until=NOW() + INTERVAL '10 minutes'
+                        FROM chosen WHERE d.id=chosen.id
+                        RETURNING d.id, d.guild_id, d.channel_id, d.event_id,
+                                  d.alert, d.attempts
+                    ''')
+        except Exception:
+            LOG.exception('Erro consumindo fila de notificações')
             return
-        item_id = inserted['id']
-        created_at = inserted['created_at']
-        is_critical = critical or action in CRITICAL_ACTIONS
-        sent_channel_ids: set[int] = set()
-        for destination in (reg, rel if is_critical else None):
-            if not destination or destination.id in sent_channel_ids:
-                continue
-            sent_channel_ids.add(destination.id)
-            if not self.can_send(guild, destination):
-                LOG.warning('Sem permissão de envio no canal %s', destination.id)
-                continue
-            try:
-                view = build_notification(
-                    item_id=item_id, category=category, action=action,
-                    summary=summary, actor_id=actor_id, target_id=target_id,
-                    channel_id=channel_id, details=details or {},
-                    created_at=created_at, alert=(destination == rel),
-                )
-                await destination.send(view=view, allowed_mentions=discord.AllowedMentions.none())
-            except (discord.HTTPException, discord.Forbidden):
-                LOG.exception('Não foi possível publicar evento %s no canal %s', item_id, destination.id)
+        for job in pending:
+            await self._deliver_one(job)
+
+    @deliver_pending.before_loop
+    async def before_deliver(self):
+        await self.bot.wait_until_ready()
+
+    async def _deliver_one(self, job: Any) -> None:
+        guild = self.bot.get_guild(job['guild_id'])
+        channel = guild.get_channel(job['channel_id']) if guild else None
+        if not guild:
+            # Falha recuperável: bot fora do servidor, ou guild não carregada.
+            await self._delivery_fail(job, 'Servidor indisponível')
+            return
+        if not isinstance(channel, discord.TextChannel):
+            await self._delivery_fail(job, 'Canal removido ou inacessível', permanent=True)
+            return
+        if not self.can_send(guild, channel):
+            await self._delivery_fail(job, 'Sem permissão de envio')
+            return
+        try:
+            item = await self.get_event(job['guild_id'], job['event_id'])
+            if item is None:
+                await self._delivery_fail(job, 'Evento removido do histórico', permanent=True)
+                return
+            notification_details = item['details']
+            if isinstance(notification_details, str):
+                notification_details = json.loads(notification_details)
+            if not isinstance(notification_details, dict):
+                notification_details = {}
+            view = build_notification(
+                item_id=item['id'], category=item['category'], action=item['action'],
+                summary=item['summary'], actor_id=item['actor_id'],
+                target_id=item['target_id'], channel_id=item['channel_id'],
+                details=notification_details, created_at=item['created_at'], alert=job['alert'],
+            )
+            msg = await channel.send(view=view, allowed_mentions=discord.AllowedMentions.none())
+            await self.bot.pool.execute('''
+                UPDATE royal_audit_delivery
+                SET status='sent', sent_at=NOW(), sent_message_id=$2,
+                    locked_until=NULL, last_error=NULL
+                WHERE id=$1
+            ''', job['id'], msg.id)
+        except (discord.Forbidden, discord.NotFound) as exc:
+            await self._delivery_fail(job, f'{type(exc).__name__}: {exc}', permanent=True)
+        except Exception as exc:
+            LOG.exception('Falha enviando notificação %s', job['id'])
+            await self._delivery_fail(job, f'{type(exc).__name__}: {exc}')
+
+    async def _delivery_fail(self, job: Any, reason: str, *, permanent: bool = False) -> None:
+        attempts = int(job['attempts'])
+        terminal = permanent or attempts >= 12
+        retry_seconds = min(3600, 5 * (2 ** min(9, attempts)))
+        try:
+            await self.bot.pool.execute('''
+                UPDATE royal_audit_delivery
+                SET status=$2, last_error=$3, locked_until=NULL,
+                    next_attempt=NOW() + ($4 * INTERVAL '1 second')
+                WHERE id=$1
+            ''', job['id'], 'failed' if terminal else 'retry', reason[:350], retry_seconds)
+        except Exception:
+            LOG.exception('Falha registrando tentativa de envio %s', job['id'])
 
     async def audit(self, guild: discord.Guild, action: discord.AuditLogAction,
                     *, target_id: int | None = None,
@@ -808,6 +1237,120 @@ class LogsRoyal(commands.Cog):
             return None, None, None
         return getattr(entry.user, 'id', None), entry.reason, entry.id
 
+    @commands.command(name='painellogs', aliases=['configlogs'])
+    @commands.guild_only()
+    @commands.cooldown(2, 15, commands.BucketType.user)
+    async def config_panel(self, ctx: commands.Context):
+        if not isinstance(ctx.author, discord.Member) or not ctx.author.guild_permissions.administrator:
+            await ctx.send('🔒 Apenas administradores podem configurar logs.', delete_after=15)
+            return
+        if ctx.channel.id != PANEL_CHANNEL_ID:
+            await ctx.send(f'🔒 Abra o painel em <#{PANEL_CHANNEL_ID}>.', delete_after=15,
+                           allowed_mentions=discord.AllowedMentions.none())
+            return
+        if not self.ready:
+            await ctx.send('❌ PostgreSQL indisponível.')
+            return
+        if ctx.channel.permissions_for(ctx.guild.default_role).view_channel:
+            await ctx.send('🔒 Restrinja a visibilidade do canal para administradores primeiro.')
+            return
+        view = LogsConfigView(self, ctx.guild.id, ctx.author.id,
+                              await self.get_settings(ctx.guild.id))
+        view.message = await ctx.send(view=view, allowed_mentions=discord.AllowedMentions.none())
+
+    @commands.command(name='logsignorar')
+    @commands.guild_only()
+    async def toggle_ignore_channel(self, ctx: commands.Context, canal: discord.TextChannel):
+        if not ctx.author.guild_permissions.administrator:
+            await ctx.send('🔒 Apenas administradores podem alterar exclusões.', delete_after=15)
+            return
+        if not self.ready:
+            await ctx.send('❌ PostgreSQL indisponível.')
+            return
+        settings = await self.get_settings(ctx.guild.id)
+        ignored = set(settings['ignored_channels'])
+        if canal.id in ignored:
+            ignored.remove(canal.id)
+            status = 'removido da lista de exclusão'
+        else:
+            ignored.add(canal.id)
+            status = 'ignorado para eventos de mensagens'
+        await self.bot.pool.execute('''
+            INSERT INTO royal_audit_settings (guild_id, ignored_channels)
+            VALUES ($1,$2::jsonb)
+            ON CONFLICT (guild_id) DO UPDATE
+            SET ignored_channels=EXCLUDED.ignored_channels
+        ''', ctx.guild.id, json.dumps(sorted(ignored)))
+        self.settings_cache.pop(ctx.guild.id, None)
+        await self.track_config(ctx.guild.id, ctx.author.id, 'canal_ignorado',
+                                {'canal': canal.id, 'ignorado': canal.id not in ignored},
+                                {'canal': canal.id, 'ignorado': canal.id in ignored})
+        await ctx.send(f'✅ {canal.mention} {status}.',
+                       allowed_mentions=discord.AllowedMentions.none())
+
+    @commands.command(name='logsreprocessar')
+    @commands.guild_only()
+    @commands.cooldown(1, 30, commands.BucketType.guild)
+    async def reprocess_failed_logs(self, ctx: commands.Context):
+        # Permite corrigir permissões/canais e reabrir falhas definitivas.
+        if not isinstance(ctx.author, discord.Member) or not ctx.author.guild_permissions.administrator:
+            await ctx.send('🔒 Apenas administradores.', delete_after=15)
+            return
+        if ctx.channel.id != PANEL_CHANNEL_ID or not self.ready:
+            await ctx.send(f'❌ Use este comando em <#{PANEL_CHANNEL_ID}> com o banco conectado.',
+                           delete_after=15, allowed_mentions=discord.AllowedMentions.none())
+            return
+        count = await self.bot.pool.fetchval('''
+            WITH retrying AS (
+                UPDATE royal_audit_delivery SET status='retry', attempts=0,
+                    locked_until=NULL, next_attempt=NOW(), last_error=NULL
+                WHERE guild_id=$1 AND status='failed'
+                RETURNING id
+            ) SELECT COUNT(*) FROM retrying
+        ''', ctx.guild.id)
+        await ctx.send(f'✅ {count} entrega(s) recolocada(s) na fila.',
+                       allowed_mentions=discord.AllowedMentions.none())
+
+    @commands.command(name='statuslogs')
+    @commands.guild_only()
+    async def logs_status(self, ctx: commands.Context):
+        if not isinstance(ctx.author, discord.Member) or not allowed(ctx.author):
+            await ctx.send('🔒 Sem permissão.', delete_after=15)
+            return
+        if ctx.channel.id != PANEL_CHANNEL_ID:
+            await ctx.send(f'🔒 Utilize <#{PANEL_CHANNEL_ID}>.', delete_after=15,
+                           allowed_mentions=discord.AllowedMentions.none())
+            return
+        if not self.ready:
+            await ctx.send('❌ PostgreSQL indisponível.')
+            return
+        stats = await self.bot.pool.fetch('''
+            SELECT status, COUNT(*) AS total FROM royal_audit_delivery
+            WHERE guild_id=$1 GROUP BY status
+        ''', ctx.guild.id)
+        events = await self.bot.pool.fetchval(
+            'SELECT COUNT(*) FROM royal_audit_events WHERE guild_id=$1', ctx.guild.id)
+        config = await self.get_settings(ctx.guild.id)
+        last_change = await self.bot.pool.fetchrow('''
+            SELECT actor_id, changed_item, created_at
+            FROM royal_audit_config_changes WHERE guild_id=$1
+            ORDER BY created_at DESC LIMIT 1
+        ''', ctx.guild.id)
+        counts = {row['status']: row['total'] for row in stats}
+        enabled = sum(v > 0 for v in config['modes'].values())
+        await ctx.send(
+            f'**🛡️ STATUS DO ROYAL LOGS**\n'
+            f'**Banco:** conectado • **Ocorrências:** {events}\n'
+            f'**Tipos ativos:** {enabled}/{len(DEFAULT_MODES)}\n'
+            f'**Fila:** {counts.get("pending",0)} pendentes • {counts.get("retry",0)} reenvios • '
+            f'{counts.get("sending",0)} em andamento\n'
+            f'**Enviados:** {counts.get("sent",0)} • **Falhas finais:** {counts.get("failed",0)}\n' +
+            (f'**Última configuração:** <t:{int(last_change["created_at"].timestamp())}:R> '
+             f'por {format_user(last_change["actor_id"])}\n' if last_change else '') +
+            f'-# Falhas definitivas exigem correção de permissões/canais.',
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
     @commands.command(name='configurarlogs')
     @commands.guild_only()
     async def configure_channels(self, ctx: commands.Context,
@@ -826,6 +1369,10 @@ class LogsRoyal(commands.Cog):
         if not self.ready:
             await ctx.send('❌ PostgreSQL indisponível. Verifique DATABASE_URL.')
             return
+        if not self.can_send(ctx.guild, registros) or not self.can_send(ctx.guild, relatorios):
+            await ctx.send('❌ Conceda ao bot Ver Canal e Enviar Mensagens nos dois destinos.')
+            return
+        before_config = await self.get_settings(ctx.guild.id)
         await self.bot.pool.execute('''
             INSERT INTO royal_audit_settings
               (guild_id, registros_channel_id, relatorios_channel_id)
@@ -834,7 +1381,11 @@ class LogsRoyal(commands.Cog):
               registros_channel_id = EXCLUDED.registros_channel_id,
               relatorios_channel_id = EXCLUDED.relatorios_channel_id
         ''', ctx.guild.id, registros.id, relatorios.id)
-        self.channels_cache[ctx.guild.id] = (registros.id, relatorios.id)
+        self.settings_cache.pop(ctx.guild.id, None)
+        await self.track_config(ctx.guild.id, ctx.author.id, 'canais', {
+            'registros': before_config['registros_channel_id'],
+            'relatorios': before_config['relatorios_channel_id'],
+        }, {'registros': registros.id, 'relatorios': relatorios.id})
         warning = ''
         if registros.permissions_for(ctx.guild.default_role).view_channel or relatorios.permissions_for(ctx.guild.default_role).view_channel:
             warning = '\n⚠️ Pelo menos um canal está visível para @everyone. Restrinja o acesso manualmente.'
@@ -884,9 +1435,11 @@ class LogsRoyal(commands.Cog):
         if not payload.guild_id or payload.channel_id == PANEL_CHANNEL_ID:
             return
         guild = self.bot.get_guild(payload.guild_id)
-        if not guild:
+        if not guild or not await self.is_enabled(guild, 'message_delete', payload.channel_id):
             return
         cached = payload.cached_message
+        if cached and cached.author.bot:
+            return
         owner_id = cached.author.id if cached else None
         details: dict[str, Any] = {'message_id': payload.message_id, 'autor_em_cache': bool(cached)}
         if cached and self.store_content and cached.content:
@@ -913,7 +1466,7 @@ class LogsRoyal(commands.Cog):
     @commands.Cog.listener()
     async def on_raw_bulk_message_delete(self, payload: discord.RawBulkMessageDeleteEvent):
         guild = self.bot.get_guild(payload.guild_id) if payload.guild_id else None
-        if not guild:
+        if not guild or not await self.is_enabled(guild, 'message_bulk_delete', payload.channel_id):
             return
         ids = sorted(payload.message_ids)
         digest = hashlib.sha256(','.join(map(str, ids)).encode()).hexdigest()[:24]
@@ -934,17 +1487,20 @@ class LogsRoyal(commands.Cog):
         if not payload.guild_id or payload.channel_id == PANEL_CHANNEL_ID or 'content' not in payload.data:
             return
         guild = self.bot.get_guild(payload.guild_id)
-        if not guild:
+        if not guild or not await self.is_enabled(guild, 'message_edit', payload.channel_id):
             return
         old = payload.cached_message
         new_text = payload.data.get('content', '')
         if old and old.content == new_text:
             return
+        if old and old.author.bot:
+            return
         author_id = old.author.id if old else None
         if not author_id and isinstance(payload.data.get('author'), dict):
             raw = payload.data['author'].get('id')
             author_id = int(raw) if str(raw).isdigit() else None
-        details: dict[str, Any] = {'message_id': payload.message_id, 'texto_anterior_em_cache': bool(old)}
+        details: dict[str, Any] = {'message_id': payload.message_id, 'texto_anterior_em_cache': bool(old),
+                                   'fonte': 'autor da mensagem (gateway)'}
         if self.store_content:
             details['antes'] = old.content[:1000] if old else None
             details['depois'] = str(new_text)[:1000]
@@ -955,6 +1511,8 @@ class LogsRoyal(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
+        if not await self.is_enabled(member.guild, 'member_join'):
+            return
         await self.event(member.guild, category='membros', action='member_join',
                          summary=f'{member} entrou no servidor.', target_id=member.id,
                          details={'conta_criada': member.created_at.isoformat()},
@@ -962,6 +1520,10 @@ class LogsRoyal(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
+        kick_on = await self.is_enabled(member.guild, 'kick')
+        leave_on = await self.is_enabled(member.guild, 'member_leave')
+        if not kick_on and not leave_on:
+            return
         kick_entry = await self._find_audit(
             member.guild, discord.AuditLogAction.kick, target_id=member.id
         )
@@ -989,6 +1551,8 @@ class LogsRoyal(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_ban(self, guild: discord.Guild, user: discord.User):
+        if not await self.is_enabled(guild, 'ban'):
+            return
         actor, reason, audit_id = await self.audit(guild, discord.AuditLogAction.ban, target_id=user.id)
         await self.event(guild, category='moderacao', action='ban',
                          summary=f'{user} foi banido.', actor_id=actor, target_id=user.id,
@@ -997,6 +1561,8 @@ class LogsRoyal(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_unban(self, guild: discord.Guild, user: discord.User):
+        if not await self.is_enabled(guild, 'unban'):
+            return
         actor, reason, audit_id = await self.audit(guild, discord.AuditLogAction.unban, target_id=user.id)
         await self.event(guild, category='moderacao', action='unban',
                          summary=f'{user} foi desbanido.', actor_id=actor, target_id=user.id,
@@ -1010,11 +1576,14 @@ class LogsRoyal(commands.Cog):
         new_role_ids = {r.id for r in after.roles}
         add_ids = new_role_ids - old_role_ids
         remove_ids = old_role_ids - new_role_ids
-        if add_ids or remove_ids:
+        if ((add_ids and await self.is_enabled(guild, 'role_added')) or
+                (remove_ids and await self.is_enabled(guild, 'role_removed'))):
             actor, reason, audit_id = await self.audit_roles(
                 guild, after.id, added=add_ids, removed=remove_ids
             )
             for role_id in sorted(add_ids):
+                if not await self.is_enabled(guild, 'role_added'):
+                    continue
                 await self.event(
                     guild, category='cargos', action='role_added',
                     summary=f'Cargo {role_id} atribuído a {after}.',
@@ -1024,6 +1593,8 @@ class LogsRoyal(commands.Cog):
                     dedupe_key=f'role_add:{audit_id}:{role_id}' if audit_id else None,
                 )
             for role_id in sorted(remove_ids):
+                if not await self.is_enabled(guild, 'role_removed'):
+                    continue
                 await self.event(
                     guild, category='cargos', action='role_removed',
                     summary=f'Cargo {role_id} removido de {after}.',
@@ -1032,7 +1603,7 @@ class LogsRoyal(commands.Cog):
                              'operacao': 'remover', 'audit_entry_id': audit_id},
                     dedupe_key=f'role_remove:{audit_id}:{role_id}' if audit_id else None,
                 )
-        if before.nick != after.nick:
+        if before.nick != after.nick and await self.is_enabled(guild, 'nickname_update'):
             actor, reason, audit_id = await self.audit_change(
                 guild, discord.AuditLogAction.member_update,
                 target_id=after.id, field='nick', after=after.nick,
@@ -1059,6 +1630,8 @@ class LogsRoyal(commands.Cog):
             else:
                 # O prazo já venceu: não presumir que um moderador removeu.
                 action = 'timeout_expire'
+            if not await self.is_enabled(guild, action):
+                return
             actor = reason = audit_id = None
             if action != 'timeout_expire':
                 actor, reason, audit_id = await self.audit_change(
@@ -1098,6 +1671,8 @@ class LogsRoyal(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_channel_create(self, channel: discord.abc.GuildChannel):
+        if not await self.is_enabled(channel.guild, 'channel_create'):
+            return
         actor, reason, audit_id = await self.audit(channel.guild, discord.AuditLogAction.channel_create,
                                          target_id=channel.id)
         await self.event(channel.guild, category='administracao', action='channel_create',
@@ -1109,11 +1684,13 @@ class LogsRoyal(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel):
+        if not await self.is_enabled(channel.guild, 'channel_delete'):
+            return
         actor, reason, audit_id = await self.audit(channel.guild, discord.AuditLogAction.channel_delete,
                                          target_id=channel.id)
         await self.event(channel.guild, category='administracao', action='channel_delete',
                          summary=f'Canal {channel.name} excluído.', actor_id=actor,
-                         details={'canal': channel.name, 'id': channel.id, 'motivo': reason,
+                         channel_id=channel.id, details={'canal': channel.name, 'id': channel.id, 'motivo': reason,
                                   'audit_entry_id': audit_id},
                          dedupe_key=f'channel_delete:{audit_id}' if audit_id else None,
                          critical=True)
@@ -1129,6 +1706,9 @@ class LogsRoyal(commands.Cog):
         if before.overwrites != after.overwrites:
             changes['permissoes'] = 'Permissões de canal alteradas'
         if not changes:
+            return
+        chosen_action = 'channel_permissions' if 'permissoes' in changes else 'channel_update'
+        if not await self.is_enabled(after.guild, chosen_action):
             return
         actor = reason = audit_id = None
         # Atualizações de sobrescrita são ações distintas de channel_update.
@@ -1161,6 +1741,18 @@ class LogsRoyal(commands.Cog):
                     actor = getattr(entry.user, 'id', None)
                     reason, audit_id = entry.reason, entry.id
                 changes['alvo_permissao_id'] = rid
+                affected = next((t for t in (set(before.overwrites) | set(after.overwrites))
+                                 if t.id == rid), None)
+                changes['alvo_permissao_tipo'] = ('role' if isinstance(affected, discord.Role)
+                                                  else 'member' if isinstance(affected, discord.Member)
+                                                  else 'unknown')
+                before_flags = dict(b[rid]) if rid in b else {}
+                after_flags = dict(a[rid]) if rid in a else {}
+                changes['permissoes_alteradas'] = {
+                    flag: {'antes': before_flags.get(flag), 'depois': after_flags.get(flag)}
+                    for flag in before_flags.keys() | after_flags.keys()
+                    if before_flags.get(flag) != after_flags.get(flag)
+                }
         else:
             for key in ('name', 'topic', 'slowmode_delay', 'nsfw', 'position'):
                 if key in changes:
@@ -1171,17 +1763,21 @@ class LogsRoyal(commands.Cog):
                     )
                     break
         await self.event(
-            after.guild, category='administracao', action='channel_update',
-            summary=f'Canal {after.name} alterado: {", ".join(k for k in changes if k != "alvo_permissao_id")}.',
+            after.guild, category='administracao', action=chosen_action,
+            summary=f'Canal {after.name} alterado: {", ".join(k for k in changes if k not in ("alvo_permissao_id", "alvo_permissao_tipo", "permissoes_alteradas"))}.',
             actor_id=actor, channel_id=after.id,
             details={'mudancas': changes, 'motivo': reason,
-                     'audit_entry_id': audit_id, 'canal': after.name},
-            dedupe_key=f'channel_update:{audit_id}' if audit_id else None,
+                     'audit_entry_id': audit_id, 'canal': after.name,
+                     'alvo_permissao_id': changes.get('alvo_permissao_id'),
+                     'alvo_permissao_tipo': changes.get('alvo_permissao_tipo')},
+            dedupe_key=f'{chosen_action}:{audit_id}' if audit_id else None,
             critical='permissoes' in changes,
         )
 
     @commands.Cog.listener()
     async def on_guild_role_create(self, role: discord.Role):
+        if not await self.is_enabled(role.guild, 'role_create'):
+            return
         actor, reason, audit_id = await self.audit(role.guild, discord.AuditLogAction.role_create,
                                          target_id=role.id)
         await self.event(role.guild, category='cargos', action='role_create',
@@ -1192,6 +1788,8 @@ class LogsRoyal(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_role_delete(self, role: discord.Role):
+        if not await self.is_enabled(role.guild, 'role_delete'):
+            return
         actor, reason, audit_id = await self.audit(role.guild, discord.AuditLogAction.role_delete,
                                          target_id=role.id)
         await self.event(role.guild, category='cargos', action='role_delete',
@@ -1214,6 +1812,9 @@ class LogsRoyal(commands.Cog):
         if before.colour != after.colour:
             changes['cor'] = {'antes': str(before.colour), 'depois': str(after.colour)}
         if not changes:
+            return
+        relevant_action = 'role_permissions' if 'permissoes' in changes else 'role_update'
+        if not await self.is_enabled(after.guild, relevant_action):
             return
         actor = reason = audit_id = None
         key_map = {
