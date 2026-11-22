@@ -43,23 +43,27 @@ CONCEDER_CARGOS_AUTOMATICAMENTE = True
 PREMIACOES = {
     "candidato_divisao": dict(nome="Candidato em uma divisão", raridade="epic", chance="0.0050", estoque=2, cargo_id=0, banner="candidato_divisao", ativo=True,
                                descricao="Candidatura em divisão do E.B; requisitos sujeitos à validação da equipe."),
-    "sub_civil": dict(nome="Sub Civil", raridade="legendary", chance="0.030", estoque=1, cargo_id=0, banner="sub_civil", ativo=True,
-                      descricao="Sub Civil no E.B. A equipe confirmará as condições no ticket."),
+    "fruta_permanente": dict(nome="Fruta Permanente", raridade="legendary", chance="0.030", estoque=1, cargo_id=0, banner="fruta_permanente", ativo=True,
+                      descricao="Fruta Permanente aleatória no Blox Fruit."),
+    "Candidato_CIGS": dict(nome="Candidato CIGS", raridade="legendary", chance="0.0030", estoque=1, cargo_id=0, banner="Candidato_CIGS", ativo=True,
+                          descricao="Candidato CIGS no E.B."),
+    "Minerio_aleatório": dict(nome="Minério Aleatório", raridade="legendary", chance="0.020", estoque=1, cargo_id=0, banner="Minerio_aleatório", ativo=True,
+                          descricao="Minério aleatório no servidor do E.B"),                                        
     "nitro_basico": dict(nome="Discord Nitro Básico", raridade="secret", chance="0.00015", estoque=1, cargo_id=0, banner="nitro_basico", ativo=True,
                          descricao="Nitro Básico; resgate sujeito à elegibilidade e disponibilidade."),
     "nitro_normal": dict(nome="Discord Nitro Normal", raridade="secret", chance="0.00018", estoque=1, cargo_id=0, banner="nitro_normal", ativo=True,
                          descricao="Nitro Normal; resgate sujeito à elegibilidade e disponibilidade."),
     "500_robux": dict(nome="500 Robux", raridade="secret", chance="0.00015", estoque=1, cargo_id=0, banner="500_robux", ativo=True,
                       descricao="500 Robux; a forma de entrega será acertada no ticket."),
-    "clover": dict(nome="Clover", raridade="legendary", chance="0.2", estoque=1,
+    "clover": dict(nome="Clover", raridade="legendary", chance="5.0", estoque=1,
                    cargo_id=1572848152548085871, banner="clover", ativo=True,
                    descricao="Cargo exclusivo Clover da Família ROYAL."),
-    "demon_night": dict(nome="Demon Night", raridade="legendary", chance="0.001", estoque=1,
+    "demon_night": dict(nome="Demon Night", raridade="legendary", chance="1.0", estoque=1,
                         cargo_id=1569948996573597726, banner="demon_night", ativo=True,
                         descricao="Cargo exclusivo Demon Night da Família ROYAL."),
     "decoracao_perfil": dict(nome="Decoração de Perfil Aleatória (Discord)", raridade="legendary", chance="0.00035", estoque=1,
                              cargo_id=0, banner="decoracao_perfil", ativo=True,
-                             descricao="Decoração de perfil aleatória; entrega sujeita à disponibilidade."),
+                             descricao="Decoração de perfil aleatória."),
 }
 # ========================================================================
 
@@ -259,7 +263,8 @@ class PainelLucky(discord.ui.LayoutView):
             "> ☰ `👹` Cargos exclusivos da Família ROYAL\n"
             "> ☰ `💜` Discord Nitro (Básico ou Normal)\n"
             "> ☰ `🎨` Decoração de perfil\n"
-            "> ☰ `🤓` Sub Civil no E.B ou candidato de divisão\n"
+            "> ☰ `🐆` Candidato do CIGS\n"
+            "> ☰ `💎` Minério aleatório (cargo no E.B)\n"
             "> ☰ `💸` 500 Robux\n\n"
             "### Observações\n"
             "> ☰ `🛎️` As chances são extremamente baixas; depende da sua sorte.\n"
