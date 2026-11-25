@@ -21,7 +21,7 @@ from discord.ext import commands
 LOG = logging.getLogger("sants.bot.lucky_block")
 
 # ========================= CONFIGURAÇÃO PRIVADA =========================
-CANAL_PAINEL = 1572639152737091654
+CANAL_PAINEL = 1572785659108917439
 CANAL_REGISTROS = 1572355776377266176
 CANAL_ESTOQUE = 1573584140719357972  # Avisos públicos de reposição
 ID_DONO_DISCORD = 925863471902503033  # Apenas o dono abastece/consulta estoque e altera configurações
@@ -979,7 +979,7 @@ class LuckyBlockRoyal(commands.Cog):
             row["user_id"], nome, raridade, f"LB-{abertura_id:06d}")
         banner = banner_anuncio_premio(
             raridade, row["reward_banner_url"] or (premio["banner"] if premio else ""))
-        view = cartao("🎉 PRÊMIO ESPECIAL ENCONTRADO!", mensagem, banner)
+        view = cartao("<a:luck:1575023399833567272> PRÊMIO ESPECIAL ENCONTRADO!", mensagem, banner)
         # A marcação de todos deve ser um content real: menções em componentes não geram ping.
         everyone = raridade == "secret" and AVISAR_EVERYONE_SECRETOS
         try:
@@ -1020,7 +1020,7 @@ class LuckyBlockRoyal(commands.Cog):
         banner = banner_anuncio_premio(
             row["reward_rarity"] or (premio["raridade"] if premio else "empty"),
             row["reward_banner_url"] or (premio["banner"] if premio else ""))
-        view = cartao("🎉 PRÊMIO ESPECIAL ENCONTRADO!", txt, banner)
+        view = cartao("<a:luck:1575023399833567272> PRÊMIO ESPECIAL ENCONTRADO!", txt, banner)
         await msg.edit(content=None, embeds=[], view=view, **anexo_edicao(view))
 
     async def verificar_e_publicar_comprovante(self, ticket: discord.TextChannel, abertura_id: int, usuario_id: int) -> bool:
@@ -1739,7 +1739,7 @@ class LuckyBlockRoyal(commands.Cog):
                     # Prévia da apresentação real, sem texto de teste. Não cria vitória no banco.
                     conteudo = texto_anuncio_premio(
                         ctx.author.id, premio["nome"], premio["raridade"], "LB-000000")
-                    view = cartao("🎉 PRÊMIO ESPECIAL ENCONTRADO!", conteudo,
+                    view = cartao("<a:luck:1575023399833567272> PRÊMIO ESPECIAL ENCONTRADO!", conteudo,
                         banner_anuncio_premio(premio["raridade"], premio["banner"]))
                 else:
                     view = mensagem_premio(ctx.guild.id if ctx.guild else 0,
@@ -1785,7 +1785,7 @@ class LuckyBlockRoyal(commands.Cog):
             return
 
         # Anúncio usa o mesmo layout e banner que um ganho efetivo.
-        titulo = "🎉 PRÊMIO ESPECIAL ENCONTRADO!"
+        titulo = "<a:luck:1575023399833567272> PRÊMIO ESPECIAL ENCONTRADO!"
         texto = texto_anuncio_premio(ctx.author.id, premio["nome"],
                                      premio["raridade"], "LB-000000")
         banner = banner_anuncio_premio(premio["raridade"], premio["banner"])
