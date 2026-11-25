@@ -48,37 +48,171 @@ META_COMUNITARIA_MENSAL = 300  # Meta apenas comemorativa: não dá prêmios aut
 MARCOS_COMUNIDADE = ((50, "Primeira centelha"), (150, "Energia da Família"), (300, "Legado ROYAL"))
 LIMIAR_ALERTA_ESTOQUE = 1  # Alertar a equipe ao chegar a 1 unidade e ao zerar.
 EXIGIR_APROVACAO_ENTREGA_MANUAL = True  # Para prêmios de entrega manual.
-# OBS.: cargos com CONCEDER_CARGOS_AUTOMATICAMENTE=True permanecem automáticos.
-# O banner secreto aparece no anúncio público. A DM preserva a imagem individual do prêmio.
 AVISAR_EVERYONE_SECRETOS = True
 CONCEDER_CARGOS_AUTOMATICAMENTE = True
-
 PREMIACOES = {
-    "candidato_divisao": dict(nome="Candidato em uma divisão", raridade="epic", chance="0.0050", estoque=2, cargo_id=0, banner="candidato_divisao", ativo=True,
-                               descricao="Candidatura em divisão do E.B; requisitos sujeitos à validação da equipe."),
-    "fruta_permanente": dict(nome="Fruta Permanente", raridade="legendary", chance="0.030", estoque=1, cargo_id=0, banner="fruta_permanente", ativo=True,
-                      descricao="Fruta Permanente aleatória no Blox Fruit."),
-    "Candidato_CIGS": dict(nome="Candidato CIGS", raridade="legendary", chance="0.0030", estoque=1, cargo_id=0, banner="Candidato_CIGS", ativo=True,
-                          descricao="Candidato CIGS no E.B."),
-    "Minerio_aleatório": dict(nome="Minério Aleatório", raridade="legendary", chance="0.020", estoque=1, cargo_id=0, banner="Minerio_aleatório", ativo=True,
-                          descricao="Minério aleatório no servidor do E.B"),                                        
-    "nitro_basico": dict(nome="Discord Nitro Básico", raridade="secret", chance="0.00015", estoque=1, cargo_id=0, banner="nitro_basico", ativo=True,
-                         descricao="Nitro Básico; resgate sujeito à elegibilidade e disponibilidade."),
-    "nitro_normal": dict(nome="Discord Nitro Normal", raridade="secret", chance="0.00018", estoque=1, cargo_id=0, banner="nitro_normal", ativo=True,
-                         descricao="Nitro Normal; resgate sujeito à elegibilidade e disponibilidade."),
-    "500_robux": dict(nome="500 Robux", raridade="secret", chance="0.00015", estoque=1, cargo_id=0, banner="500_robux", ativo=True,
-                      descricao="500 Robux; a forma de entrega será acertada no ticket."),
-    "clover": dict(nome="Clover", raridade="legendary", chance="5.0", estoque=1,
-                   cargo_id=1572848152548085871, banner="clover", ativo=True,
-                   descricao="Cargo exclusivo Clover da Família ROYAL."),
-    "demon_night": dict(nome="Demon Night", raridade="legendary", chance="1.0", estoque=1,
-                        cargo_id=1569948996573597726, banner="demon_night", ativo=True,
-                        descricao="Cargo exclusivo Demon Night da Família ROYAL."),
-    "decoracao_perfil": dict(nome="Decoração de Perfil Aleatória (Discord)", raridade="legendary", chance="0.00035", estoque=1,
-                             cargo_id=0, banner="decoracao_perfil", ativo=True,
-                             descricao="Decoração de perfil aleatória."),
+
+    # --------------------------------------------------------
+    # 01 - CANDIDATO EM UMA DIVISAO
+    # RARIDADE: EPICA | CHANCE: 0.50%
+    # --------------------------------------------------------
+
+    "candidato_divisao": dict(
+        nome="Candidato em uma divisão",
+        raridade="epic",
+        chance="0.50",
+        estoque=2,
+        cargo_id=0,
+        banner="candidato_divisao",
+        ativo=True,
+        descricao="Candidatura em divisão do E.B; requisitos sujeitos à validação da equipe.",
+    ),
+
+    # --------------------------------------------------------
+    # 02 - FRUTA PERMANENTE
+    # RARIDADE: LENDARIA | CHANCE: 0.015%
+    # --------------------------------------------------------
+
+    "fruta_permanente": dict(
+        nome="Fruta Permanente",
+        raridade="legendary",
+        chance="0.015",
+        estoque=1,
+        cargo_id=0,
+        banner="fruta_permanente",
+        ativo=True,
+        descricao="Fruta Permanente aleatória no Blox Fruit.",
+    ),
+
+    # --------------------------------------------------------
+    # 03 - CANDIDATO CIGS
+    # RARIDADE: LENDARIA | CHANCE: 0.10%
+    # --------------------------------------------------------
+
+    "Candidato_CIGS": dict(
+        nome="Candidato CIGS",
+        raridade="legendary",
+        chance="0.10",
+        estoque=1,
+        cargo_id=0,
+        banner="Candidato_CIGS",
+        ativo=True,
+        descricao="Candidato CIGS no E.B.",
+    ),
+
+    # --------------------------------------------------------
+    # 04 - MINERIO ALEATORIO
+    # RARIDADE: RARA | CHANCE: 0.20%
+    # --------------------------------------------------------
+
+    "Minerio_aleatório": dict(
+        nome="Minério Aleatório",
+        raridade="rare",
+        chance="0.20",
+        estoque=1,
+        cargo_id=0,
+        banner="Minerio_aleatório",
+        ativo=True,
+        descricao="Minério aleatório no servidor do E.B",
+    ),
+
+    # --------------------------------------------------------
+    # 05 - DISCORD NITRO BASICO
+    # RARIDADE: SECRETA | CHANCE: 0.008%
+    # --------------------------------------------------------
+
+    "nitro_basico": dict(
+        nome="Discord Nitro Básico",
+        raridade="secret",
+        chance="0.008",
+        estoque=1,
+        cargo_id=0,
+        banner="nitro_basico",
+        ativo=True,
+        descricao="Nitro Básico; resgate sujeito à elegibilidade e disponibilidade.",
+    ),
+
+    # --------------------------------------------------------
+    # 06 - DISCORD NITRO NORMAL
+    # RARIDADE: SECRETA | CHANCE: 0.003%
+    # --------------------------------------------------------
+
+    "nitro_normal": dict(
+        nome="Discord Nitro Normal",
+        raridade="secret",
+        chance="0.003",
+        estoque=1,
+        cargo_id=0,
+        banner="nitro_normal",
+        ativo=True,
+        descricao="Nitro Normal; resgate sujeito à elegibilidade e disponibilidade.",
+    ),
+
+    # --------------------------------------------------------
+    # 07 - 500 ROBUX
+    # RARIDADE: SECRETA | CHANCE: 0.004%
+    # --------------------------------------------------------
+
+    "500_robux": dict(
+        nome="500 Robux",
+        raridade="secret",
+        chance="0.004",
+        estoque=1,
+        cargo_id=0,
+        banner="500_robux",
+        ativo=True,
+        descricao="500 Robux; a forma de entrega será acertada no ticket.",
+    ),
+
+    # --------------------------------------------------------
+    # 08 - CLOVER
+    # RARIDADE: RARA | CHANCE: 5.00%
+    # --------------------------------------------------------
+
+    "clover": dict(
+        nome="Clover",
+        raridade="rare",
+        chance="5.00",
+        estoque=1,
+        cargo_id=1572848152548085871,
+        banner="clover",
+        ativo=True,
+        descricao="Cargo exclusivo Clover da Família ROYAL.",
+    ),
+
+    # --------------------------------------------------------
+    # 09 - DEMON NIGHT
+    # RARIDADE: EPICA | CHANCE: 1.00%
+    # --------------------------------------------------------
+
+    "demon_night": dict(
+        nome="Demon Night",
+        raridade="epic",
+        chance="1.00",
+        estoque=1,
+        cargo_id=1569948996573597726,
+        banner="demon_night",
+        ativo=True,
+        descricao="Cargo exclusivo Demon Night da Família ROYAL.",
+    ),
+
+    # --------------------------------------------------------
+    # 10 - DECORACAO DE PERFIL
+    # RARIDADE: LENDARIA | CHANCE: 0.020%
+    # --------------------------------------------------------
+
+    "decoracao_perfil": dict(
+        nome="Decoração de Perfil Aleatória (Discord)",
+        raridade="legendary",
+        chance="0.020",
+        estoque=1,
+        cargo_id=0,
+        banner="decoracao_perfil",
+        ativo=True,
+        descricao="Decoração de perfil aleatória.",
+    ),
+
 }
-# ========================================================================
 
 TOTAL_SORTEIO = 10_000_000  # 0.00001% por bilhete
 CORES = discord.Colour.from_rgb(91, 79, 187)
@@ -1126,13 +1260,13 @@ class LuckyBlockRoyal(commands.Cog):
         secretas = int(row['secretas'] or 0)
         diferentes = int(row['diferentes'] or 0)
         conquistas = [
-            (abertas >= 1, '🌱 Primeira Lucky Block'),
-            (abertas >= 25, '📦 Explorador de caixas'),
-            (abertas >= 100, '🏛️ Veterano ROYAL'),
-            (epicas > 0, '⚡ Descobridor épico'),
-            (lendarias > 0, '💎 Lenda da Família'),
-            (secretas > 0, '👑 Segredo revelado'),
-            (diferentes >= 3, '🏅 Colecionador'),
+            (abertas >= 1, '`🍀` Primeira Lucky Block'),
+            (abertas >= 25, '`📦` Explorador de caixas'),
+            (abertas >= 100, '`🏛️` Veterano ROYAL'),
+            (epicas > 0, '`⚡` Descobridor épico'),
+            (lendarias > 0, '`💎` Lenda da Família'),
+            (secretas > 0, '`👑` Segredo revelado'),
+            (diferentes >= 3, '`🏅` Colecionador'),
         ]
         selos = '\n'.join(f"{'✅' if ganhou else '🔒'} {titulo}" for ganhou,titulo in conquistas)
         return ("**☰ MEU ÁLBUM**\n"
@@ -1170,9 +1304,7 @@ class LuckyBlockRoyal(commands.Cog):
         return ("**☰ DESAFIO COLETIVO — TEMPORADA ATUAL**\n"
                 f"> `📦` **Aberturas da Família:** {feitas}/{meta}\n"
                 f"> `🎯` **Progresso:** {min(100, feitas*100//max(1,meta))}%\n"
-                f"{barra}\n\n**☰ MARCOS COMUNITÁRIOS**\n{marcos}\n\n"
-                "-# Conquistas simbólicas: nenhuma alteração nas chances nem prêmios extras. "
-                "Renova no início de cada mês (UTC).")
+                f"{barra}\n\n**☰ MARCOS COMUNITÁRIOS**\n{marcos}\n\n")
 
     async def exibir_revelacao(self, interaction: discord.Interaction, titulo: str,
                               descricao: str, banner: str) -> None:
