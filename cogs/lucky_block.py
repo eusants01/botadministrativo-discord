@@ -24,13 +24,35 @@ LOG = logging.getLogger("sants.bot.lucky_block")
 CANAL_PAINEL = 1572785659108917439
 CANAL_REGISTROS = 1572355776377266176
 CANAL_ESTOQUE = 1573584140719357972  # Avisos públicos de reposição
-ID_DONO_DISCORD = 925863471902503033  # Única conta autorizada a consultar/alterar estoque
+ID_DONO_DISCORD = 925863471902503033  # Apenas o dono abastece/consulta estoque e altera configurações
+# Configure manualmente os IDs dos cargos da Família ROYAL autorizados a conferir
+# comprovantes e registrar a validação formal; estes cargos NÃO editam estoque.
+CARGOS_VALIDADORES = ()  # Ex.: (111111111111111111, 222222222222222222)
+# Pessoas destes cargos recebem DM quando uma recompensa chega a estoque zero.
+CARGOS_ALERTA_ESTOQUE = CARGOS_VALIDADORES  # Por padrão, os mesmos cargos validam e recebem alertas
+# IDs diretos opcionais, úteis caso o bot não tenha o intent privilegiado de membros.
+USUARIOS_ALERTA_ESTOQUE = ()  # Ex.: (444444444444444444,)
 ABERTURAS_POR_CICLO = 7
-HORAS_APOS_ULTIMA_ABERTURA = 3  # a espera começa SOMENTE após a 5ª abertura
+HORAS_APOS_ULTIMA_ABERTURA = 3  # a espera começa SOMENTE após a última abertura do ciclo
 BANNER_PAINEL = "assets/lucky_block/painel.png"
 BANNER_CAIXA_VAZIA = "caixa_vazia"
 BANNER_REPOSICAO = "reposicao_estoque"  # assets/lucky_block/reposicao_estoque.png
 BANNER_PREMIO_SECRETO = "recompensa_secreta"  # assets/lucky_block/recompensa_secreta.png
+# As seguintes imagens são OPCIONAIS. O sistema funciona mesmo sem os arquivos.
+# Basta colocar suas artes em assets/lucky_block/ e utilizar estes nomes.
+BANNER_ABERTURA = "abertura_misteriosa"           # abertura_misteriosa.png (ou GIF)
+BANNER_REVELACAO = "abertura_revelacao"           # abertura_revelacao.png (ou GIF)
+BANNER_COLECAO = "colecao"                        # colecao.png
+BANNER_RANKING = "ranking"                        # ranking.png
+BANNER_META = "meta_comunitaria"                 # meta_comunitaria.png
+BANNER_RESGATES = "central_resgates"             # central_resgates.png
+ATIVAR_ABERTURA_CINEMATOGRAFICA = True
+SEGUNDOS_SUSPENSE = 1.0  # Intervalo visual curto; não altera sorteios nem cooldown.
+META_COMUNITARIA_MENSAL = 300  # Meta apenas comemorativa: não dá prêmios automaticamente.
+MARCOS_COMUNIDADE = ((50, "Primeira centelha"), (150, "Energia da Família"), (300, "Legado ROYAL"))
+LIMIAR_ALERTA_ESTOQUE = 1  # Alertar a equipe ao chegar a 1 unidade e ao zerar.
+EXIGIR_APROVACAO_ENTREGA_MANUAL = True  # Para prêmios de entrega manual.
+# OBS.: cargos com CONCEDER_CARGOS_AUTOMATICAMENTE=True permanecem automáticos.
 # O banner secreto aparece no anúncio público. A DM preserva a imagem individual do prêmio.
 AVISAR_EVERYONE_SECRETOS = True
 CONCEDER_CARGOS_AUTOMATICAMENTE = True
@@ -38,8 +60,13 @@ CONCEDER_CARGOS_AUTOMATICAMENTE = True
 # Os valores abaixo conservam as chances da última versão fornecida pelo usuário.
 # "estoque" é inicial SOMENTE para prêmios ainda não existentes no banco.
 # O estoque atual passa a ser administrado pelo painel privado e nunca é reabastecido no reinício.
-# Banners individuais: coloque o nome do arquivo em assets/lucky_block/
-# (sem extensão aceita .png, .jpg, .jpeg, .webp ou .gif).
+# BANNERS POR RECOMPENSA: o campo `banner="..."` de CADA prêmio é independente.
+# Ex.: banner="clover" procura assets/lucky_block/clover.png (ou .jpg/.gif/.webp).
+# Você pode usar banner="subpasta/arquivo"; imagens ausentes não travam o bot.
+# (Aceitas extensões .png, .jpg, .jpeg, .webp e .gif).
+# Os 10 espaços abaixo são independentes. Para personalizar, troque apenas o valor do banner.
+# O banner individual é exibido na DM, no comprovante e no resultado do vencedor.
+# Secretos usam BANNER_PREMIO_SECRETO apenas no anúncio público.
 PREMIACOES = {
     "candidato_divisao": dict(nome="Candidato em uma divisão", raridade="epic", chance="0.0050", estoque=2, cargo_id=0, banner="candidato_divisao", ativo=True,
                                descricao="Candidatura em divisão do E.B; requisitos sujeitos à validação da equipe."),
@@ -74,6 +101,7 @@ RARIDADES = {"empty": ("Caixa vazia", 0), "epic": ("Épica", 100),
              "rare": ("Rara", 10)}
 PASTA_ASSETS = Path(__file__).resolve().parent.parent / "assets"
 EXTENSOES = (".png", ".jpg", ".jpeg", ".webp", ".gif")
+_BANNERS_AUSENTES_AVISADOS: set[str] = set()  # Evita repetir aviso em cada abertura.
 
 for codigo, premio in PREMIACOES.items():
     premio["banner"] = premio.get("banner") or codigo
@@ -127,6 +155,12 @@ def raridade_nome(raridade: str) -> str:
     return RARIDADES.get(raridade, ("Desconhecida", 0))[0]
 
 
+def codigo_premiacao(valor: str) -> str:
+    """Resolve letras maiúsculas/minúsculas sem alterar as chaves reais do catálogo."""
+    entrada = valor.strip().casefold()
+    return next((codigo for codigo in PREMIACOES if codigo.casefold() == entrada), valor.strip())
+
+
 def banner_arquivo(referencia: str) -> Path | str | None:
     if not referencia:
         return None
@@ -157,7 +191,9 @@ def banner_arquivo(referencia: str) -> Path | str | None:
                     and (not base.suffix or arquivo.suffix.casefold() == base.suffix.casefold())
                     and arquivo.resolve().is_relative_to(PASTA_ASSETS.resolve())):
                     return arquivo
-    LOG.warning("Banner não localizado em assets: %s", referencia)
+    if referencia not in _BANNERS_AUSENTES_AVISADOS:
+        _BANNERS_AUSENTES_AVISADOS.add(referencia)
+        LOG.warning("Banner não localizado em assets: %s", referencia)
     return None
 
 
@@ -217,6 +253,12 @@ def recibo(abertura: dict, membro_id: int, *, teste=False) -> str:
         "delivered": "✅ Entregue",
         "TESTE": "🧪 Simulação, sem premiação real",
     }.get(status_raw, status_raw)
+    data_validacao = abertura.get("validated_at")
+    validador = abertura.get("validated_by")
+    validacao = (f"> `✅` **Validação:** confirmada por <@{validador}> "
+                f"em <t:{int(data_validacao.timestamp())}:f>\n"
+                if data_validacao and validador else
+                "> `⏳` **Validação:** ainda não realizada\n")
     return (
         "**☰ IDENTIFICAÇÃO DO GANHADOR**\n"
         f"> `👤` **Beneficiário:** <@{membro_id}>\n"
@@ -226,11 +268,13 @@ def recibo(abertura: dict, membro_id: int, *, teste=False) -> str:
         "**☰ INFORMAÇÕES DA PREMIAÇÃO**\n"
         f"> `🎁` **Recompensa:** {premio['nome']}\n"
         f"> `💎` **Raridade:** {raridade_nome(premio['raridade'])}\n"
-        f"> `📋` **Situação:** {status}\n\n"
+        f"> `📋` **Situação:** {status}\n"
+        + validacao + (f"> `🔎` **Revisão pendente:** {discord.utils.escape_markdown(abertura['review_reason'][:180])}\n"
+                      if abertura.get('review_reason') else '') + "\n"
         "**☰ AUTENTICIDADE E RESGATE**\n"
         "> `🛒` Este comprovante é **individual e intransferível**.\n"
         "> `🎟️` A entrega é conferida pela equipe neste ticket.\n"
-        "> `✅` A administração valida o protocolo no banco com `!luckyvalidar ID`.\n"
+        "> `✅` A equipe confere com `!luckyvalidar ID` e aprova com `!luckyaprovar ID`.\n"
         + ("\n-# 🧪 Documento demonstrativo; não gera direito a prêmio."
            if teste else "\n-# 👑 Família ROYAL • Registro oficial do Lucky Block")
     )
@@ -257,8 +301,8 @@ class PainelLucky(discord.ui.LayoutView):
         cont.add_item(discord.ui.TextDisplay(
             aviso + "## <:luckblock:1572868783725609083> LUCKY BLOCK - FAMÍLIA ROYAL\n\n"
             "Teste sua sorte nas Lucky Blocks e concorra a prêmios exclusivos. "
-            "Você possui **7 aberturas**; ao terminar as sete, novas tentativas "
-            "ficam disponíveis **3 horas depois da última abertura**.\n\n"
+            f"Você possui **{ABERTURAS_POR_CICLO} aberturas**; ao terminar todas, novas tentativas "
+            f"ficam disponíveis **{HORAS_APOS_ULTIMA_ABERTURA} horas depois da última abertura**.\n\n"
             "### Premiações\n"
             "> ☰ `👹` Cargos exclusivos da Família ROYAL\n"
             "> ☰ `💜` Discord Nitro (Básico ou Normal)\n"
@@ -278,6 +322,8 @@ class PainelLucky(discord.ui.LayoutView):
         linha.add_item(AcaoPainel("abrir", "Abrir", "<:luckblock:1572868783725609083>", discord.ButtonStyle.success))
         linha.add_item(AcaoPainel("historico", "Histórico", "📜", discord.ButtonStyle.secondary))
         linha.add_item(AcaoPainel("ranking", "Ranking", "<:versustrophy:1564669597440016485>", discord.ButtonStyle.secondary))
+        linha.add_item(AcaoPainel("colecao", "Coleção", "🏅", discord.ButtonStyle.secondary))
+        linha.add_item(AcaoPainel("meta", "Meta", "🌟", discord.ButtonStyle.secondary))
         if teste:
             for botao in linha.children:
                 botao.disabled = True
@@ -360,7 +406,7 @@ def cartao_reposicao(codigo: str, anterior: int, atual: int, *, teste=False) -> 
         f"> `📦` **Unidades adicionadas:** +{adicionadas}\n"
         f"> `📊` **Estoque disponível:** {anterior} → **{atual}**\n"
         f"> `🎯` **Onde participar:** <#{CANAL_PAINEL}>\n"
-        f"> `🎟️` **Tentativas:** 5 aberturas; após a quinta, renovação em 8 horas.\n"
+        f"> `🎟️` **Tentativas:** {ABERTURAS_POR_CICLO} aberturas; após a última, renovação em {HORAS_APOS_ULTIMA_ABERTURA} horas.\n"
         "**☰ BOA SORTE!**\n"
         f"> `🍀` Sua próxima abertura pode guardar uma surpresa.\n"
         f"> `🎉` Participe e concorra a prêmios exclusivos da Família ROYAL."
@@ -391,7 +437,7 @@ class ModalEstoque(discord.ui.Modal, title="Estoque • Lucky Block"):
             return await interaction.response.send_message("❌ Informe um número de 0 a 100000.", ephemeral=True)
         await interaction.response.defer(ephemeral=True, thinking=True)
         try:
-            await cog.alterar_estoque(self.guild_id, self.codigo, quantidade)
+            await cog.alterar_estoque(self.guild_id, self.codigo, quantidade, interaction.user.id)
             await interaction.followup.send(
                 f"✅ `{self.codigo}`: **{quantidade}** unidade(s) disponíveis. "
                 "O sorteio e as probabilidades não foram alterados.", ephemeral=True)
@@ -426,6 +472,89 @@ class PainelEstoque(discord.ui.LayoutView):
         linha = discord.ui.ActionRow()
         linha.add_item(SeletorEstoque(guild_id))
         cont.add_item(linha)
+        self.add_item(cont)
+
+
+class BotaoDetalheResgate(discord.ui.Button):
+    def __init__(self, guild_id: int, abertura_id: int, acao: str):
+        self.guild_id = guild_id
+        self.abertura_id = abertura_id
+        self.acao = acao
+        if acao == 'aprovar':
+            super().__init__(label='Aprovar comprovante', emoji='✅', style=discord.ButtonStyle.success)
+        else:
+            super().__init__(label='Confirmar entrega', emoji='📦', style=discord.ButtonStyle.primary)
+
+    async def callback(self, interaction: discord.Interaction):
+        cog = interaction.client.get_cog('LuckyBlockRoyal')
+        if cog is None:
+            return await interaction.response.send_message('❌ Sistema indisponível.', ephemeral=True)
+        await cog.acao_resgate_painel(interaction, self.guild_id, self.abertura_id, self.acao)
+
+
+class DetalheResgate(discord.ui.LayoutView):
+    def __init__(self, guild_id: int, abertura_id: int, texto: str, dono: bool):
+        super().__init__(timeout=600)
+        cont = discord.ui.Container(accent_colour=CORES)
+        self._lucky_banner = adicionar_banner(cont, BANNER_RESGATES)
+        cont.add_item(discord.ui.TextDisplay('## 🎟️ ACOMPANHAMENTO DO RESGATE\n' + texto))
+        linha = discord.ui.ActionRow()
+        linha.add_item(BotaoDetalheResgate(guild_id, abertura_id, 'aprovar'))
+        if dono:
+            linha.add_item(BotaoDetalheResgate(guild_id, abertura_id, 'entregar'))
+        cont.add_item(linha)
+        self.add_item(cont)
+
+
+class SeletorResgates(discord.ui.Select):
+    def __init__(self, guild_id: int, rows):
+        self.guild_id = guild_id
+        opcoes = [discord.SelectOption(label=f"LB-{r['opening_id']:06d} • {(r['reward_name'] or r['reward_code'])[:70]}",
+                     value=str(r['opening_id']), description=f"Ganhador: {r['user_id']}"[:95])
+                  for r in rows]
+        super().__init__(placeholder='Selecione um comprovante para consultar', options=opcoes)
+
+    async def callback(self, interaction: discord.Interaction):
+        cog = interaction.client.get_cog('LuckyBlockRoyal')
+        if cog is None:
+            return await interaction.response.send_message('❌ Sistema indisponível.', ephemeral=True)
+        guild = cog.bot.get_guild(self.guild_id)
+        if not guild or not await cog.pode_validar(interaction.user, guild):
+            return await interaction.response.send_message('❌ Acesso restrito aos validadores.', ephemeral=True)
+        abertura_id = int(self.values[0])
+        row = await cog.bot.pool.fetchrow('SELECT * FROM lucky_wins WHERE guild_id=$1 AND opening_id=$2',
+                                          self.guild_id, abertura_id)
+        if not row:
+            return await interaction.response.send_message('❌ Registro não encontrado.', ephemeral=True)
+        estado = ('✅ Entregue' if row['status']=='delivered' else
+                  ('🔎 Em revisão' if row['review_reason'] else
+                   ('✅ Validado' if row['validated_at'] else '⏳ Aguardando validação')))
+        texto = (f"> `📜` **Protocolo:** `LB-{abertura_id:06d}`\n"
+                 f"> `👤` **Ganhador:** <@{row['user_id']}>\n"
+                 f"> `🎁` **Recompensa:** {row['reward_name'] or row['reward_code']}\n"
+                 f"> `📋` **Situação:** {estado}\n"
+                 f"> `🎟️` **Ticket:** {f'<#{row["ticket_channel_id"]}>' if row['ticket_channel_id'] else 'Pendente'}\n\n"
+                 f'`!luckyvalidar {abertura_id}` — Conferir autenticidade\n'
+                 f'`!luckyaprovar {abertura_id}` — Aprovar formalmente\n'
+                 f'`!luckyrevisar {abertura_id} motivo` — Anotar pendência\n'
+                 + (f'`!luckyentregar {abertura_id}` — Confirmar entrega (dono)' if interaction.user.id==ID_DONO_DISCORD else
+                    'A confirmação final de entrega é exclusiva do dono.'))
+        view = DetalheResgate(self.guild_id, abertura_id, texto, interaction.user.id == ID_DONO_DISCORD)
+        await interaction.response.send_message(view=view, ephemeral=True, **anexo_envio(view))
+
+
+class PainelResgates(discord.ui.LayoutView):
+    def __init__(self, guild_id: int, texto: str, rows):
+        super().__init__(timeout=900)
+        cont = discord.ui.Container(accent_colour=CORES)
+        self._lucky_banner = adicionar_banner(cont, BANNER_RESGATES)
+        cont.add_item(discord.ui.TextDisplay(
+            '## 🛡️ CENTRAL DE RESGATES — ROYAL\n'
+            + texto + '\n\n-# Validação não equivale à entrega. Estoque continua exclusivo do proprietário.'))
+        if rows:
+            linha = discord.ui.ActionRow()
+            linha.add_item(SeletorResgates(guild_id, rows))
+            cont.add_item(linha)
         self.add_item(cont)
 
 
@@ -474,6 +603,20 @@ class LuckyBlockRoyal(commands.Cog):
                 ("public_claimed_at", "TIMESTAMPTZ"), ("ticket_channel_id", "BIGINT"),
                 ("dm_sent_at", "TIMESTAMPTZ"), ("ticket_claimed_at", "TIMESTAMPTZ")):
                 await con.execute(f"ALTER TABLE lucky_wins ADD COLUMN IF NOT EXISTS {coluna} {tipo}")
+            # Aprovação formal não altera o status de entrega original.
+            await con.execute("ALTER TABLE lucky_wins ADD COLUMN IF NOT EXISTS validated_at TIMESTAMPTZ")
+            await con.execute("ALTER TABLE lucky_wins ADD COLUMN IF NOT EXISTS validated_by BIGINT")
+            await con.execute("ALTER TABLE lucky_wins ADD COLUMN IF NOT EXISTS review_reason TEXT")
+            await con.execute("ALTER TABLE lucky_wins ADD COLUMN IF NOT EXISTS review_at TIMESTAMPTZ")
+            await con.execute("ALTER TABLE lucky_wins ADD COLUMN IF NOT EXISTS review_by BIGINT")
+            await con.execute("""CREATE TABLE IF NOT EXISTS lucky_stock_audit (
+                id BIGSERIAL PRIMARY KEY, guild_id BIGINT NOT NULL,
+                reward_code TEXT NOT NULL, actor_id BIGINT NOT NULL,
+                before_stock INTEGER NOT NULL, after_stock INTEGER NOT NULL,
+                change_reason TEXT NOT NULL, opening_id BIGINT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+            await con.execute("""CREATE INDEX IF NOT EXISTS lucky_stock_audit_guild_idx
+                ON lucky_stock_audit(guild_id, created_at DESC)""")
             # Índice para recuperação de resgates e histórico.
             await con.execute("CREATE INDEX IF NOT EXISTS lucky_wins_guild_user_idx ON lucky_wins(guild_id,user_id)")
         self.bot.add_view(PainelLucky())
@@ -517,6 +660,24 @@ class LuckyBlockRoyal(commands.Cog):
         if await self.usuario_dono(ctx.author):
             return True
         await ctx.send("❌ Comando exclusivo do proprietário.", delete_after=8)
+        return False
+
+    async def pode_validar(self, usuario: discord.abc.User, guild: discord.Guild) -> bool:
+        if usuario.id == ID_DONO_DISCORD:
+            return True
+        membro = guild.get_member(usuario.id)
+        if membro is None:
+            try:
+                membro = await guild.fetch_member(usuario.id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                membro = None
+        return bool(membro and any(cargo.id in CARGOS_VALIDADORES for cargo in membro.roles))
+
+    async def exigir_validador(self, ctx: commands.Context, guild: discord.Guild) -> bool:
+        """Restringe conferência/aprovação ao dono ou a cargos configurados no servidor."""
+        if await self.pode_validar(ctx.author, guild):
+            return True
+        await ctx.send("❌ Somente os cargos autorizados podem validar comprovantes.", delete_after=10)
         return False
 
     @staticmethod
@@ -588,6 +749,10 @@ class LuckyBlockRoyal(commands.Cog):
                     VALUES($1,$2,$3,$4,$5) RETURNING id""",
                     guild_id, usuario_id, codigo, raridade, premio["nome"] if premio else None)
                 if premio:
+                    await con.execute("""INSERT INTO lucky_stock_audit
+                        (guild_id,reward_code,actor_id,before_stock,after_stock,change_reason,opening_id)
+                        VALUES($1,$2,$3,$4,$5,'premiacao',$6)""",
+                        guild_id, codigo, usuario_id, disponivel+1, disponivel, abertura_id)
                     await con.execute("""INSERT INTO lucky_wins(opening_id,guild_id,user_id,reward_code,
                         reward_name,reward_rarity,reward_banner_url,role_id)
                         VALUES($1,$2,$3,$4,$5,$6,$7,$8)""",
@@ -615,22 +780,47 @@ class LuckyBlockRoyal(commands.Cog):
         except discord.HTTPException:
             LOG.exception("Falha na entrega automática do cargo Lucky Block")
 
-    async def avisar_dono_sem_estoque(self, codigo: str, abertura_id: int):
-        """Notifica o proprietário, sem divulgar o catálogo nem as quantidades."""
-        try:
-            if ID_DONO_DISCORD:
-                owner_id = ID_DONO_DISCORD
+    async def avisar_dono_sem_estoque(self, guild: discord.Guild, codigo: str, abertura_id: int,
+                                      disponivel: int = 0):
+        """Avisa dono/equipe por DM quando o estoque cruza o limiar ou fica zerado."""
+        destinatarios = {ID_DONO_DISCORD, *USUARIOS_ALERTA_ESTOQUE}
+        ids_cargos = set(CARGOS_ALERTA_ESTOQUE)
+        if ids_cargos:
+            # O cache pode ser parcial. Quando permitido, consulta os membros via API.
+            for membro in guild.members:
+                if not membro.bot and any(cargo.id in ids_cargos for cargo in membro.roles):
+                    destinatarios.add(membro.id)
+            if self.bot.intents.members and not getattr(guild, "chunked", False):
+                try:
+                    async for membro in guild.fetch_members(limit=None):
+                        if not membro.bot and any(cargo.id in ids_cargos for cargo in membro.roles):
+                            destinatarios.add(membro.id)
+                except (discord.HTTPException, discord.ClientException):
+                    LOG.exception("Não foi possível completar a lista de membros dos cargos de alerta")
             else:
-                app = await self.bot.application_info()
-                dono = app.owner
-                owner_id = dono.id if isinstance(dono, discord.User) else None
-            if owner_id:
-                dono = await self.bot.fetch_user(owner_id)
-                await dono.send(f"⚠️ **Lucky Block: estoque esgotado**\n"
-                    f"Premiação: `{codigo}`\nÚltimo registro: `LB-{abertura_id:06d}`.\n"
-                    "Use `!painelestoquelucky` para configurar o estoque.")
-        except (discord.HTTPException, AttributeError):
-            LOG.warning("Não foi possível avisar o dono sobre estoque esgotado: %s", codigo)
+                LOG.warning("Aviso de estoque por cargos depende de Server Members Intent para cobertura completa; "
+                            "use USUARIOS_ALERTA_ESTOQUE como alternativa")
+        premio = PREMIACOES.get(codigo, {})
+        esgotado = disponivel == 0
+        texto = (("## 📦 ESTOQUE ESGOTADO — LUCKY BLOCK\n\n" if esgotado else
+                  "## ⚠️ ESTOQUE BAIXO — LUCKY BLOCK\n\n")
+                 + f"> `🎁` **Premiação:** {premio.get('nome', codigo)}\n"
+                 + f"> `💎` **Raridade:** {raridade_nome(premio.get('raridade', 'empty'))}\n"
+                 + f"> `📉` **Disponível:** {disponivel} unidade(s)\n"
+                 + f"> `📜` **Última premiação:** `LB-{abertura_id:06d}`\n\n"
+                 + ("> `⚠️` O prêmio ficará indisponível até a próxima reposição.\n" if esgotado else
+                    "> `🛎️` Prepare a reposição antes de zerar o estoque.\n")
+                 + "-# 👑 Família ROYAL • Alerta privado da equipe")
+
+        async def enviar(destinatario_id: int) -> None:
+            try:
+                usuario = self.bot.get_user(destinatario_id) or await self.bot.fetch_user(destinatario_id)
+                await usuario.send(view=cartao("📦 AVISO DE ESTOQUE", texto),
+                                   allowed_mentions=discord.AllowedMentions.none())
+            except discord.HTTPException:
+                LOG.warning("Falha na DM de estoque esgotado para usuário %s", destinatario_id)
+
+        await asyncio.gather(*(enviar(uid) for uid in sorted(destinatarios) if uid > 0))
 
     async def avisar_reposicao(self, guild: discord.Guild, codigo: str, anterior: int, atual: int):
         """Anúncio de reposição com os dados da alteração realizada."""
@@ -860,12 +1050,13 @@ class LuckyBlockRoyal(commands.Cog):
                     texto = (f"🎉 Você ganhou **{premio['nome']}**!\n"
                              f"📜 Protocolo: `LB-{resultado['id']:06d}`\n"
                              f"{'📨 Enviamos uma DM com o botão para abrir o ticket.' if dm_ok else '⚠️ Suas DMs estão fechadas. Abra-as para resgatar, ou avise a equipe com seu protocolo.'}")
-                    view = cartao("🎁 PREMIAÇÃO ENCONTRADA", texto, premio["banner"])
-                    await interaction.followup.send(view=view, ephemeral=True, **anexo_envio(view))
+                    await self.exibir_revelacao(interaction, "🎁 PREMIAÇÃO ENCONTRADA", texto,
+                                               premio["banner"])
                     # Ao terminar a última unidade, o dono é alertado sem revelar o catálogo publicamente.
-                    if resultado["estoque_restante"] == 0:
-                        LOG.warning("Premiação %s esgotou no registro #%d", resultado["codigo"], resultado["id"])
-                        await self.avisar_dono_sem_estoque(resultado["codigo"], resultado["id"])
+                    restante = resultado["estoque_restante"]
+                    if restante == 0 or (LIMIAR_ALERTA_ESTOQUE > 0 and restante == LIMIAR_ALERTA_ESTOQUE):
+                        LOG.info("Estoque %s atingiu %s após #%d", resultado["codigo"], restante, resultado["id"])
+                        await self.avisar_dono_sem_estoque(interaction.guild, resultado["codigo"], resultado["id"], restante)
                     await self.anuncio(interaction.guild, resultado["id"])
                     await self.comprovante_em_ticket_existente(interaction.guild, interaction.user.id, resultado["id"])
                 else:
@@ -876,8 +1067,8 @@ class LuckyBlockRoyal(commands.Cog):
                     texto += f"\n🎟️ Restantes: **{resultado['restantes']}/{ABERTURAS_POR_CICLO}**"
                     if resultado["renovacao"]:
                         texto += f"\n⏳ Renovação: <t:{int(resultado['renovacao'].timestamp())}:R>"
-                    view = cartao("📦 CAIXA VAZIA", texto, BANNER_CAIXA_VAZIA)
-                    await interaction.followup.send(view=view, ephemeral=True, **anexo_envio(view))
+                    await self.exibir_revelacao(interaction, "📦 CAIXA VAZIA", texto,
+                                               BANNER_CAIXA_VAZIA)
                 return
             if acao == "historico":
                 saldo, renovacao = await self.obter_saldo(guild_id, interaction.user.id)
@@ -892,14 +1083,14 @@ class LuckyBlockRoyal(commands.Cog):
                     texto += f"\n⏳ Renovação: <t:{int(renovacao.timestamp())}:R>"
                 return await interaction.followup.send(view=cartao("📜 MEU HISTÓRICO", texto), ephemeral=True)
             if acao == "ranking":
-                rows = await self.bot.pool.fetch("""SELECT user_id,COUNT(*) AS total,
-                    SUM(CASE rarity WHEN 'epic' THEN 100 WHEN 'legendary' THEN 1000
-                    WHEN 'secret' THEN 10000 ELSE 0 END) AS pontos
-                    FROM lucky_openings WHERE guild_id=$1 GROUP BY user_id
-                    ORDER BY pontos DESC,total DESC LIMIT 10""", guild_id)
-                texto = "\n".join(f"**{i}.** <@{r['user_id']}> — {r['pontos']} pontos ({r['total']} caixas)"
-                                  for i, r in enumerate(rows, 1)) or "Ainda não houve aberturas."
-                return await interaction.followup.send(view=cartao("🏆 RANKING", texto), ephemeral=True)
+                view = cartao("🏆 RANKING DA TEMPORADA", await self.texto_ranking(guild_id), BANNER_RANKING)
+                return await interaction.followup.send(view=view, ephemeral=True, **anexo_envio(view))
+            if acao == "colecao":
+                view = cartao("🏅 MINHA COLEÇÃO", await self.texto_colecao(guild_id, interaction.user.id), BANNER_COLECAO)
+                return await interaction.followup.send(view=view, ephemeral=True, **anexo_envio(view))
+            if acao == "meta":
+                view = cartao("🌟 DESAFIO DA FAMÍLIA", await self.texto_meta(guild_id), BANNER_META)
+                return await interaction.followup.send(view=view, ephemeral=True, **anexo_envio(view))
             await interaction.followup.send("❌ Ação inválida.", ephemeral=True)
         except Exception:
             LOG.exception("Erro em interação Lucky Block (%s)", acao)
@@ -913,7 +1104,8 @@ class LuckyBlockRoyal(commands.Cog):
         return "\n".join(f"`{codigo}` — **{mapa[codigo]['stock_available']} disponíveis** "
               f"(total histórico: {mapa[codigo]['stock_total']})" for codigo in PREMIACOES if codigo in mapa)
 
-    async def alterar_estoque(self, guild_id: int, codigo: str, quantidade: int) -> None:
+    async def alterar_estoque(self, guild_id: int, codigo: str, quantidade: int,
+                              actor_id: int = ID_DONO_DISCORD) -> None:
         if codigo not in PREMIACOES or not 0 <= quantidade <= 100_000:
             raise ValueError("Código ou quantidade inválida")
         await self.garantir_guild(guild_id)
@@ -924,10 +1116,180 @@ class LuckyBlockRoyal(commands.Cog):
                 await con.execute("""UPDATE lucky_reward_stock
                     SET stock_total=GREATEST(0,stock_total-stock_available)+$3,
                         stock_available=$3 WHERE guild_id=$1 AND code=$2""", guild_id, codigo, quantidade)
+                if anterior is not None and anterior != quantidade:
+                    await con.execute("""INSERT INTO lucky_stock_audit
+                        (guild_id,reward_code,actor_id,before_stock,after_stock,change_reason)
+                        VALUES($1,$2,$3,$4,$5,'reposicao_manual')""",
+                        guild_id, codigo, actor_id, anterior, quantidade)
         if anterior is not None and quantidade > anterior:
             guild = self.bot.get_guild(guild_id)
             if guild:
                 await self.avisar_reposicao(guild, codigo, anterior, quantidade)
+
+    async def texto_colecao(self, guild_id: int, usuario_id: int) -> str:
+        """Conquistas sem vazar o catálogo privado das recompensas."""
+        row = await self.bot.pool.fetchrow("""SELECT COUNT(*) AS abertas,
+            COUNT(*) FILTER (WHERE rarity='epic') AS epicas,
+            COUNT(*) FILTER (WHERE rarity='legendary') AS lendarias,
+            COUNT(*) FILTER (WHERE rarity='secret') AS secretas,
+            COUNT(DISTINCT reward_code) FILTER (WHERE reward_code IS NOT NULL) AS diferentes
+            FROM lucky_openings WHERE guild_id=$1 AND user_id=$2""", guild_id, usuario_id)
+        abertas = int(row['abertas'] or 0)
+        epicas = int(row['epicas'] or 0)
+        lendarias = int(row['lendarias'] or 0)
+        secretas = int(row['secretas'] or 0)
+        diferentes = int(row['diferentes'] or 0)
+        conquistas = [
+            (abertas >= 1, '🌱 Primeira Lucky Block'),
+            (abertas >= 25, '📦 Explorador de caixas'),
+            (abertas >= 100, '🏛️ Veterano ROYAL'),
+            (epicas > 0, '⚡ Descobridor épico'),
+            (lendarias > 0, '💎 Lenda da Família'),
+            (secretas > 0, '👑 Segredo revelado'),
+            (diferentes >= 3, '🏅 Colecionador'),
+        ]
+        selos = '\n'.join(f"{'✅' if ganhou else '🔒'} {titulo}" for ganhou,titulo in conquistas)
+        return ("**☰ MEU ÁLBUM**\n"
+                f"> `🎟️` **Caixas abertas:** {abertas}\n"
+                f"> `⚡` **Épicas:** {epicas}\n"
+                f"> `💎` **Lendárias:** {lendarias}\n"
+                f"> `👑` **Secretas:** {secretas}\n"
+                f"> `🎁` **Prêmios diferentes encontrados:** {diferentes}\n\n"
+                "**☰ CONQUISTAS**\n" + selos +
+                "\n\n-# Os selos são comemorativos e não concedem recompensas reais.")
+
+    async def texto_ranking(self, guild_id: int, *, mensal: bool = True) -> str:
+        restricao = "AND created_at >= date_trunc('month', NOW() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'" if mensal else ""
+        rows = await self.bot.pool.fetch(f"""SELECT user_id, COUNT(*) AS total,
+            COALESCE(SUM(CASE rarity WHEN 'epic' THEN 100 WHEN 'legendary' THEN 1000
+                WHEN 'secret' THEN 10000 ELSE 0 END),0) AS pontos
+            FROM lucky_openings WHERE guild_id=$1 {restricao}
+            GROUP BY user_id ORDER BY pontos DESC,total DESC,user_id LIMIT 10""", guild_id)
+        linhas = '\n'.join(f"**{i}.** <@{r['user_id']}> — **{int(r['pontos'])}** pts ({r['total']} caixas)"
+            for i,r in enumerate(rows,1))
+        return (f"**☰ {'TEMPORADA ATUAL' if mensal else 'RANKING GERAL'}**\n" +
+                (linhas or 'Ainda não houve aberturas neste período.') +
+                "\n\n-# Pontos: épica 100 · lendária 1.000 · secreta 10.000. "
+                + ('A temporada vira no primeiro dia do mês (UTC).' if mensal else 'Período histórico completo.'))
+
+    async def texto_meta(self, guild_id: int) -> str:
+        feitas = await self.bot.pool.fetchval("""SELECT COUNT(*) FROM lucky_openings
+            WHERE guild_id=$1 AND created_at >= date_trunc('month', NOW() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'""", guild_id)
+        feitas = int(feitas or 0)
+        meta = META_COMUNITARIA_MENSAL
+        preenchidos = min(12, (feitas*12)//max(1,meta))
+        barra = '🟪'*preenchidos + '⬜'*(12-preenchidos)
+        marcos = '\n'.join(f"{'✅' if feitas >= quantidade else '🔒'} **{quantidade} caixas** — {nome}"
+                           for quantidade,nome in MARCOS_COMUNIDADE)
+        return ("**☰ DESAFIO COLETIVO — TEMPORADA ATUAL**\n"
+                f"> `📦` **Aberturas da Família:** {feitas}/{meta}\n"
+                f"> `🎯` **Progresso:** {min(100, feitas*100//max(1,meta))}%\n"
+                f"{barra}\n\n**☰ MARCOS COMUNITÁRIOS**\n{marcos}\n\n"
+                "-# Conquistas simbólicas: nenhuma alteração nas chances nem prêmios extras. "
+                "Renova no início de cada mês (UTC).")
+
+    async def exibir_revelacao(self, interaction: discord.Interaction, titulo: str,
+                              descricao: str, banner: str) -> None:
+        """Edição de uma única mensagem efêmera, sem sorteio adicional nem mensagens duplicadas."""
+        view_final = cartao(titulo, descricao, banner)
+        if not ATIVAR_ABERTURA_CINEMATOGRAFICA:
+            await interaction.followup.send(view=view_final, ephemeral=True, **anexo_envio(view_final))
+            return
+        view_inicio = cartao('🔮 SUA LUCKY BLOCK ESTÁ SENDO ABERTA',
+            'A caixa começou a brilhar... O que será que você encontrou? 👀', BANNER_ABERTURA)
+        try:
+            msg = await interaction.followup.send(view=view_inicio, ephemeral=True,
+                                                   wait=True, **anexo_envio(view_inicio))
+        except discord.HTTPException:
+            LOG.warning('Abertura cinematográfica indisponível; tentando resultado direto')
+            await interaction.followup.send(view=view_final, ephemeral=True, **anexo_envio(view_final))
+            return
+        await asyncio.sleep(SEGUNDOS_SUSPENSE)
+        if BANNER_REVELACAO:
+            view_suspense = cartao('⚡ UM SEGREDO ESTÁ PARA SER REVELADO',
+                'A energia da caixa está aumentando... ✨', BANNER_REVELACAO)
+            try:
+                await msg.edit(view=view_suspense, content=None, embeds=[], **anexo_edicao(view_suspense))
+                await asyncio.sleep(SEGUNDOS_SUSPENSE)
+            except (discord.HTTPException, AttributeError, TypeError):
+                LOG.debug('Segunda fase indisponível; prosseguindo para o resultado')
+        try:
+            await msg.edit(view=view_final, content=None, embeds=[], **anexo_edicao(view_final))
+        except (discord.HTTPException, AttributeError, TypeError):
+            LOG.warning('Não foi possível editar a revelação; enviando resultado em mensagem separada')
+            await interaction.followup.send(view=view_final, ephemeral=True, **anexo_envio(view_final))
+
+    async def texto_pendentes(self, guild_id: int, *, limite: int = 10):
+        rows = await self.bot.pool.fetch("""SELECT opening_id,user_id,reward_name,reward_code,
+            status,validated_at,review_reason,ticket_channel_id,created_at
+            FROM lucky_wins WHERE guild_id=$1 AND status='pending'
+            ORDER BY created_at ASC LIMIT $2""", guild_id, limite)
+        texto = '\n'.join(
+            f"`LB-{r['opening_id']:06d}` · {r['reward_name'] or r['reward_code']} · "
+            f"<@{r['user_id']}> · "
+            f"{'🔎 Revisão' if r['review_reason'] else ('✅ Aprovado' if r['validated_at'] else '⏳ Pendente')}"
+            for r in rows) or 'Nenhum prêmio pendente de entrega.'
+        return rows, texto
+
+    async def acao_resgate_painel(self, interaction: discord.Interaction, guild_id: int,
+                                  abertura_id: int, acao: str) -> None:
+        guild = self.bot.get_guild(guild_id)
+        if guild is None or not await self.pode_validar(interaction.user, guild):
+            return await interaction.response.send_message('❌ Acesso restrito.', ephemeral=True)
+        if acao == 'entregar' and interaction.user.id != ID_DONO_DISCORD:
+            return await interaction.response.send_message('❌ Entrega exclusiva do proprietário.', ephemeral=True)
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        if acao == 'aprovar':
+            row = await self.bot.pool.fetchrow("""UPDATE lucky_wins
+                SET validated_at=NOW(),validated_by=$3,
+                    review_reason=NULL,review_at=NULL,review_by=NULL
+                WHERE guild_id=$1 AND opening_id=$2 AND ticket_channel_id IS NOT NULL
+                  AND status='pending' AND validated_at IS NULL
+                RETURNING user_id,ticket_channel_id,reward_name,reward_code,validated_at""",
+                guild_id, abertura_id, interaction.user.id)
+            if row is None:
+                return await interaction.followup.send(
+                    'ℹ️ Nada alterado: confirme se o ticket existe, se está pendente e se já não foi aprovado.', ephemeral=True)
+            ticket = guild.get_channel(row['ticket_channel_id'])
+            if isinstance(ticket, discord.TextChannel):
+                try:
+                    await ticket.send(view=cartao('✅ RESGATE APROVADO',
+                        f"> `📜` **Protocolo:** `LB-{abertura_id:06d}`\n"
+                        f"> `👤` **Beneficiário:** <@{row['user_id']}>\n"
+                        f"> `🎁` **Prêmio:** {row['reward_name'] or row['reward_code']}\n"
+                        f"> `🛡️` **Validador:** <@{interaction.user.id}>\n"
+                        '> `📦` A validação não confirma a entrega do prêmio.'),
+                        allowed_mentions=discord.AllowedMentions.none())
+                except discord.HTTPException:
+                    LOG.exception('Aprovação salva mas falhou notificação no ticket')
+            return await interaction.followup.send(
+                f'✅ `LB-{abertura_id:06d}` aprovado. Ainda aguarda entrega.', ephemeral=True)
+        if acao == 'entregar':
+            row = await self.bot.pool.fetchrow("""UPDATE lucky_wins
+                SET status='delivered',delivered_at=NOW(),delivered_by=$3
+                WHERE guild_id=$1 AND opening_id=$2 AND status='pending'
+                  AND validated_at IS NOT NULL AND review_reason IS NULL
+                RETURNING opening_id,ticket_channel_id""",
+                guild_id, abertura_id, interaction.user.id)
+            if row is None:
+                return await interaction.followup.send(
+                    '❌ Não foi possível confirmar: protocolo inexistente, já entregue ou não aprovado.', ephemeral=True)
+            try:
+                await self.atualizar_anuncio(guild, abertura_id)
+            except discord.HTTPException:
+                LOG.exception('Entrega salva, mas falhou atualização do anúncio')
+            return await interaction.followup.send(f'✅ Entrega `LB-{abertura_id:06d}` confirmada.', ephemeral=True)
+        return await interaction.followup.send('❌ Ação inválida.', ephemeral=True)
+
+    async def resumo_auditoria(self, guild_id: int) -> str:
+        rows = await self.bot.pool.fetch("""SELECT actor_id,reward_code,before_stock,after_stock,
+            change_reason,created_at FROM lucky_stock_audit WHERE guild_id=$1
+            ORDER BY id DESC LIMIT 15""", guild_id)
+        return '\n'.join(
+            f"<t:{int(r['created_at'].timestamp())}:d> · `{r['reward_code']}` "
+            f"**{r['before_stock']} → {r['after_stock']}** · "
+            f"{'Sorteio' if r['change_reason']=='premiacao' else 'Manual'} · <@{r['actor_id']}>"
+            for r in rows) or 'Sem mudanças registradas desde a atualização.'
 
     @commands.command(name="luckyresgatar")
     @commands.guild_only()
@@ -995,7 +1357,7 @@ class LuckyBlockRoyal(commands.Cog):
         await self.apagar_comando(ctx)
         guild = ctx.guild or await self.guild_oficial()
         try:
-            await self.alterar_estoque(guild.id, codigo.lower(), quantidade)
+            await self.alterar_estoque(guild.id, codigo_premiacao(codigo), quantidade, ctx.author.id)
             await self.dm(ctx, texto=f"✅ `{codigo}`: estoque disponível atualizado para {quantidade}.")
         except ValueError as exc:
             await self.dm(ctx, texto=f"❌ {exc}")
@@ -1017,10 +1379,11 @@ class LuckyBlockRoyal(commands.Cog):
         await self.apagar_comando(ctx)
         row = await self.bot.pool.fetchrow("""UPDATE lucky_wins SET status='delivered',
             delivered_at=NOW(),delivered_by=$3 WHERE opening_id=$1 AND guild_id=$2
-            AND status='pending' RETURNING user_id,reward_code""",
-            abertura_id, ctx.guild.id, ctx.author.id)
+            AND status='pending' AND ($4::bool = FALSE OR (validated_at IS NOT NULL AND review_reason IS NULL))
+            RETURNING user_id,reward_code""",
+            abertura_id, ctx.guild.id, ctx.author.id, EXIGIR_APROVACAO_ENTREGA_MANUAL)
         if not row:
-            return await self.dm(ctx, texto="❌ Registro inexistente ou já entregue.")
+            return await self.dm(ctx, texto="❌ Registro inexistente, já entregue ou ainda sem aprovação formal.")
         try:
             await self.atualizar_anuncio(ctx.guild, abertura_id)
         except discord.HTTPException:
@@ -1038,10 +1401,11 @@ class LuckyBlockRoyal(commands.Cog):
 
     @commands.command(name="luckyvalidar")
     async def luckyvalidar(self, ctx: commands.Context, abertura_id: int):
-        if not await self.exigir_dono(ctx):
+        """Consulta a autenticidade do comprovante, sem mudar a situação da entrega."""
+        guild = ctx.guild or await self.guild_oficial()
+        if not await self.exigir_validador(ctx, guild):
             return
         await self.apagar_comando(ctx)
-        guild = ctx.guild or await self.guild_oficial()
         row = await self.bot.pool.fetchrow("SELECT * FROM lucky_wins WHERE guild_id=$1 AND opening_id=$2",
                                            guild.id, abertura_id)
         if not row:
@@ -1052,21 +1416,145 @@ class LuckyBlockRoyal(commands.Cog):
             raridade=row["reward_rarity"] or atual.get("raridade", "legendary"),
             banner=row["reward_banner_url"] or atual.get("banner", ""))
         entrada = {"id": abertura_id, "premio": premio,
-                   "created_at": row["created_at"], "status": row["status"]}
+                   "created_at": row["created_at"], "status": row["status"],
+                   "validated_at": row["validated_at"], "validated_by": row["validated_by"],
+                   "review_reason": row["review_reason"]}
         ticket = f"<#{row['ticket_channel_id']}>" if row["ticket_channel_id"] else "Aguardando abertura"
         view = cartao("✅ COMPROVANTE CONFERIDO NO BANCO",
                       recibo(entrada, row["user_id"]) + f"\n\n> `🎟️` **Ticket:** {ticket}",
                       row["reward_banner_url"] or premio["banner"])
         await self.dm(ctx, view=view)
 
+    @commands.command(name="luckyaprovar")
+    async def luckyaprovar(self, ctx: commands.Context, abertura_id: int):
+        """Registra aprovação do comprovante por um validador; não entrega a premiação."""
+        guild = ctx.guild or await self.guild_oficial()
+        if not await self.exigir_validador(ctx, guild):
+            return
+        await self.apagar_comando(ctx)
+        row = await self.bot.pool.fetchrow("""UPDATE lucky_wins
+            SET validated_at=NOW(), validated_by=$3,
+                review_reason=NULL,review_at=NULL,review_by=NULL
+            WHERE guild_id=$1 AND opening_id=$2 AND ticket_channel_id IS NOT NULL
+              AND status='pending' AND validated_at IS NULL
+            RETURNING opening_id,user_id,reward_name,reward_code,ticket_channel_id,validated_at""",
+            guild.id, abertura_id, ctx.author.id)
+        if row is None:
+            existente = await self.bot.pool.fetchrow("""SELECT validated_at,validated_by,ticket_channel_id
+                FROM lucky_wins WHERE guild_id=$1 AND opening_id=$2""", guild.id, abertura_id)
+            if existente is None:
+                texto = "❌ Protocolo inexistente no banco."
+            elif existente["validated_at"] is not None:
+                texto = f"ℹ️ O protocolo `LB-{abertura_id:06d}` já foi aprovado por <@{existente['validated_by']}>."
+            else:
+                texto = "⚠️ O ganhador precisa abrir o ticket e receber seu comprovante antes da aprovação."
+            return await self.dm(ctx, texto=texto)
+
+        # O banco confirma a aprovação. A notificação no ticket é informativa.
+        canal = guild.get_channel(row["ticket_channel_id"])
+        if isinstance(canal, discord.TextChannel):
+            try:
+                await canal.send(view=cartao("✅ COMPROVANTE VALIDADO",
+                    f"> `📜` **Protocolo:** `LB-{abertura_id:06d}`\n"
+                    f"> `👤` **Beneficiário:** <@{row['user_id']}>\n"
+                    f"> `🎁` **Premiação:** {row['reward_name'] or row['reward_code']}\n"
+                    f"> `🛡️` **Validador:** <@{ctx.author.id}>\n"
+                    f"> `📅` **Data:** <t:{int(row['validated_at'].timestamp())}:F>\n\n"
+                    "> `📦` **Entrega:** continua sujeita à confirmação pelo responsável."),
+                    allowed_mentions=discord.AllowedMentions.none())
+            except discord.HTTPException:
+                LOG.exception("Comprovante aprovado, mas falhou o aviso no ticket #%s", abertura_id)
+        await self.dm(ctx, texto=f"✅ Comprovante `LB-{abertura_id:06d}` aprovado e registrado no PostgreSQL. "
+                                "A aprovação não marca a premiação como entregue.")
+
+    @commands.command(name="luckycolecao")
+    @commands.guild_only()
+    async def luckycolecao(self, ctx: commands.Context):
+        view = cartao('🏅 MINHA COLEÇÃO', await self.texto_colecao(ctx.guild.id, ctx.author.id), BANNER_COLECAO)
+        await ctx.send(view=view, **anexo_envio(view), allowed_mentions=discord.AllowedMentions.none())
+
+    @commands.command(name="luckyranking")
+    @commands.guild_only()
+    async def luckyranking(self, ctx: commands.Context, periodo: str = 'mensal'):
+        mensal = periodo.lower() not in ('geral', 'all', 'total')
+        view = cartao('🏆 RANKING ROYAL', await self.texto_ranking(ctx.guild.id, mensal=mensal), BANNER_RANKING)
+        await ctx.send(view=view, **anexo_envio(view), allowed_mentions=discord.AllowedMentions.none())
+
+    @commands.command(name="luckymeta")
+    @commands.guild_only()
+    async def luckymeta(self, ctx: commands.Context):
+        view = cartao('🌟 META DA FAMÍLIA', await self.texto_meta(ctx.guild.id), BANNER_META)
+        await ctx.send(view=view, **anexo_envio(view), allowed_mentions=discord.AllowedMentions.none())
+
+    @commands.command(name="luckypendentes")
+    async def luckypendentes(self, ctx: commands.Context):
+        guild = ctx.guild or await self.guild_oficial()
+        if not await self.exigir_validador(ctx, guild):
+            return
+        await self.apagar_comando(ctx)
+        _, texto = await self.texto_pendentes(guild.id)
+        await self.dm(ctx, texto='📋 **Premiações aguardando entrega**\n' + texto)
+
+    @commands.command(name="painelresgateslucky", aliases=['centralresgateslucky'])
+    async def painelresgateslucky(self, ctx: commands.Context):
+        guild = ctx.guild or await self.guild_oficial()
+        if not await self.exigir_validador(ctx, guild):
+            return
+        await self.apagar_comando(ctx)
+        rows, texto = await self.texto_pendentes(guild.id)
+        view = PainelResgates(guild.id, texto, rows)
+        await self.dm(ctx, view=view)
+
+    @commands.command(name="luckyrevisar")
+    async def luckyrevisar(self, ctx: commands.Context, abertura_id: int, *, motivo: str):
+        """Anota pendência sem cancelar prêmio, liberar estoque ou bloquear outras ações."""
+        guild = ctx.guild or await self.guild_oficial()
+        if not await self.exigir_validador(ctx, guild):
+            return
+        await self.apagar_comando(ctx)
+        motivo = motivo.strip()
+        if len(motivo) < 4 or len(motivo) > 350:
+            return await self.dm(ctx, texto='❌ Informe de 4 a 350 caracteres no motivo.')
+        row = await self.bot.pool.fetchrow("""UPDATE lucky_wins SET
+            review_reason=$4,review_by=$3,review_at=NOW(),
+            validated_at=NULL,validated_by=NULL
+            WHERE guild_id=$1 AND opening_id=$2 AND status='pending'
+            RETURNING opening_id,user_id,ticket_channel_id,reward_name,reward_code""",
+            guild.id, abertura_id, ctx.author.id, motivo)
+        if not row:
+            return await self.dm(ctx, texto='❌ Protocolo inexistente ou não está pendente.')
+        canal = guild.get_channel(row['ticket_channel_id']) if row['ticket_channel_id'] else None
+        if isinstance(canal, discord.TextChannel):
+            try:
+                await canal.send(view=cartao('🔎 RESGATE EM ANÁLISE',
+                    f"> `📜` **Protocolo:** `LB-{abertura_id:06d}`\n"
+                    f"> `🛡️` **Responsável:** <@{ctx.author.id}>\n"
+                    f"> `📋` **Motivo:** {discord.utils.escape_markdown(motivo)}\n"
+                    '> `📦` **Premiação:** continua reservada; nenhuma unidade foi devolvida.'),
+                    allowed_mentions=discord.AllowedMentions.none())
+            except discord.HTTPException:
+                LOG.warning('Revisão salva; falha ao publicar no ticket #%d', abertura_id)
+        await self.dm(ctx, texto=f'✅ Motivo registrado para `LB-{abertura_id:06d}`. A premiação continua reservada.')
+
+    @commands.command(name="luckyauditoria")
+    async def luckyauditoria(self, ctx: commands.Context):
+        if not await self.exigir_dono(ctx):
+            return
+        await self.apagar_comando(ctx)
+        guild = ctx.guild or await self.guild_oficial()
+        texto = await self.resumo_auditoria(guild.id)
+        await self.dm(ctx, texto='📊 **Auditoria dos 15 últimos movimentos de estoque**\n' + texto)
+
     @commands.command(name="testarlucky", aliases=["testelucky"])
     async def testarlucky(self, ctx: commands.Context, codigo: str="lista", destino: str="dm"):
         if not await self.exigir_dono(ctx):
             return
         await self.apagar_comando(ctx)
-        codigo, destino = codigo.lower().strip(), destino.lower().strip()
-        if codigo == "clove":
+        codigo, destino = codigo.strip(), destino.lower().strip()
+        if codigo.lower() == "clove":
             codigo = "clover"
+        codigo = codigo_premiacao(codigo) if codigo not in {"lista", "painel", "estoque", "sorteio",
+            "reposicao", "sem_estoque", "comprovante", "fluxo", "todos", "vazia"} else codigo
         if codigo == "lista":
             texto = "🧪 **Comandos de teste — privados**\n" + "\n".join(
                 f"`!testarlucky {c}` — {p['nome']} [{raridade_nome(p['raridade'])}]" for c,p in PREMIACOES.items())
@@ -1074,7 +1562,9 @@ class LuckyBlockRoyal(commands.Cog):
                       "\n`!testarlucky sorteio` · `!testarlucky fluxo` · `!testarlucky estoque` · `!testarlucky comprovante` · `!testarlucky sem_estoque` · `!testarlucky reposicao`"
                       "\n`!testarlucky clover registros` (prévia pública sem marcações)"
                       "\n`!simularlucky nitro_basico` (DM + anúncio idênticos ao real, temporários)"
-                      "\n`!luckyvalidar ID` (valida comprovante real)")
+                      "\n`!luckyvalidar ID` (confere autenticidade) · `!luckyaprovar ID` (aprova, para equipe autorizada)"
+                      "\n`!painelresgateslucky` · `!luckypendentes` · `!luckyauditoria` (dono)"
+                      "\n`!luckycolecao` · `!luckyranking` · `!luckymeta`")
             return await self.dm(ctx, texto=texto)
         if codigo == "painel":
             return await self.dm(ctx, view=PainelLucky(teste=True))
@@ -1158,9 +1648,10 @@ class LuckyBlockRoyal(commands.Cog):
         if not await self.exigir_dono(ctx):
             return
         await self.apagar_comando(ctx)
-        codigo = codigo.strip().lower()
-        if codigo == "clove":
+        codigo = codigo.strip()
+        if codigo.lower() == "clove":
             codigo = "clover"
+        codigo = codigo_premiacao(codigo)
         premio = PREMIACOES.get(codigo)
         if premio is None:
             from difflib import get_close_matches
