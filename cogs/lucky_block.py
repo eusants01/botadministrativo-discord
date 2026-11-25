@@ -21,19 +21,15 @@ from discord.ext import commands
 LOG = logging.getLogger("sants.bot.lucky_block")
 
 # ========================= CONFIGURAÇÃO PRIVADA =========================
-CANAL_PAINEL = 1572785659108917439
+CANAL_PAINEL = 1572639152737091654
 CANAL_REGISTROS = 1572355776377266176
 CANAL_ESTOQUE = 1573584140719357972  # Avisos públicos de reposição
 ID_DONO_DISCORD = 925863471902503033  # Apenas o dono abastece/consulta estoque e altera configurações
-# Configure manualmente os IDs dos cargos da Família ROYAL autorizados a conferir
-# comprovantes e registrar a validação formal; estes cargos NÃO editam estoque.
-CARGOS_VALIDADORES = ()  # Ex.: (111111111111111111, 222222222222222222)
-# Pessoas destes cargos recebem DM quando uma recompensa chega a estoque zero.
-CARGOS_ALERTA_ESTOQUE = CARGOS_VALIDADORES  # Por padrão, os mesmos cargos validam e recebem alertas
-# IDs diretos opcionais, úteis caso o bot não tenha o intent privilegiado de membros.
-USUARIOS_ALERTA_ESTOQUE = ()  # Ex.: (444444444444444444,)
+CARGOS_VALIDADORES = (1561231585993293864)  # Ex.: (111111111111111111, 222222222222222222)
+CARGOS_ALERTA_ESTOQUE = CARGOS_VALIDADORES  
+USUARIOS_ALERTA_ESTOQUE = ()  
 ABERTURAS_POR_CICLO = 7
-HORAS_APOS_ULTIMA_ABERTURA = 3  # a espera começa SOMENTE após a última abertura do ciclo
+HORAS_APOS_ULTIMA_ABERTURA = 3 
 BANNER_PAINEL = "assets/lucky_block/painel.png"
 BANNER_CAIXA_VAZIA = "caixa_vazia"
 BANNER_REPOSICAO = "reposicao_estoque"  # assets/lucky_block/reposicao_estoque.png
@@ -56,17 +52,7 @@ EXIGIR_APROVACAO_ENTREGA_MANUAL = True  # Para prêmios de entrega manual.
 # O banner secreto aparece no anúncio público. A DM preserva a imagem individual do prêmio.
 AVISAR_EVERYONE_SECRETOS = True
 CONCEDER_CARGOS_AUTOMATICAMENTE = True
-# Todas as chances são percentuais ABSOLUTAS por abertura; não são pesos relativos.
-# Os valores abaixo conservam as chances da última versão fornecida pelo usuário.
-# "estoque" é inicial SOMENTE para prêmios ainda não existentes no banco.
-# O estoque atual passa a ser administrado pelo painel privado e nunca é reabastecido no reinício.
-# BANNERS POR RECOMPENSA: o campo `banner="..."` de CADA prêmio é independente.
-# Ex.: banner="clover" procura assets/lucky_block/clover.png (ou .jpg/.gif/.webp).
-# Você pode usar banner="subpasta/arquivo"; imagens ausentes não travam o bot.
-# (Aceitas extensões .png, .jpg, .jpeg, .webp e .gif).
-# Os 10 espaços abaixo são independentes. Para personalizar, troque apenas o valor do banner.
-# O banner individual é exibido na DM, no comprovante e no resultado do vencedor.
-# Secretos usam BANNER_PREMIO_SECRETO apenas no anúncio público.
+
 PREMIACOES = {
     "candidato_divisao": dict(nome="Candidato em uma divisão", raridade="epic", chance="0.0050", estoque=2, cargo_id=0, banner="candidato_divisao", ativo=True,
                                descricao="Candidatura em divisão do E.B; requisitos sujeitos à validação da equipe."),
@@ -322,8 +308,8 @@ class PainelLucky(discord.ui.LayoutView):
         linha.add_item(AcaoPainel("abrir", "Abrir", "<:luckblock:1572868783725609083>", discord.ButtonStyle.success))
         linha.add_item(AcaoPainel("historico", "Histórico", "📜", discord.ButtonStyle.secondary))
         linha.add_item(AcaoPainel("ranking", "Ranking", "<:versustrophy:1564669597440016485>", discord.ButtonStyle.secondary))
-        linha.add_item(AcaoPainel("colecao", "Coleção", "🏅", discord.ButtonStyle.secondary))
-        linha.add_item(AcaoPainel("meta", "Meta", "🌟", discord.ButtonStyle.secondary))
+        linha.add_item(AcaoPainel("colecao", "Coleção", "<a:Presenteghost:1553872045492797550>", discord.ButtonStyle.secondary))
+        linha.add_item(AcaoPainel("meta", "Meta", "<a:luck:1575023399833567272>", discord.ButtonStyle.secondary))
         if teste:
             for botao in linha.children:
                 botao.disabled = True
@@ -1064,7 +1050,7 @@ class LuckyBlockRoyal(commands.Cog):
                     if resultado["sem_estoque"]:
                         texto = ("⚠️ Uma recompensa sorteada está sem estoque no momento. "
                                  "Nenhuma premiação foi reservada nesta abertura.")
-                    texto += f"\n🎟️ Restantes: **{resultado['restantes']}/{ABERTURAS_POR_CICLO}**"
+                    texto += f"\n`🎟️` Restantes: **{resultado['restantes']}/{ABERTURAS_POR_CICLO}**"
                     if resultado["renovacao"]:
                         texto += f"\n⏳ Renovação: <t:{int(resultado['renovacao'].timestamp())}:R>"
                     await self.exibir_revelacao(interaction, "📦 CAIXA VAZIA", texto,
@@ -1078,7 +1064,7 @@ class LuckyBlockRoyal(commands.Cog):
                 linhas = [f"`LB-{r['id']:06d}` · {r['reward_name'] or 'Caixa vazia'} · "
                           f"{raridade_nome(r['rarity'])} · <t:{int(r['created_at'].timestamp())}:R>" for r in rows]
                 texto = ("\n".join(linhas) if linhas else "Você ainda não abriu nenhuma caixa.")
-                texto += f"\n\n🎟️ Aberturas disponíveis: **{saldo}/{ABERTURAS_POR_CICLO}**"
+                texto += f"\n\n`🎟️` Aberturas disponíveis: **{saldo}/{ABERTURAS_POR_CICLO}**"
                 if renovacao:
                     texto += f"\n⏳ Renovação: <t:{int(renovacao.timestamp())}:R>"
                 return await interaction.followup.send(view=cartao("📜 MEU HISTÓRICO", texto), ephemeral=True)
@@ -1195,7 +1181,7 @@ class LuckyBlockRoyal(commands.Cog):
         if not ATIVAR_ABERTURA_CINEMATOGRAFICA:
             await interaction.followup.send(view=view_final, ephemeral=True, **anexo_envio(view_final))
             return
-        view_inicio = cartao('🔮 SUA LUCKY BLOCK ESTÁ SENDO ABERTA',
+        view_inicio = cartao('<a:luck:1575023399833567272> SUA LUCKY BLOCK ESTÁ SENDO ABERTA!!',
             'A caixa começou a brilhar... O que será que você encontrou? 👀', BANNER_ABERTURA)
         try:
             msg = await interaction.followup.send(view=view_inicio, ephemeral=True,
@@ -1206,7 +1192,7 @@ class LuckyBlockRoyal(commands.Cog):
             return
         await asyncio.sleep(SEGUNDOS_SUSPENSE)
         if BANNER_REVELACAO:
-            view_suspense = cartao('⚡ UM SEGREDO ESTÁ PARA SER REVELADO',
+            view_suspense = cartao('<a:luck:1575023399833567272> UM SEGREDO ESTÁ PARA SER REVELADO',
                 'A energia da caixa está aumentando... ✨', BANNER_REVELACAO)
             try:
                 await msg.edit(view=view_suspense, content=None, embeds=[], **anexo_edicao(view_suspense))
