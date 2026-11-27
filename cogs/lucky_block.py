@@ -12,6 +12,8 @@ import logging
 import secrets
 import re
 import unicodedata
+from bisect import bisect_right
+from functools import lru_cache
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -30,7 +32,7 @@ CARGOS_VALIDADORES = (1561231585993293864,)
 CARGOS_ALERTA_ESTOQUE = CARGOS_VALIDADORES  
 USUARIOS_ALERTA_ESTOQUE = (1371486864791572555,1243928690795221123,1455061586082533410)  
 ABERTURAS_POR_CICLO = 10
-HORAS_APOS_ULTIMA_ABERTURA = 2 
+HORAS_APOS_ULTIMA_ABERTURA = 4
 BANNER_PAINEL = "assets/lucky_block/painel.png"
 BANNER_CAIXA_VAZIA = "caixa_vazia"
 BANNER_REPOSICAO = "reposicao_estoque"  # assets/lucky_block/reposicao_estoque.png
@@ -216,8 +218,8 @@ PREMIACOES = {
     
         "keys_aleatorias_steam": dict(
             nome="Keys Aleatórias Steam",
-            raridade="Secreta",
-            chance="0,005",
+            raridade="secret",
+            chance="0.005",
             estoque=1,
             cargo_id=0,
             banner="keys_aleatorias_steam",
@@ -232,8 +234,8 @@ PREMIACOES = {
         
             "Vaga na Família": dict(
                 nome="Vaga na Família",
-                raridade="Secreta",
-                chance="0,001",
+                raridade="secret",
+                chance="0.001",
                 estoque=1,
                 cargo_id=0,
                 banner="vaga_na_familia",
@@ -258,6 +260,10 @@ PREMIACOES = {
     ),
 
 }
+
+# Alias para comandos sem aspas; preserva a chave original no PostgreSQL.
+_ALIASES_PREMIACOES = {"vaga_na_familia": "Vaga na Família"}
+_TABELA_SORTEIO: tuple[tuple[int, ...], tuple[str, ...]] | None = None
 
 TOTAL_SORTEIO = 10_000_000  # 0.00001% por bilhete
 CORES = discord.Colour.from_rgb(91, 79, 187)
@@ -287,12 +293,16 @@ def tickets_da_chance(valor: str, codigo: str) -> int:
 
 
 def validar_configuracao() -> None:
+    global _TABELA_SORTEIO
     for ids in (CARGOS_VALIDADORES, CARGOS_ALERTA_ESTOQUE, USUARIOS_ALERTA_ESTOQUE):
         if not isinstance(ids, (tuple, list, set, frozenset)) or any(not isinstance(i, int) or i <= 0 for i in ids):
             raise ValueError("IDs de cargos/usuários devem ser uma coleção de inteiros; use (ID,) para um único ID.")
     total = 0
+    limites, codigos = [], []
     for codigo, premio in PREMIACOES.items():
-        if not codigo.replace("_", "").isalnum() or len(codigo) > 60:
+        # A chave histórica com espaços é aceita apenas por seu alias explícito.
+        identificador = next((a for a, c in _ALIASES_PREMIACOES.items() if c == codigo), codigo)
+        if not identificador.replace("_", "").isalnum() or len(codigo) > 60:
             raise ValueError(f"Código de premiação inválido: {codigo}")
         if premio["raridade"] not in RARIDADES or premio["raridade"] == "empty":
             raise ValueError(f"Raridade inválida: {codigo}")
@@ -304,19 +314,20 @@ def validar_configuracao() -> None:
             raise ValueError(f"Campo ativo inválido: {codigo}")
         if premio["ativo"]:
             total += tickets_da_chance(premio["chance"], codigo)
+            limites.append(total)
+            codigos.append(codigo)
     if total > TOTAL_SORTEIO:
         raise ValueError("As chances somadas excedem 100%")
+    _TABELA_SORTEIO = (tuple(limites), tuple(codigos))
 
 
 def sortear_codigo() -> str | None:
-    sorteio = secrets.randbelow(TOTAL_SORTEIO)
-    limite = 0
-    for codigo, premio in PREMIACOES.items():
-        if premio["ativo"]:
-            limite += tickets_da_chance(premio["chance"], codigo)
-            if sorteio < limite:
-                return codigo
-    return None
+    # As probabilidades são validadas e acumuladas uma vez por carregamento.
+    if _TABELA_SORTEIO is None:
+        validar_configuracao()
+    limites, codigos = _TABELA_SORTEIO
+    indice = bisect_right(limites, secrets.randbelow(TOTAL_SORTEIO))
+    return codigos[indice] if indice < len(codigos) else None
 
 
 def raridade_nome(raridade: str) -> str:
@@ -326,9 +337,12 @@ def raridade_nome(raridade: str) -> str:
 def codigo_premiacao(valor: str) -> str:
     """Resolve letras maiúsculas/minúsculas sem alterar as chaves reais do catálogo."""
     entrada = valor.strip().casefold()
+    if entrada in _ALIASES_PREMIACOES:
+        return _ALIASES_PREMIACOES[entrada]
     return next((codigo for codigo in PREMIACOES if codigo.casefold() == entrada), valor.strip())
 
 
+@lru_cache(maxsize=512)
 def normalizar_nome_banner(nome: str) -> str:
     texto = unicodedata.normalize("NFKD", nome.casefold())
     return re.sub(r"[\W_]+", "", "".join(c for c in texto if not unicodedata.combining(c)))
@@ -358,9 +372,10 @@ def banner_arquivo(referencia: str) -> Path | str | None:
             if caminho.is_file() and caminho.resolve().is_relative_to(PASTA_ASSETS.resolve()):
                 return caminho
         if base.parent.is_dir():
+            alvo_normalizado = normalizar_nome_banner(base.stem)
             for arquivo in base.parent.iterdir():
                 if (arquivo.is_file() and arquivo.suffix.casefold() in EXTENSOES
-                    and normalizar_nome_banner(arquivo.stem) == normalizar_nome_banner(base.stem)
+                    and normalizar_nome_banner(arquivo.stem) == alvo_normalizado
                     and (not base.suffix or arquivo.suffix.casefold() == base.suffix.casefold())
                     and arquivo.resolve().is_relative_to(PASTA_ASSETS.resolve())):
                     return arquivo
@@ -778,6 +793,8 @@ class LuckyBlockRoyal(commands.Cog):
         self.bot = bot
         self._ticket_locks: dict[int, asyncio.Lock] = {}
         self._avisos_task: asyncio.Task | None = None
+        self._guilds_inicializadas: set[int] = set()
+        self._guild_init_locks: dict[int, asyncio.Lock] = {}
 
     async def cog_load(self):
         validar_configuracao()
@@ -840,10 +857,22 @@ class LuckyBlockRoyal(commands.Cog):
             await con.execute("ALTER TABLE lucky_stock_audit ADD COLUMN IF NOT EXISTS notice_message_id BIGINT")
             # Índice para recuperação de resgates e histórico.
             await con.execute("CREATE INDEX IF NOT EXISTS lucky_wins_guild_user_idx ON lucky_wins(guild_id,user_id)")
+            # Índices para consultas frequentes de histórico, ranking e fila de avisos.
+            await con.execute("CREATE INDEX IF NOT EXISTS lucky_openings_user_id_idx ON lucky_openings(guild_id,user_id,id DESC)")
+            await con.execute("CREATE INDEX IF NOT EXISTS lucky_openings_guild_month_idx ON lucky_openings(guild_id,created_at)")
+            await con.execute("""CREATE INDEX IF NOT EXISTS lucky_wins_pending_notice_idx
+                ON lucky_wins(public_claimed_at NULLS FIRST,opening_id)
+                WHERE public_pending AND public_message_id IS NULL""")
+            await con.execute("""CREATE INDEX IF NOT EXISTS lucky_stock_pending_notice_idx
+                ON lucky_stock_audit(notice_claimed_at NULLS FIRST,id)
+                WHERE notice_pending AND notice_message_id IS NULL""")
         self.bot.add_view(PainelLucky())
         self.bot.add_dynamic_items(BotaoTicket)
         self._avisos_task = asyncio.create_task(self.reenviar_avisos())
-        LOG.info("Lucky Block ROYAL carregado; %d recompensas", len(PREMIACOES))
+        LOG.info("Lucky Block ROYAL carregado; %d recompensas e %d comandos por prefixo",
+                 len(PREMIACOES), len(self.get_commands()))
+        if not self.bot.intents.message_content:
+            LOG.warning("Message Content Intent desativada no bot; comandos por prefixo em canais podem não funcionar.")
 
     async def cog_unload(self):
         if self._avisos_task is not None:
@@ -855,13 +884,24 @@ class LuckyBlockRoyal(commands.Cog):
         self.bot.remove_dynamic_items(BotaoTicket)
 
     async def garantir_guild(self, guild_id: int):
-        async with self.bot.pool.acquire() as con:
-            async with con.transaction():
-                await con.execute("INSERT INTO lucky_settings(guild_id) VALUES($1) ON CONFLICT DO NOTHING", guild_id)
-                for codigo, premio in PREMIACOES.items():
+        # Inicializa uma vez por servidor e por carregamento do cog, sem alterar estoques existentes.
+        if guild_id in self._guilds_inicializadas:
+            return
+        lock = self._guild_init_locks.setdefault(guild_id, asyncio.Lock())
+        async with lock:
+            if guild_id in self._guilds_inicializadas:
+                return
+            codigos = list(PREMIACOES)
+            quantidades = [PREMIACOES[c]["estoque"] for c in codigos]
+            async with self.bot.pool.acquire() as con:
+                async with con.transaction():
+                    await con.execute("INSERT INTO lucky_settings(guild_id) VALUES($1) ON CONFLICT DO NOTHING", guild_id)
                     await con.execute("""INSERT INTO lucky_reward_stock(guild_id,code,stock_total,stock_available)
-                        VALUES($1,$2,$3,$3) ON CONFLICT DO NOTHING""",
-                        guild_id, codigo, premio["estoque"])
+                        SELECT $1, dados.code, dados.stock, dados.stock
+                        FROM unnest($2::text[], $3::integer[]) AS dados(code, stock)
+                        ON CONFLICT DO NOTHING""", guild_id, codigos, quantidades)
+            # Marca como inicializado somente após o commit bem-sucedido.
+            self._guilds_inicializadas.add(guild_id)
 
     async def buscar_canal(self, guild: discord.Guild, canal_id: int) -> discord.TextChannel:
         canal = guild.get_channel(canal_id) or await self.bot.fetch_channel(canal_id)
@@ -1350,10 +1390,12 @@ class LuckyBlockRoyal(commands.Cog):
                                                BANNER_CAIXA_VAZIA)
                 return
             if acao == "historico":
-                saldo, renovacao = await self.obter_saldo(guild_id, interaction.user.id)
-                rows = await self.bot.pool.fetch("""SELECT id,reward_code,reward_name,rarity,created_at
-                    FROM lucky_openings WHERE guild_id=$1 AND user_id=$2 ORDER BY id DESC LIMIT 10""",
-                    guild_id, interaction.user.id)
+                (saldo, renovacao), rows = await asyncio.gather(
+                    self.obter_saldo(guild_id, interaction.user.id),
+                    self.bot.pool.fetch("""SELECT id,reward_code,reward_name,rarity,created_at
+                        FROM lucky_openings WHERE guild_id=$1 AND user_id=$2 ORDER BY id DESC LIMIT 10""",
+                        guild_id, interaction.user.id),
+                )
                 linhas = [f"`LB-{r['id']:06d}` · {r['reward_name'] or 'Caixa vazia'} · "
                           f"{raridade_nome(r['rarity'])} · <t:{int(r['created_at'].timestamp())}:R>" for r in rows]
                 texto = ("\n".join(linhas) if linhas else "Você ainda não abriu nenhuma caixa.")
@@ -1835,8 +1877,10 @@ class LuckyBlockRoyal(commands.Cog):
                               (p['nome'], p['banner']) for p in PREMIACOES.values()]:
             caminho = banner_arquivo(ref)
             linhas.append(f"{'✅' if caminho else '❌'} {nome}: `{caminho.name if isinstance(caminho, Path) else 'URL configurada' if caminho else ref}`")
-        wins = await self.bot.pool.fetchval("SELECT COUNT(*) FROM lucky_wins WHERE guild_id=$1 AND public_pending AND public_message_id IS NULL", guild.id)
-        stocks = await self.bot.pool.fetchval("SELECT COUNT(*) FROM lucky_stock_audit WHERE guild_id=$1 AND notice_pending AND notice_message_id IS NULL", guild.id)
+        wins, stocks = await asyncio.gather(
+            self.bot.pool.fetchval("SELECT COUNT(*) FROM lucky_wins WHERE guild_id=$1 AND public_pending AND public_message_id IS NULL", guild.id),
+            self.bot.pool.fetchval("SELECT COUNT(*) FROM lucky_stock_audit WHERE guild_id=$1 AND notice_pending AND notice_message_id IS NULL", guild.id),
+        )
         linhas.append(f"Fila: {wins} vitórias / {stocks} reposições. Tenta novamente após falhas (reserva de 5 min).")
         await self.dm(ctx, texto='\n'.join(linhas))
 
@@ -1852,7 +1896,7 @@ class LuckyBlockRoyal(commands.Cog):
             "reposicao", "sem_estoque", "comprovante", "fluxo", "todos", "vazia"} else codigo
         if codigo == "lista":
             texto = "🧪 **Comandos de teste — privados**\n" + "\n".join(
-                f"`!testarlucky {c}` — {p['nome']} [{raridade_nome(p['raridade'])}]" for c,p in PREMIACOES.items())
+                f"`!testarlucky {next((a for a, original in _ALIASES_PREMIACOES.items() if original == c), c)}` — {p['nome']} [{raridade_nome(p['raridade'])}]" for c,p in PREMIACOES.items())
             texto += ("\n`!testarlucky painel` · `!testarlucky vazia` · `!testarlucky todos`"
                       "\n`!testarlucky sorteio` · `!testarlucky fluxo` · `!testarlucky estoque` · `!testarlucky comprovante` · `!testarlucky sem_estoque` · `!testarlucky reposicao`"
                       "\n`!testarlucky clover registros` (prévia pública sem marcações)"
