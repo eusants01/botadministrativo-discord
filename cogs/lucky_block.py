@@ -22,22 +22,19 @@ from discord.ext import commands
 
 LOG = logging.getLogger("sants.bot.lucky_block")
 
-# ========================= CONFIGURAÇÃO PRIVADA =========================
 CANAL_PAINEL = 1572785659108917439
 CANAL_REGISTROS = 1572355776377266176
-CANAL_ESTOQUE = 1573584140719357972  # Avisos públicos de reposição
-ID_DONO_DISCORD = 925863471902503033  # Apenas o dono abastece/consulta estoque e altera configurações
-CARGOS_VALIDADORES = (1561231585993293864,)  # Ex.: (111111111111111111, 222222222222222222)
+CANAL_ESTOQUE = 1573584140719357972  
+ID_DONO_DISCORD = 925863471902503033  
+CARGOS_VALIDADORES = (1561231585993293864,)  
 CARGOS_ALERTA_ESTOQUE = CARGOS_VALIDADORES  
-USUARIOS_ALERTA_ESTOQUE = ()  
-ABERTURAS_POR_CICLO = 7
-HORAS_APOS_ULTIMA_ABERTURA = 3 
+USUARIOS_ALERTA_ESTOQUE = (1371486864791572555,1243928690795221123,1455061586082533410)  
+ABERTURAS_POR_CICLO = 10
+HORAS_APOS_ULTIMA_ABERTURA = 2 
 BANNER_PAINEL = "assets/lucky_block/painel.png"
 BANNER_CAIXA_VAZIA = "caixa_vazia"
 BANNER_REPOSICAO = "reposicao_estoque"  # assets/lucky_block/reposicao_estoque.png
 BANNER_PREMIO_SECRETO = "recompensa_secreta"  # assets/lucky_block/recompensa_secreta.png
-# As seguintes imagens são OPCIONAIS. O sistema funciona mesmo sem os arquivos.
-# Basta colocar suas artes em assets/lucky_block/ e utilizar estes nomes.
 BANNER_COLECAO = "colecao"                        # colecao.png
 BANNER_RANKING = "ranking"                        # ranking.png
 BANNER_META = "meta_comunitaria"                 # meta_comunitaria.png
@@ -54,13 +51,13 @@ PREMIACOES = {
 
     # --------------------------------------------------------
     # 01 - CANDIDATO EM UMA DIVISAO
-    # RARIDADE: EPICA | CHANCE: 0.50%
+    # RARIDADE: EPICA | CHANCE: 0.013%
     # --------------------------------------------------------
 
     "candidato_divisao": dict(
         nome="Candidato em uma divisão",
         raridade="epic",
-        chance="0.50",
+        chance="0.013",
         estoque=2,
         cargo_id=0,
         banner="candidato_divisao",
@@ -70,13 +67,13 @@ PREMIACOES = {
 
     # --------------------------------------------------------
     # 02 - FRUTA PERMANENTE
-    # RARIDADE: LENDARIA | CHANCE: 0.015%
+    # RARIDADE: LENDARIA | CHANCE: 0.010%
     # --------------------------------------------------------
 
     "fruta_permanente": dict(
         nome="Fruta Permanente",
         raridade="legendary",
-        chance="0.015",
+        chance="0.010",
         estoque=1,
         cargo_id=0,
         banner="fruta_permanente",
@@ -86,13 +83,13 @@ PREMIACOES = {
 
     # --------------------------------------------------------
     # 03 - CANDIDATO CIGS
-    # RARIDADE: LENDARIA | CHANCE: 0.10%
+    # RARIDADE: LENDARIA | CHANCE: 0.030%
     # --------------------------------------------------------
 
     "Candidato_CIGS": dict(
         nome="Candidato CIGS",
         raridade="legendary",
-        chance="0.10",
+        chance="0.030",
         estoque=1,
         cargo_id=0,
         banner="Candidato_CIGS",
@@ -102,13 +99,13 @@ PREMIACOES = {
 
     # --------------------------------------------------------
     # 04 - MINERIO ALEATORIO
-    # RARIDADE: RARA | CHANCE: 0.20%
+    # RARIDADE: LENDARIA | CHANCE: 0.040%
     # --------------------------------------------------------
 
     "Minerio_aleatório": dict(
         nome="Minério Aleatório",
-        raridade="rare",
-        chance="0.20",
+        raridade="legendary",
+        chance="0.040",
         estoque=1,
         cargo_id=0,
         banner="Minerio_aleatório",
@@ -150,13 +147,13 @@ PREMIACOES = {
 
     # --------------------------------------------------------
     # 07 - 500 ROBUX
-    # RARIDADE: SECRETA | CHANCE: 0.004%
+    # RARIDADE: SECRETA | CHANCE: 0.001%
     # --------------------------------------------------------
 
     "500_robux": dict(
         nome="500 Robux",
         raridade="secret",
-        chance="0.004",
+        chance="0.001",
         estoque=1,
         cargo_id=0,
         banner="500_robux",
@@ -181,7 +178,23 @@ PREMIACOES = {
     ),
 
     # --------------------------------------------------------
-    # 09 - DEMON NIGHT
+        # 09 - Salve da Kananda
+        # RARIDADE: RARA | CHANCE: 5.00%
+        # --------------------------------------------------------
+    
+        "salve_kananda": dict(
+            nome="Salve da Kananda",
+            raridade="rare",
+            chance="10.00",
+            estoque=1,
+            cargo_id=0,
+            banner="salve_kananda",
+            ativo=True,
+            descricao="Um presente especial da Kananda.",
+        ),
+
+    # --------------------------------------------------------
+    # 10 - DEMON NIGHT
     # RARIDADE: EPICA | CHANCE: 1.00%
     # --------------------------------------------------------
 
@@ -197,14 +210,46 @@ PREMIACOES = {
     ),
 
     # --------------------------------------------------------
-    # 10 - DECORACAO DE PERFIL
-    # RARIDADE: LENDARIA | CHANCE: 0.020%
+        # 11 - 10x Keys Aleatórias Steam
+        # RARIDADE: SECRETA | CHANCE: 0.005%
+        # --------------------------------------------------------
+    
+        "keys_aleatorias_steam": dict(
+            nome="Keys Aleatórias Steam",
+            raridade="Secreta",
+            chance="0,005",
+            estoque=1,
+            cargo_id=0,
+            banner="keys_aleatorias_steam",
+            ativo=True,
+            descricao="Keys Aleatórias Steam: A forma de entrega será acertada no ticket.",
+        ),
+
+        # --------------------------------------------------------
+            # 12 - Vaga na Família
+            # RARIDADE: SECRETA | CHANCE: 0.001%
+            # --------------------------------------------------------
+        
+            "Vaga na Família": dict(
+                nome="Vaga na Família",
+                raridade="Secreta",
+                chance="0,001",
+                estoque=1,
+                cargo_id=0,
+                banner="vaga_na_familia",
+                ativo=True,
+                descricao="Vaga na Família ROYAL: A forma de entrega será acertada no ticket."
+            ),
+
+    # --------------------------------------------------------
+    # 13 - DECORACAO DE PERFIL
+    # RARIDADE: LENDARIA | CHANCE: 0.040%
     # --------------------------------------------------------
 
     "decoracao_perfil": dict(
         nome="Decoração de Perfil Aleatória (Discord)",
         raridade="legendary",
-        chance="0.020",
+        chance="0.040",
         estoque=1,
         cargo_id=0,
         banner="decoracao_perfil",
@@ -468,20 +513,21 @@ class PainelLucky(discord.ui.LayoutView):
         self._lucky_banner = adicionar_banner(cont, BANNER_PAINEL)
         aviso = "🧪 **PRÉVIA, SEM ABERTURAS REAIS**\n" if teste else ""
         cont.add_item(discord.ui.TextDisplay(
-            aviso + "## <:luckblock:1572868783725609083> LUCKY BLOCK - FAMÍLIA ROYAL\n\n"
+            aviso + "## <:luckblock:1572868783725609083> LUCKY BLOCKS - FAMÍLIA ROYAL\n\n"
             "Teste sua sorte nas Lucky Blocks e concorra a prêmios exclusivos. "
             f"Você possui **{ABERTURAS_POR_CICLO} aberturas**; ao terminar todas, novas tentativas "
             f"ficam disponíveis **{HORAS_APOS_ULTIMA_ABERTURA} horas depois da última abertura**.\n\n"
             "### Premiações\n"
-            "> ☰ `👹` Cargos exclusivos da Família ROYAL\n"
-            "> ☰ `💜` Discord Nitro (Básico ou Normal)\n"
-            "> ☰ `🍊` Fruta permanente aleatória(blox Fruit) \n"
-            "> ☰ `🎨` Decoração de perfil\n"
+            "> ☰ `💜` Discord Nitro\n"
+            "> ☰ `🍊` Fruta Permanente Aleatória\n"
+            "> ☰ `🎨` Decoração de Perfil\n"
             "> ☰ `🐆` Candidato do CIGS\n"
-            "> ☰ `💎` Minério aleatório (cargo no E.B)\n"
+            "> ☰ `💖` Salve da Kananda\n"
+            "> ☰ `🔑` 10x Keys Aleatórias Steam\n"
+            "> ☰ `💎` Minério aleatório no EB.\n"
             "> ☰ `💸` 500 Robux\n\n"
             "### Observações\n"
-            "> ☰ `🛎️` As chances são extremamente baixas; depende da sua sorte.\n"
+            "> ☰ `🛎️` Algumas chances são extremamente baixas.\n"
             "> ☰ `🛎️` Premiações têm estoque limitado, sujeito a reposição.\n"
             "> ☰ `🛎️` Os prêmios não podem ser transferidos para outro usuário.\n"
             "> ☰ `🛒` Ganhos exigem resgate via ticket e comprovante individual."
