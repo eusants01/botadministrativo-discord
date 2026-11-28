@@ -20,7 +20,7 @@ from discord.ext import commands
 
 LOG = logging.getLogger("sants.bot.lucky_block")
 
-CANAL_PAINEL = 1572639152737091654
+CANAL_PAINEL = 1572785659108917439
 CANAL_REGISTROS = 1572355776377266176
 CANAL_ESTOQUE = 1573584140719357972  
 ID_DONO_DISCORD = 925863471902503033  # Proprietário; catálogo e entregas manuais
