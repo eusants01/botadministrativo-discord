@@ -52,7 +52,7 @@ BANNER_REVELACAO = "abertura_revelacao"
 BANNER_ANUNCIO_PREMIO = "recompensa_encontrada"
 BANNERS_RARIDADE = {"rare": "revelacao_rara", "epic": "revelacao_epica",
                      "legendary": "revelacao_lendaria", "secret": "revelacao_secreta"}
-ATIVAR_ABERTURA_CINEMATOGRAFICA = True
+ATIVAR_ABERTURA_CINEMATOGRAFICA = False
 SEGUNDOS_SUSPENSE = 0.8
 # Progressão exclusivamente cosmética; sem compras, trocas ou chances extras.
 FRAGMENTOS_POR_CAIXA_VAZIA = 1
@@ -599,7 +599,7 @@ class PainelLucky(discord.ui.LayoutView):
             aviso + "## <:luckblock:1572868783725609083> LUCKY BLOCKS - FAMÍLIA ROYAL\n\n"
             f"**☰ TEMPORADA {TEMA_TEMPORADA.upper()}**\n"
             "Descubra recompensas, reúna selos e acompanhe sua coleção. "
-            f"Você possui **{ABERTURAS_POR_CICLO} aberturas**; ao terminar todas, novas tentativas "
+            f"Você possui **{ABERTURAS_POR_CICLO} aberturas** ao terminar todas, novas tentativas "
             f"ficam disponíveis **{HORAS_APOS_ULTIMA_ABERTURA} horas depois da última abertura**.\n\n"
             "### Exemplos de premiações (sujeitas à disponibilidade)\n"
             "> ☰ `💜` Discord Nitro\n"
@@ -609,7 +609,7 @@ class PainelLucky(discord.ui.LayoutView):
             "> ☰ `💖` Salve da Kananda\n"
             "> ☰ `🔑` 10x Keys Aleatórias Steam\n"
             "> ☰ `💎` Minério aleatório no EB.\n"
-            "> ☰ `💸` 500 Robux\n\n"
+            "> ☰ `💸` 500 Robux\n"
             "### Observações\n"
             "> ☰ `💎` Caixas sem prêmio concedem fragmentos cosméticos.\n"
             "> ☰ `📦` Estoque indisponível não aumenta as chances dos demais prêmios.\n"
@@ -626,12 +626,12 @@ class PainelLucky(discord.ui.LayoutView):
         linha.add_item(AcaoPainel("colecao", "Coleção", "<a:Presenteghost:1553872045492797550>", discord.ButtonStyle.secondary))
         linha.add_item(AcaoPainel("meta", "Meta", "<a:luck:1575023399833567272>", discord.ButtonStyle.secondary))
         linha2 = discord.ui.ActionRow()
-        linha2.add_item(AcaoPainel("perfil", "Meu progresso", "💎", discord.ButtonStyle.secondary))
-        linha2.add_item(AcaoPainel("album", "Álbum", "📚", discord.ButtonStyle.secondary))
-        linha2.add_item(AcaoPainel("participacao", "Participação", "🏅", discord.ButtonStyle.secondary))
+        linha2.add_item(AcaoPainel("perfil", "Meu progresso", "<a:Sg21_Tree:1576120735192318213>", discord.ButtonStyle.secondary))
+        linha2.add_item(AcaoPainel("album", "Álbum", "<:wreath:1570688836776755200>", discord.ButtonStyle.secondary))
+        linha2.add_item(AcaoPainel("participacao", "Participação", "<a:Sg21_Sparkles:1576120732419891251>", discord.ButtonStyle.secondary))
         linha2.add_item(AcaoPainel("marcos", "Meus marcos", "🎯", discord.ButtonStyle.secondary))
         if DESAFIO_ATIVO:
-            linha2.add_item(AcaoPainel("desafio", "Desafio", "🧩", discord.ButtonStyle.secondary))
+            linha2.add_item(AcaoPainel("desafio", "Desafio", "<a:trofeu_topdesigner:1576120729546526841>", discord.ButtonStyle.secondary))
         if teste:
             for botao in (*linha.children, *linha2.children):
                 botao.disabled = True
@@ -925,7 +925,7 @@ class AlbumRoyal(discord.ui.LayoutView):
         c = discord.ui.Container(accent_colour=CORES)
         self._lucky_banner = adicionar_banner(c, BANNER_COLECAO)
         texto = '\n'.join(f"> `🎁` **{r['nome'] or r['reward_code']}** · {raridade_nome(r['raridade'])} · {r['total']}x" for r in rows)
-        c.add_item(discord.ui.TextDisplay(f"## 📚 ÁLBUM ROYAL • Página {pagina+1}\n" + (texto or "Nenhuma conquista nesta página.") + "\n-# Somente recompensas que você encontrou são exibidas."))
+        c.add_item(discord.ui.TextDisplay(f"## <:wreath:1570688836776755200> ÁLBUM ROYAL • Página {pagina+1}\n" + (texto or "Nenhuma conquista nesta página.") + "\n-# Somente recompensas que você encontrou são exibidas."))
         if rows:
             linha = discord.ui.ActionRow()
             linha.add_item(AlbumSelect(guild_id,user_id,rows))
