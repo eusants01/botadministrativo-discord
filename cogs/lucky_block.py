@@ -8,7 +8,8 @@ import secrets
 import re
 import unicodedata
 from bisect import bisect_right
-from functools import lru_cache
+from functools import lru_cache, wraps
+from time import monotonic
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -416,6 +417,12 @@ def banner_arquivo(referencia: str) -> Path | str | None:
 
 
 def _banner_arquivo_original(referencia: str) -> Path | str | None:
+    # Evita várias buscas no disco para o mesmo banner durante um clique.
+    return _banner_arquivo_cache(referencia, int(monotonic() // 15))
+
+
+@lru_cache(maxsize=512)
+def _banner_arquivo_cache(referencia: str, janela: int) -> Path | str | None:
     if not referencia:
         return None
     if referencia.startswith("https://"):
@@ -577,11 +584,31 @@ def recibo(abertura: dict, membro_id: int, *, teste=False) -> str:
     )
 
 
+def proteger_interacao(func):
+    """Evita interações abandonadas se a API ou o banco falhar após o defer."""
+    @wraps(func)
+    async def executar(self, interaction, *args, **kwargs):
+        try:
+            return await func(self, interaction, *args, **kwargs)
+        except Exception:
+            LOG.exception("Falha em interação Lucky Block: %s", func.__qualname__)
+            try:
+                aviso = "❌ Não foi possível concluir esta ação. Tente novamente ou avise a equipe."
+                if interaction.response.is_done():
+                    await interaction.followup.send(aviso, ephemeral=True)
+                else:
+                    await interaction.response.send_message(aviso, ephemeral=True)
+            except discord.HTTPException:
+                LOG.warning("Não foi possível responder à interação %s", interaction.id, exc_info=True)
+    return executar
+
+
 class AcaoPainel(discord.ui.Button):
     def __init__(self, acao: str, label: str, emoji: str, estilo: discord.ButtonStyle):
         super().__init__(label=label, emoji=emoji, style=estilo, custom_id=f"royal_lucky:v1:{acao}")
         self.acao = acao
 
+    @proteger_interacao
     async def callback(self, interaction: discord.Interaction):
         cog = interaction.client.get_cog("LuckyBlockRoyal")
         if cog is None:
@@ -653,6 +680,7 @@ class BotaoTicket(discord.ui.DynamicItem[discord.ui.Button],
     async def from_custom_id(cls, interaction: discord.Interaction, item: discord.ui.Button, match, /):
         return cls(int(match["guild"]), int(match["id"]))
 
+    @proteger_interacao
     async def callback(self, interaction: discord.Interaction):
         cog = interaction.client.get_cog("LuckyBlockRoyal")
         if cog is None:
@@ -734,17 +762,18 @@ class ModalEstoque(discord.ui.Modal, title="Estoque • Lucky Block"):
             min_length=1, max_length=6, required=True)
         self.add_item(self.quantidade)
 
+    @proteger_interacao
     async def on_submit(self, interaction: discord.Interaction):
         cog = interaction.client.get_cog("LuckyBlockRoyal")
+        await interaction.response.defer(ephemeral=True, thinking=True)
         if cog is None or not await cog.pode_abastecer(interaction.user, self.guild_id):
-            return await interaction.response.send_message("❌ Sem permissão.", ephemeral=True)
+            return await interaction.followup.send("❌ Sem permissão.", ephemeral=True)
         try:
             quantidade = int(str(self.quantidade.value).strip())
             if not 0 <= quantidade <= 100_000:
                 raise ValueError
         except ValueError:
-            return await interaction.response.send_message("❌ Informe um número de 0 a 100000.", ephemeral=True)
-        await interaction.response.defer(ephemeral=True, thinking=True)
+            return await interaction.followup.send("❌ Informe um número de 0 a 100000.", ephemeral=True)
         try:
             aviso = await cog.alterar_estoque(self.guild_id, self.codigo, quantidade, interaction.user.id)
             await interaction.followup.send(
@@ -766,9 +795,17 @@ class SeletorEstoque(discord.ui.Select):
         super().__init__(placeholder="Selecione uma recompensa para editar o estoque",
                          min_values=1, max_values=1, options=opcoes)
 
+    @proteger_interacao
     async def callback(self, interaction: discord.Interaction):
         cog = interaction.client.get_cog("LuckyBlockRoyal")
-        if cog is None or not await cog.pode_abastecer(interaction.user, self.guild_id):
+        # Modal precisa ser a resposta inicial; não pode usar defer antes de abri-lo.
+        if cog is None:
+            return await interaction.response.send_message("❌ Sem permissão.", ephemeral=True)
+        try:
+            autorizado = await asyncio.wait_for(cog.pode_abastecer(interaction.user, self.guild_id), timeout=2)
+        except asyncio.TimeoutError:
+            return await interaction.response.send_message("⏳ Não consegui conferir sua permissão a tempo. Tente novamente.", ephemeral=True)
+        if not autorizado:
             return await interaction.response.send_message("❌ Sem permissão.", ephemeral=True)
         await interaction.response.send_modal(ModalEstoque(self.guild_id, self.values[0]))
 
@@ -778,11 +815,12 @@ class EstoquePagina(discord.ui.Button):
         super().__init__(label=label, style=discord.ButtonStyle.secondary, disabled=disabled)
         self.guild_id,self.pagina=guild_id,pagina
 
+    @proteger_interacao
     async def callback(self, interaction):
         cog=interaction.client.get_cog('LuckyBlockRoyal')
-        if not cog or not await cog.pode_abastecer(interaction.user,self.guild_id):
-            return await interaction.response.send_message('❌ Sem permissão.',ephemeral=True)
         await interaction.response.defer(ephemeral=True,thinking=True)
+        if not cog or not await cog.pode_abastecer(interaction.user,self.guild_id):
+            return await interaction.followup.send('❌ Sem permissão.',ephemeral=True)
         texto=await cog.resumo_estoques(self.guild_id,pagina=self.pagina)
         await enviar_layout(interaction.followup.send,PainelEstoque(self.guild_id,texto,self.pagina),ephemeral=True)
 
@@ -814,6 +852,7 @@ class BotaoDetalheResgate(discord.ui.Button):
         else:
             super().__init__(label='Confirmar entrega', emoji='📦', style=discord.ButtonStyle.primary)
 
+    @proteger_interacao
     async def callback(self, interaction: discord.Interaction):
         cog = interaction.client.get_cog('LuckyBlockRoyal')
         if cog is None:
@@ -843,18 +882,20 @@ class SeletorResgates(discord.ui.Select):
                   for r in rows]
         super().__init__(placeholder='Selecione um comprovante para consultar', options=opcoes)
 
+    @proteger_interacao
     async def callback(self, interaction: discord.Interaction):
         cog = interaction.client.get_cog('LuckyBlockRoyal')
         if cog is None:
             return await interaction.response.send_message('❌ Sistema indisponível.', ephemeral=True)
+        await interaction.response.defer(ephemeral=True, thinking=True)
         guild = cog.bot.get_guild(self.guild_id)
         if not guild or not await cog.pode_validar(interaction.user, guild):
-            return await interaction.response.send_message('❌ Acesso restrito aos validadores.', ephemeral=True)
+            return await interaction.followup.send('❌ Acesso restrito aos validadores.', ephemeral=True)
         abertura_id = int(self.values[0])
         row = await cog.bot.pool.fetchrow('SELECT * FROM lucky_wins WHERE guild_id=$1 AND opening_id=$2',
                                           self.guild_id, abertura_id)
         if not row:
-            return await interaction.response.send_message('❌ Registro não encontrado.', ephemeral=True)
+            return await interaction.followup.send('❌ Registro não encontrado.', ephemeral=True)
         estado = ('✅ Entregue' if row['status']=='delivered' else
                   ('🔎 Em revisão' if row['review_reason'] else
                    ('✅ Validado' if row['validated_at'] else '⏳ Aguardando validação')))
@@ -869,7 +910,7 @@ class SeletorResgates(discord.ui.Select):
                  + (f'`!luckyentregar {abertura_id}` — Confirmar entrega (dono)' if interaction.user.id==ID_DONO_DISCORD else
                     'A confirmação final de entrega é exclusiva do dono.'))
         view = DetalheResgate(self.guild_id, abertura_id, texto, interaction.user.id == ID_DONO_DISCORD)
-        await interaction.response.send_message(view=view, ephemeral=True, **anexo_envio(view))
+        await enviar_layout(interaction.followup.send, view, ephemeral=True)
 
 
 class PainelResgates(discord.ui.LayoutView):
@@ -896,14 +937,16 @@ class AlbumSelect(discord.ui.Select):
                 description=f"{raridade_nome(r['raridade'])} • {r['total']} conquista(s)"[:100])
             for i,r in enumerate(rows)])
 
+    @proteger_interacao
     async def callback(self, interaction):
         if interaction.user.id != self.user_id:
             return await interaction.response.send_message("❌ Álbum individual.", ephemeral=True)
+        await interaction.response.defer(ephemeral=True, thinking=True)
         r = self.rows[self.values[0]]
         view = cartao("🏅 CONQUISTA DESCOBERTA", f"> `🎁` **{r['nome'] or r['reward_code']}**\n"
                       f"> `💎` **Raridade:** {raridade_nome(r['raridade'])}\n> `📜` **Registros:** {r['total']}",
                       banner_individual_premio(r['banner'] or '', r['raridade'] or 'legendary'), raridade=r['raridade'])
-        await enviar_layout(interaction.response.send_message, view, ephemeral=True)
+        await enviar_layout(interaction.followup.send, view, ephemeral=True)
 
 
 class AlbumPagina(discord.ui.Button):
@@ -911,6 +954,7 @@ class AlbumPagina(discord.ui.Button):
         super().__init__(label=label, style=discord.ButtonStyle.secondary, disabled=disabled)
         self.guild_id, self.user_id, self.pagina = guild_id, user_id, pagina
 
+    @proteger_interacao
     async def callback(self, interaction):
         cog = interaction.client.get_cog('LuckyBlockRoyal')
         if not cog or interaction.user.id != self.user_id:
@@ -942,6 +986,7 @@ class CatalogoConfirmar(discord.ui.Button):
         super().__init__(label="Salvar alteração", emoji="✅", style=discord.ButtonStyle.success)
         self.codigo,self.dados,self.anterior=codigo,dados,anterior
 
+    @proteger_interacao
     async def callback(self, interaction):
         cog=interaction.client.get_cog('LuckyBlockRoyal')
         if not cog or interaction.user.id != ID_DONO_DISCORD:
@@ -980,6 +1025,7 @@ class CatalogoModal(discord.ui.Modal):
             self.campos[chave]=item
             self.add_item(item)
 
+    @proteger_interacao
     async def on_submit(self, interaction):
         cog=interaction.client.get_cog('LuckyBlockRoyal')
         if not cog or interaction.user.id != ID_DONO_DISCORD:
@@ -1014,7 +1060,8 @@ class CatalogoModal(discord.ui.Modal):
                "-# Novos prêmios começam inativos; configure detalhes e estoque antes de ativar.")
         view=cartao('🛡️ CONFIRMAR ALTERAÇÃO',texto, banner_individual_premio(dados['banner'],dados['raridade']))
         linha=discord.ui.ActionRow();linha.add_item(CatalogoConfirmar(codigo,dados,self.anterior));view.children[0].add_item(linha)
-        await enviar_layout(interaction.response.send_message,view,ephemeral=True)
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        await enviar_layout(interaction.followup.send,view,ephemeral=True)
 
 
 class CatalogoAcao(discord.ui.Button):
@@ -1022,6 +1069,7 @@ class CatalogoAcao(discord.ui.Button):
         super().__init__(label='Adicionar prêmio' if codigo is None else ('Detalhes / ativação' if detalhes else 'Editar prêmio'),style=discord.ButtonStyle.primary)
         self.codigo,self.detalhes=codigo,detalhes
 
+    @proteger_interacao
     async def callback(self,interaction):
         if interaction.user.id != ID_DONO_DISCORD:
             return await interaction.response.send_message('❌ Exclusivo do proprietário.',ephemeral=True)
@@ -1036,13 +1084,15 @@ class CatalogoSeletor(discord.ui.Select):
             label=p['nome'][:95],value=c,description=f"{raridade_nome(p['raridade'])} • {p['chance']}% • {'ativo' if p['ativo'] else 'inativo'}"[:100])
             for c,p in list(PREMIACOES.items())[pagina*20:(pagina+1)*20]])
 
+    @proteger_interacao
     async def callback(self,interaction):
         if interaction.user.id != ID_DONO_DISCORD:
             return await interaction.response.send_message('❌ Exclusivo do proprietário.',ephemeral=True)
         codigo=self.values[0]
         if codigo not in PREMIACOES:
             return await interaction.response.send_message('❌ Cadastro não encontrado.',ephemeral=True)
-        await enviar_layout(interaction.response.send_message,detalhe_catalogo(codigo),ephemeral=True)
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        await enviar_layout(interaction.followup.send,detalhe_catalogo(codigo),ephemeral=True)
 
 
 def detalhe_catalogo(codigo):
@@ -1058,6 +1108,7 @@ class CatalogoPagina(discord.ui.Button):
     def __init__(self,pagina,label,disabled):
         super().__init__(label=label,style=discord.ButtonStyle.secondary,disabled=disabled);self.pagina=pagina
 
+    @proteger_interacao
     async def callback(self,interaction):
         if interaction.user.id != ID_DONO_DISCORD:
             return await interaction.response.send_message('❌ Exclusivo do proprietário.',ephemeral=True)
@@ -1080,6 +1131,7 @@ class RespostaDesafio(discord.ui.Button):
         super().__init__(label=DESAFIO_OPCOES[indice][:80],style=discord.ButtonStyle.secondary)
         self.guild_id,self.user_id,self.indice,self.evento=guild_id,user_id,indice,DESAFIO_ID
 
+    @proteger_interacao
     async def callback(self,interaction):
         cog=interaction.client.get_cog('LuckyBlockRoyal')
         if not cog or interaction.user.id != self.user_id or self.evento != DESAFIO_ID or not DESAFIO_ATIVO:
@@ -1104,7 +1156,7 @@ def painel_desafio(guild_id,user_id):
 class LuckyBlockRoyal(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self._ticket_locks: dict[int, asyncio.Lock] = {}
+        self._ticket_locks: dict[tuple[int, int], asyncio.Lock] = {}
         self._avisos_task: asyncio.Task | None = None
         self._guilds_inicializadas: set[int] = set()
         self._guild_init_locks: dict[int, asyncio.Lock] = {}
@@ -1306,7 +1358,7 @@ class LuckyBlockRoyal(commands.Cog):
         guild = self.bot.get_guild(guild_id)
         if guild is None or guild.get_channel(CANAL_PAINEL) is None:
             return False
-        membro = guild.get_member(usuario.id)
+        membro = usuario if isinstance(usuario, discord.Member) and usuario.guild.id == guild.id else guild.get_member(usuario.id)
         if membro is None:
             try:
                 membro = await guild.fetch_member(usuario.id)
@@ -1324,7 +1376,7 @@ class LuckyBlockRoyal(commands.Cog):
     async def pode_validar(self, usuario: discord.abc.User, guild: discord.Guild) -> bool:
         if usuario.id == ID_DONO_DISCORD:
             return True
-        membro = guild.get_member(usuario.id)
+        membro = usuario if isinstance(usuario, discord.Member) and usuario.guild.id == guild.id else guild.get_member(usuario.id)
         if membro is None:
             try:
                 membro = await guild.fetch_member(usuario.id)
@@ -1726,34 +1778,47 @@ class LuckyBlockRoyal(commands.Cog):
                     return False
                 reserva=await con.fetchval("""UPDATE lucky_wins SET receipt_claimed_at=NOW(),receipt_claim_channel=$2
                     WHERE opening_id=$1 RETURNING receipt_claimed_at""",abertura_id,ticket.id)
-        # Discord I/O fora do bloqueio de linha. Reutiliza comprovante se a confirmação anterior falhou.
-        atual=PREMIACOES.get(row['reward_code'],{})
-        premio=dict(atual,nome=row['reward_name'] or atual.get('nome',row['reward_code']),
-            raridade=row['reward_rarity'] or atual.get('raridade','legendary'),
-            banner=row['reward_banner_url'] or atual.get('banner',''))
-        entrada=dict(id=abertura_id,premio=premio,created_at=row['created_at'],status=row['status'],
-                     validated_at=row['validated_at'],validated_by=row['validated_by'],review_reason=row['review_reason'])
-        # Concede acesso de leitura/atendimento aos validadores também em ticket pré-existente.
-        for cid in CARGOS_VALIDADORES:
-            cargo=ticket.guild.get_role(cid)
-            if cargo and not ticket.permissions_for(cargo).view_channel:
-                permissoes=ticket.overwrites_for(cargo)
-                permissoes.view_channel=True;permissoes.send_messages=True;permissoes.read_message_history=True
-                try:
-                    await ticket.set_permissions(cargo,overwrite=permissoes,reason='Validação Lucky Block')
-                except discord.HTTPException:
-                    LOG.warning('Sem permissão para conceder acesso ao validador %s no ticket %s',cid,ticket.id)
-        msg=None
-        if row['receipt_claimed_at']:
-            msg=await self.buscar_mensagem_registro(ticket,f'LB-{abertura_id:06d}','COMPROVANTE OFICIAL',row['created_at'])
-        if msg is None:
-            view=cartao('🧾 COMPROVANTE OFICIAL DE PREMIAÇÃO',recibo(entrada,usuario_id),
-                        banner_individual_premio(premio['banner'],premio['raridade']))
-            msg=await enviar_layout(ticket.send,view,allowed_mentions=discord.AllowedMentions.none())
-        atualizado=await self.bot.pool.fetchval("""UPDATE lucky_wins SET ticket_channel_id=$2,ticket_claimed_at=NOW(),
-            receipt_message_id=$3,receipt_claimed_at=NULL,receipt_claim_channel=NULL WHERE opening_id=$1
-            AND receipt_claimed_at=$4 AND receipt_claim_channel=$2 RETURNING opening_id""",abertura_id,ticket.id,msg.id,reserva)
-        return atualizado is not None
+        try:
+            # Discord I/O fora do bloqueio de linha. Reutiliza comprovante se a confirmação anterior falhou.
+            atual=PREMIACOES.get(row['reward_code'],{})
+            premio=dict(atual,nome=row['reward_name'] or atual.get('nome',row['reward_code']),
+                raridade=row['reward_rarity'] or atual.get('raridade','legendary'),
+                banner=row['reward_banner_url'] or atual.get('banner',''))
+            entrada=dict(id=abertura_id,premio=premio,created_at=row['created_at'],status=row['status'],
+                         validated_at=row['validated_at'],validated_by=row['validated_by'],review_reason=row['review_reason'])
+            # Concede acesso de leitura/atendimento aos validadores também em ticket pré-existente.
+            for cid in CARGOS_VALIDADORES:
+                cargo=ticket.guild.get_role(cid)
+                if cargo and not ticket.permissions_for(cargo).view_channel:
+                    permissoes=ticket.overwrites_for(cargo)
+                    permissoes.view_channel=True;permissoes.send_messages=True;permissoes.read_message_history=True
+                    try:
+                        await ticket.set_permissions(cargo,overwrite=permissoes,reason='Validação Lucky Block')
+                    except discord.HTTPException:
+                        LOG.warning('Sem permissão para conceder acesso ao validador %s no ticket %s',cid,ticket.id)
+            msg=None
+            if row['receipt_claimed_at']:
+                msg=await self.buscar_mensagem_registro(ticket,f'LB-{abertura_id:06d}','COMPROVANTE OFICIAL',row['created_at'])
+            if msg is None:
+                view=cartao('🧾 COMPROVANTE OFICIAL DE PREMIAÇÃO',recibo(entrada,usuario_id),
+                            banner_individual_premio(premio['banner'],premio['raridade']))
+                msg=await enviar_layout(ticket.send,view,allowed_mentions=discord.AllowedMentions.none())
+            atualizado=await self.bot.pool.fetchval("""UPDATE lucky_wins SET ticket_channel_id=$2,ticket_claimed_at=NOW(),
+                receipt_message_id=$3,receipt_claimed_at=NULL,receipt_claim_channel=NULL WHERE opening_id=$1
+                AND receipt_claimed_at=$4 AND receipt_claim_channel=$2 RETURNING opening_id""",abertura_id,ticket.id,msg.id,reserva)
+            return atualizado is not None
+        except Exception:
+            # A reserva não pode bloquear o usuário por cinco minutos após uma falha conhecida.
+            # Preserva o marcador para localizar um comprovante que já tenha sido enviado.
+            try:
+                await self.bot.pool.execute("""UPDATE lucky_wins
+                    SET receipt_claimed_at=NOW()-INTERVAL '6 minutes'
+                    WHERE opening_id=$1 AND receipt_claim_channel=$2 AND receipt_claimed_at=$3""",
+                    abertura_id,ticket.id,reserva)
+            except Exception:
+                LOG.exception("Falha ao liberar reserva de comprovante #%s", abertura_id)
+            raise
+
 
     async def comprovante_em_ticket_existente(self, guild: discord.Guild, usuario_id: int, abertura_id: int):
         """Se o usuário já tem ticket, anexa o comprovante imediatamente ao ganhar."""
@@ -1761,92 +1826,129 @@ class LuckyBlockRoyal(commands.Cog):
             tickets = importlib.import_module("cogs.tickets")
             if self.bot.get_cog("TicketsCog") is None:
                 return
-            for canal, estado in tickets.listar_tickets(guild):
-                if estado.get("owner") == usuario_id:
-                    await self.verificar_e_publicar_comprovante(canal, abertura_id, usuario_id)
-                    break
+            lock = self._ticket_locks.setdefault((guild.id, usuario_id), asyncio.Lock())
+            async with lock:
+                for canal, estado in tickets.listar_tickets(guild):
+                    if estado.get("owner") == usuario_id:
+                        await self.verificar_e_publicar_comprovante(canal, abertura_id, usuario_id)
+                        break
         except Exception:
             LOG.exception("Falha ao anexar comprovante no ticket existente para #%d", abertura_id)
 
     async def abrir_ticket_premio(self, interaction: discord.Interaction, guild_id: int, abertura_id: int):
         if interaction.user.id <= 0:
             return await interaction.response.send_message("❌ Usuário inválido.", ephemeral=True)
-        await interaction.response.defer(thinking=True, ephemeral=True)
-        row = await self.bot.pool.fetchrow("SELECT * FROM lucky_wins WHERE opening_id=$1 AND guild_id=$2",
-                                           abertura_id, guild_id)
-        if row is None or row["user_id"] != interaction.user.id:
-            return await interaction.followup.send("❌ Esse comprovante pertence a outro usuário ou não existe.", ephemeral=True)
-        guild = self.bot.get_guild(guild_id)
-        if guild is None:
-            return await interaction.followup.send("❌ Servidor indisponível.", ephemeral=True)
+        # Resposta real imediata, inclusive nas DMs. A mesma mensagem é editada ao concluir.
+        await interaction.response.send_message("⏳ Localizando seu comprovante de premiação...", ephemeral=True)
+
+        async def responder(texto):
+            try:
+                await interaction.edit_original_response(content=texto, allowed_mentions=discord.AllowedMentions.none())
+            except discord.HTTPException:
+                await interaction.followup.send(texto, ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+
+        canal = None
+        criado = False
         try:
+            row = await asyncio.wait_for(self.bot.pool.fetchrow(
+                "SELECT * FROM lucky_wins WHERE opening_id=$1 AND guild_id=$2 AND user_id=$3",
+                abertura_id, guild_id, interaction.user.id), timeout=15)
+            if row is None:
+                return await responder("❌ Esse comprovante pertence a outro usuário ou não existe.")
+            guild = self.bot.get_guild(guild_id)
+            if guild is None:
+                return await responder("❌ Servidor indisponível.")
             tickets = importlib.import_module("cogs.tickets")
             if self.bot.get_cog("TicketsCog") is None:
                 raise RuntimeError("cogs.tickets não está carregado")
-            membro = guild.get_member(interaction.user.id) or await guild.fetch_member(interaction.user.id)
-            lock = self._ticket_locks.setdefault(interaction.user.id, asyncio.Lock())
+            lock = self._ticket_locks.setdefault((guild_id, interaction.user.id), asyncio.Lock())
+            if lock.locked():
+                return await responder("⏳ Já existe uma solicitação em processamento para sua conta. Aguarde a confirmação e tente novamente se necessário.")
             async with lock:
-                existentes = [(canal, st) for canal, st in tickets.listar_tickets(guild)
-                              if st.get("owner") == interaction.user.id]
+                membro = (interaction.user if isinstance(interaction.user, discord.Member)
+                          and interaction.user.guild.id == guild_id else guild.get_member(interaction.user.id))
+                if membro is None:
+                    membro = await asyncio.wait_for(guild.fetch_member(interaction.user.id), timeout=15)
+                existentes = [c for c, st in tickets.listar_tickets(guild) if st.get("owner") == membro.id]
+                # Um canal recém-criado pode ainda não aparecer no cache do Discord.
+                vinculado_id = row['ticket_channel_id'] or row['receipt_claim_channel']
+                if vinculado_id and not any(c.id == vinculado_id for c in existentes):
+                    vinculado = guild.get_channel(vinculado_id)
+                    if vinculado is None:
+                        try:
+                            vinculado = await guild.fetch_channel(vinculado_id)
+                        except discord.NotFound:
+                            vinculado = None
+                    if (isinstance(vinculado, discord.TextChannel) and vinculado.guild.id == guild_id
+                            and tickets.ler_ticket(vinculado).get('owner') == membro.id):
+                        existentes.insert(0, vinculado)
                 if existentes:
-                    canal = existentes[0][0]
-                    ok = await self.verificar_e_publicar_comprovante(canal, abertura_id, membro.id)
-                    return await interaction.followup.send(
-                        (f"✅ Seu comprovante foi vinculado ao ticket {canal.mention}." if ok else
-                         "⚠️ O registro já está associado a outro ticket ainda ativo. Consulte a equipe."),
-                        ephemeral=True)
-                erro = tickets.checar_pode_abrir(guild, membro)
-                if erro:
-                    return await interaction.followup.send(erro, ephemeral=True)
-                cat = tickets.CATEGORIAS["outros"]
-                painel = await self.buscar_canal(guild, CANAL_PAINEL)
-                categoria = tickets.resolver_categoria(guild, cat, painel.category)
-                overwrites = {
-                    guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                    membro: discord.PermissionOverwrite(view_channel=True, send_messages=True,
-                         read_message_history=True, attach_files=True, embed_links=True),
-                    guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True,
-                         manage_channels=True, manage_permissions=True, manage_messages=True,
-                         attach_files=True, embed_links=True),
-                }
-                for cargo_id in set(tickets.CARGOS_STAFF) | set(tickets.CARGOS_NOTIFICAR) | set(CARGOS_VALIDADORES):
-                    cargo = guild.get_role(cargo_id)
-                    if cargo is not None:
-                        overwrites[cargo] = discord.PermissionOverwrite(view_channel=True,
-                            send_messages=True, read_message_history=True, attach_files=True,
-                            embed_links=True, manage_messages=cargo_id in set(tickets.CARGOS_STAFF) | set(tickets.CARGOS_NOTIFICAR))
-                numero = tickets.proximo_numero()
-                canal = await guild.create_text_channel(
-                    name=f"resgate-lucky-{numero:04d}", category=categoria,
-                    topic=f"owner={membro.id};cat=outros;num={numero}",
-                    overwrites=overwrites, reason=f"Resgate Lucky Block #{abertura_id} / {membro.id}")
-                try:
+                    # Prioriza o canal já associado a este prêmio, se houver mais de um ticket.
+                    canal = next((c for c in existentes if c.id == vinculado_id), existentes[0])
+                else:
+                    erro = tickets.checar_pode_abrir(guild, membro)
+                    if erro:
+                        return await responder(erro)
+                    cat = tickets.CATEGORIAS["outros"]
+                    painel = await self.buscar_canal(guild, CANAL_PAINEL)
+                    categoria = tickets.resolver_categoria(guild, cat, painel.category)
+                    bot_membro = guild.me or await guild.fetch_member(self.bot.user.id)
+                    overwrites = {
+                        guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                        membro: discord.PermissionOverwrite(view_channel=True, send_messages=True,
+                            read_message_history=True, attach_files=True, embed_links=True),
+                        bot_membro: discord.PermissionOverwrite(view_channel=True, send_messages=True,
+                            manage_channels=True, manage_roles=True, manage_messages=True,
+                            attach_files=True, embed_links=True, read_message_history=True),
+                    }
+                    cargos_staff = set(tickets.CARGOS_STAFF) | set(tickets.CARGOS_NOTIFICAR)
+                    for cargo_id in cargos_staff | set(CARGOS_VALIDADORES):
+                        cargo = guild.get_role(cargo_id)
+                        if cargo is not None:
+                            overwrites[cargo] = discord.PermissionOverwrite(view_channel=True,
+                                send_messages=True, read_message_history=True, attach_files=True,
+                                embed_links=True, manage_messages=cargo_id in cargos_staff)
+                    numero = tickets.proximo_numero()
+                    canal = await guild.create_text_channel(
+                        name=f"resgate-lucky-{numero:04d}", category=categoria,
+                        topic=f"owner={membro.id};cat=outros;num={numero}",
+                        overwrites=overwrites, reason=f"Resgate Lucky Block #{abertura_id} / {membro.id}")
+                    criado = True
                     tickets.salvar_estado(canal.id, owner=membro.id, cat="outros", num=numero,
                         prio="normal", claim=None, claim_ts=None, locked=False, decisao=None,
                         respostas=[["Assunto", f"Resgate Lucky Block LB-{abertura_id:06d}"],
                                   ["Solicitação", "Validação de premiação do Lucky Block"]],
                         notas=[], card_id=None)
-                    # O comprovante é registrado no banco e publicado imediatamente no ticket.
-                    if not await self.verificar_e_publicar_comprovante(canal, abertura_id, membro.id):
-                        raise RuntimeError('Comprovante ainda não vinculado')
+                ok = await self.verificar_e_publicar_comprovante(canal, abertura_id, membro.id)
+            if ok:
+                await responder((f"✅ Ticket de resgate criado: {canal.mention}. Seu comprovante já está disponível para a equipe."
+                                 if criado else f"✅ Seu comprovante foi vinculado ao ticket {canal.mention}."))
+            else:
+                await responder(f"⚠️ Não foi possível vincular o comprovante `LB-{abertura_id:06d}` ao ticket {canal.mention}. "
+                                "O registro pode estar em processamento ou associado a outro ticket. Tente novamente ou avise a equipe.")
+        except Exception:
+            LOG.exception("Falha ao abrir ticket de prêmio LB-%06d", abertura_id)
+            await responder((f"⚠️ Ticket {canal.mention} disponível, mas não consegui confirmar o comprovante `LB-{abertura_id:06d}`. "
+                             "Tente solicitar novamente ou avise a equipe." if canal is not None else
+                             "❌ Não consegui abrir o ticket. Tente novamente ou avise a equipe; sua premiação continua registrada."))
+        finally:
+            # O usuário não precisa aguardar o cartão administrativo nem a notificação de cargos.
+            if criado and canal is not None:
+                async def publicar_card():
                     try:
                         await tickets.atualizar_card(canal)
                     except Exception:
                         LOG.exception("Ticket Lucky criado, mas card de ticket falhou")
-                    await canal.send(membro.mention + " " + " ".join(
-                        f"<@&{id_}>" for id_ in tickets.cargos_para_notificar("outros")),
-                        allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=False))
-                except Exception:
-                    LOG.exception("Ticket criado, porém não foi possível concluir o comprovante")
-                    return await interaction.followup.send(
-                        f"⚠️ Ticket {canal.mention} criado, mas o comprovante não foi anexado. "
-                        "Avise a equipe e informe o número do registro.", ephemeral=True)
-                await interaction.followup.send(f"✅ Ticket de resgate criado: {canal.mention}. "
-                    "Seu comprovante já está disponível para a equipe.", ephemeral=True)
-        except (discord.HTTPException, RuntimeError, KeyError, ValueError) as exc:
-            LOG.exception("Falha ao abrir ticket de prêmio")
-            await interaction.followup.send("❌ Não consegui abrir o ticket. "
-                "Verifique se a Central de Tickets está ativa e se o bot pode criar canais.", ephemeral=True)
+
+                async def notificar_ticket():
+                    try:
+                        await canal.send(membro.mention + " " + " ".join(
+                            f"<@&{id_}>" for id_ in tickets.cargos_para_notificar("outros")),
+                            allowed_mentions=discord.AllowedMentions(users=True, roles=True, everyone=False))
+                    except Exception:
+                        LOG.exception("Ticket Lucky criado, mas notificação falhou")
+
+                await asyncio.gather(publicar_card(), notificar_ticket())
 
     async def interagir(self, interaction: discord.Interaction, acao: str):
         if interaction.guild is None or interaction.channel_id != CANAL_PAINEL:
@@ -2007,10 +2109,13 @@ class LuckyBlockRoyal(commands.Cog):
         return "ℹ️ Sem aumento de estoque; nenhum anúncio público foi gerado."
 
     async def texto_perfil(self, guild_id, user_id):
-        saldo, recarga = await self.obter_saldo(guild_id, user_id)
-        total = await self.bot.pool.fetchval("SELECT total FROM lucky_fragments WHERE guild_id=$1 AND user_id=$2", guild_id, user_id) or 0
+        (saldo, recarga), total, desafios = await asyncio.gather(
+            self.obter_saldo(guild_id, user_id),
+            self.bot.pool.fetchval("SELECT total FROM lucky_fragments WHERE guild_id=$1 AND user_id=$2", guild_id, user_id),
+            self.bot.pool.fetch("SELECT title FROM lucky_challenges WHERE guild_id=$1 AND user_id=$2 ORDER BY created_at DESC LIMIT 10",guild_id,user_id),
+        )
+        total = total or 0
         selos = '\n'.join(f"{'✅' if total >= n else '🔒'} {titulo} — {n} fragmentos" for n,titulo in SELOS_FRAGMENTOS)
-        desafios = await self.bot.pool.fetch("SELECT title FROM lucky_challenges WHERE guild_id=$1 AND user_id=$2 ORDER BY created_at DESC LIMIT 10",guild_id,user_id)
         if desafios:
             selos += '\n\n**☰ EVENTOS CONCLUÍDOS**\n' + '\n'.join('✅ '+r['title'] for r in desafios)
         return (f"**☰ TEMPORADA {TEMA_TEMPORADA.upper()}**\n> `🎟️` **Aberturas:** {saldo}/{ABERTURAS_POR_CICLO}\n"
@@ -2044,13 +2149,14 @@ class LuckyBlockRoyal(commands.Cog):
 
     async def texto_colecao(self, guild_id: int, usuario_id: int) -> str:
         """Conquistas sem vazar o catálogo privado das recompensas."""
-        row = await self.bot.pool.fetchrow("""SELECT COUNT(*) AS abertas,
+        row, perfil = await asyncio.gather(self.bot.pool.fetchrow("""SELECT COUNT(*) AS abertas,
             COUNT(*) FILTER (WHERE rarity='rare') AS raras,
             COUNT(*) FILTER (WHERE rarity='epic') AS epicas,
             COUNT(*) FILTER (WHERE rarity='legendary') AS lendarias,
             COUNT(*) FILTER (WHERE rarity='secret') AS secretas,
             COUNT(DISTINCT reward_code) FILTER (WHERE reward_code IS NOT NULL) AS diferentes
-            FROM lucky_openings WHERE guild_id=$1 AND user_id=$2""", guild_id, usuario_id)
+            FROM lucky_openings WHERE guild_id=$1 AND user_id=$2""", guild_id, usuario_id),
+            self.texto_perfil(guild_id, usuario_id))
         abertas = int(row['abertas'] or 0)
         raras = int(row['raras'] or 0)
         epicas = int(row['epicas'] or 0)
@@ -2075,7 +2181,7 @@ class LuckyBlockRoyal(commands.Cog):
                 f"> `👑` **Secretas:** {secretas}\n"
                 f"> `🎁` **Prêmios diferentes encontrados:** {diferentes}\n\n"
                 "**☰ CONQUISTAS**\n" + selos +
-                "\n\n-# Os selos são comemorativos e não concedem recompensas reais.\n" + await self.texto_perfil(guild_id, usuario_id))
+                "\n\n-# Os selos são comemorativos e não concedem recompensas reais.\n" + perfil)
 
     async def texto_ranking(self, guild_id: int, *, mensal: bool = True, participacao=False) -> str:
         restricao = "AND created_at >= date_trunc('month', NOW() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo'" if mensal else ""
@@ -2156,12 +2262,12 @@ class LuckyBlockRoyal(commands.Cog):
 
     async def acao_resgate_painel(self, interaction: discord.Interaction, guild_id: int,
                                   abertura_id: int, acao: str) -> None:
+        await interaction.response.defer(ephemeral=True, thinking=True)
         guild = self.bot.get_guild(guild_id)
         if guild is None or not await self.pode_validar(interaction.user, guild):
-            return await interaction.response.send_message('❌ Acesso restrito.', ephemeral=True)
+            return await interaction.followup.send('❌ Acesso restrito.', ephemeral=True)
         if acao == 'entregar' and interaction.user.id != ID_DONO_DISCORD:
-            return await interaction.response.send_message('❌ Entrega exclusiva do proprietário.', ephemeral=True)
-        await interaction.response.defer(ephemeral=True, thinking=True)
+            return await interaction.followup.send('❌ Entrega exclusiva do proprietário.', ephemeral=True)
         if acao == 'aprovar':
             row = await self.bot.pool.fetchrow("""UPDATE lucky_wins
                 SET validated_at=NOW(),validated_by=$3,
