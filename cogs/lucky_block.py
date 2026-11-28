@@ -1869,7 +1869,7 @@ class LuckyBlockRoyal(commands.Cog):
                              f"🎟️ Restantes: **{resultado['restantes']}/{ABERTURAS_POR_CICLO}**\n"
                              "Você pode resgatar pelo botão abaixo ou pela DM.")
                     if resultado['renovacao']:
-                        texto += f"\n⏳ Renovação: <t:{int(resultado['renovacao'].timestamp())}:R>"
+                        texto += f"\n`⏳` Renovação: <t:{int(resultado['renovacao'].timestamp())}:R>"
                     async def resultado_imediato():
                         view = cartao("🎁 PREMIAÇÃO ENCONTRADA", texto,
                                       banner_individual_premio(premio["banner"], premio["raridade"]))
@@ -1906,7 +1906,7 @@ class LuckyBlockRoyal(commands.Cog):
                     texto += f"\n`💎` **+{FRAGMENTOS_POR_CAIXA_VAZIA} fragmento(s) Royal** (cosméticos)."
                     texto += f"\n`🎟️` Restantes: **{resultado['restantes']}/{ABERTURAS_POR_CICLO}**"
                     if resultado["renovacao"]:
-                        texto += f"\n⏳ Renovação: <t:{int(resultado['renovacao'].timestamp())}:R>"
+                        texto += f"\n`⏳` Renovação: <t:{int(resultado['renovacao'].timestamp())}:R>"
                     await self.suspense(interaction, "empty")
                     await self.exibir_revelacao(interaction, "📦 CAIXA VAZIA", texto,
                                                BANNER_CAIXA_VAZIA)
@@ -1936,7 +1936,7 @@ class LuckyBlockRoyal(commands.Cog):
                 texto = ("\n".join(linhas) if linhas else "Você ainda não abriu nenhuma caixa.")
                 texto += f"\n\n`🎟️` Aberturas disponíveis: **{saldo}/{ABERTURAS_POR_CICLO}**"
                 if renovacao:
-                    texto += f"\n⏳ Renovação: <t:{int(renovacao.timestamp())}:R>"
+                    texto += f"\n`⏳` Renovação: <t:{int(renovacao.timestamp())}:R>"
                 return await interaction.followup.send(view=cartao("📜 MEU HISTÓRICO", texto), ephemeral=True)
             if acao == "ranking":
                 view = cartao("🏆 RANKING DA TEMPORADA", await self.texto_ranking(guild_id), BANNER_RANKING)
